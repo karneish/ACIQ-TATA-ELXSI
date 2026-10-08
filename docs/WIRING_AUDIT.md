@@ -72,7 +72,7 @@ flowtrack    NOT IMPORTED BY ANY RUNTIME MODULE
 **Consequence:** enforcement is 100% DSCP-based. The entire behavioural
 classifier is inert at runtime.
 
-### 2. Correction file — does not exist
+### 2. Correction file — NOW IMPLEMENTED (was: does not exist)
 
 ```
 ########## is data/corrections.jsonl ever WRITTEN? ##########
@@ -261,20 +261,69 @@ no Python sweeper.
 
 ## Required new work surfaced by this audit
 
-**Correction feature (Tata requirement, currently absent):**
+**Correction feature (Tata requirement): DONE as of commit below.**
 
-- a command/endpoint to record a correction (`aciqctl classify --correct <flow> --as <class>`)
-- the classifier **reads** corrections and applies them to later decisions
-- a test proving a correction changes a subsequent decision
-- write to `data/corrections.jsonl` (append, one JSON object per line)
+- command: `./aciqctl correct --src ... --dst ... --proto ... --dport ... --as <class>`
+- also `aciqctl list` and `aciqctl check`
+- `aciq/corrections.py` reads `data/corrections.jsonl` and answers per flow
+- `classify()` already honoured `FlowFeatures.correction`; this supplies it
+- tests prove a correction changes a subsequent decision
+  (`TestCorrectionChangesADecision`), including that `finalise()` cannot demote
+  it, that it beats a DSCP-EF verdict, and that it stops applying on expiry
 
-This is what makes the later optional ML comparison credible: you cannot compare
-a model against a baseline if there is no ground truth and no correction path.
+Design decisions worth knowing:
+
+- **Append-only.** A correction is a statement about a class of traffic, not a
+  snapshot. Overwriting would destroy the record an accuracy claim is audited
+  against. `data/corrections.jsonl` is gitignored, being per-deployment
+  operational data rather than source.
+- **Source port is never part of a match key.** It changes on every reconnect,
+  so a correction keyed on it would stop applying minutes after being made.
+  A correction may be port-scoped (default) or host-scoped (`dport: null`).
+- **Finite TTL by default (24h).** A correction is a hypothesis about traffic
+  that will change. Expiries are counted in `stats.expired` so a stale
+  correction is visible rather than merely gone.
+- **Specificity wins ties, recency wins outright.** A port correction beats a
+  host correction recorded at the same instant; a *later* host correction beats
+  an older port one, because re-correcting the whole host is deliberate intent.
+
+One gap remains: corrections are read by the library but the **runtime chain
+still does not consult them**, because the runtime chain still does not call
+`classify()` at all. See the wiring status above.
 
 **M7 intent API** — required for the lease to be demonstrable at all.
 **M8 dashboard** — listed by Tata as expected output.
 
 ---
+
+## The bridge: what the first real run proved
+
+`testbed/bridge_probe.sh` ran for the first time on Pop!_OS kernel 7.1.5,
+iproute2 6.1.0. 14 PASS, 28 FAIL, three independent causes:
+
+1. **Missing `.` concatenation tokens (mine).** `ip saddr ip daddr meta l4proto
+   th dport @leased` needs `ip saddr . ip daddr . meta l4proto . th dport
+   @leased`. Without the dots nftables sees five separate expressions and binds
+   the set lookup to only the last. Fixed; 7 tests added. The existing
+   tokenisation test could not catch this -- it asserted no whitespace outside
+   braced fragments, which is a different invariant.
+
+2. **`tc fw` cannot match a packet mark. This breaks the design.** iproute2
+   6.1.0 accepts only `classid`, `indev` and `action` for the `fw` classifier --
+   no `handle`, no `mask`, in either syntax. The "nftables sets -> mark ->
+   static `tc fw` filters" mechanism in `aciq/bridge.py` **cannot be built on
+   this toolchain.** Not a syntax slip: an absent capability.
+
+   `aciq/marks.py` and the nftables half remain correct and useful for
+   telemetry, but the mark -> class step needs a different classifier. The
+   extended probe tests `flower meta mark`, `basic ematch meta`, steering via a
+   DSCP rewrite plus the `flower ip_tos` matcher already proven in check 14, and
+   per-class `flower` filters matching the flow key directly. Whichever passes
+   becomes the design. **Unresolved.**
+
+3. **The probe's own bug.** Its set/key-shape probes targeted a table that was
+   never created, so all three failed with "No such file or directory" and
+   reported nothing about the key shape they existed to test.
 
 ## Corrections to the bridge design, after measurement
 

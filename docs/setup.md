@@ -48,7 +48,7 @@ See `docs/licenses.md` — the ACIQ runtime itself has **no** pip dependencies.
 ```bash
 chmod +x testbed/*.sh
 bash -n testbed/*.sh                        # syntax
-python3 -m unittest discover -s tests       # 388 tests, no root needed
+python3 -m unittest discover -s tests       # 445 tests, no root needed
 
 # bridge syntax probe — seconds, not minutes. Run this FIRST when the gate
 # fails on a bridge check: the gate stops at the first failure, so one wrong
@@ -68,6 +68,38 @@ and reports `PASS`/`FAIL` per line. It proves **syntax only** — that the kerne
 accepts the commands. It proves nothing about behaviour: whether a mark actually
 routes traffic to a class, whether an unclassified flow loses EF priority, and
 whether a mark expires are gate checks 16–19.
+
+## 3a. Correcting a misclassification
+
+`classify()` reports a confidence and, where it cannot tell, returns
+`UNCLASSIFIED` rather than guessing. When it guesses wrong, record the truth:
+
+```bash
+./aciqctl correct --src 10.0.1.2 --dst 203.0.113.9 --proto tcp \
+                  --dport 22 --as bulk --why "git clone over ssh"
+./aciqctl correct --src 10.0.1.2 --dst 198.51.100.7 --proto udp \
+                  --as interactive --scope host --ttl 600
+./aciqctl list
+./aciqctl check --src 10.0.1.2 --dst 203.0.113.9 --proto tcp --dport 22
+```
+
+Corrections append to `data/corrections.jsonl` and are gitignored: they are
+per-deployment operational data, not source.
+
+Notes:
+
+- `--as` accepts short aliases (`interactive`, `adaptive`, `bulk`, `leased`) and
+  always writes the canonical value.
+- **`--scope host` (or omitting `--dport`) matches every port** for that host
+  pair. Source port is never part of a match key, because it changes on every
+  reconnect — a correction keyed on it would stop applying minutes after being
+  written.
+- Corrections expire after 24h by default (`--ttl 0` to disable). A correction
+  describes a hypothesis about traffic that will change.
+
+Recording a correction and changing enforcement are separate: `aciqctl` never
+touches `tc` or nftables, so a typo in a class name cannot become a live qdisc
+change.
 
 ## 4. Running the experiments
 

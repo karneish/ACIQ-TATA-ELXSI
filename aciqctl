@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""aciqctl — operator commands for ACIQ.
+
+    ./aciqctl correct --src 10.0.1.2 --dst 203.0.113.9 --proto tcp \\
+                      --dport 22 --as bulk_transfer --why "git clone"
+    ./aciqctl correct --src 10.0.1.2 --dst 203.0.113.9 --proto tcp \\
+                      --as interactive --scope host
+    ./aciqctl list
+    ./aciqctl check --src 10.0.1.2 --dst 203.0.113.9 --proto tcp --dport 22
+
+Corrections are appended to `data/corrections.jsonl` and are read back by the
+classifier on the next tick. Nothing here touches `tc` or nftables: recording
+that a flow is misclassified and changing the enforcement state are separate
+concerns, and conflating them would make a typo in a class name into a live
+qdisc change.
+
+Standard library only, like the rest of the project.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from aciq.corrections import (  # noqa: E402
+    CLASS_ALIASES,
+    DEFAULT_PATH,
+    DEFAULT_TTL_S,
+    CorrectionError,
+    CorrectionStore,
+    parse_class,
+)
+from aciq.model import Flow, TrafficClass  # noqa: E402
+
+
+def _flow_from_args(a) -> Flow:
+    """Build a Flow, filling in a placeholder sport.
+
+    `sport` is never part of a correction match key -- it changes on every
+    reconnect and would make corrections useless -- so it is not a CLI flag and
+    gets a fixed placeholder.
+    """
+    return Flow(src=a.src, sport=0, dst=a.dst, dport=a.dport or 0, proto=a.proto)
+
+
+def cmd_correct(a) -> int:
+    try:
+        cls = parse_class(a.as_)
+    except CorrectionError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+
+    store = CorrectionStore(a.file)
+    scope = a.scope
+    if scope == "host":
+        a.dport = None
+    elif a.dport is None:
+        print("pass --dport, or --scope host to match every port", file=sys.stderr)
+        return 2
+
+    flow = Flow(src=a.src, sport=0, dst=a.dst, dport=a.dport or 0, proto=a.proto)
+    try:
+        c = store.record(flow, cls, reason=a.why, by=a.by,
+                         dport=a.dport, ttl_s=None if a.ttl == 0 else a.ttl)
+    except CorrectionError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+
+    where = f"{c.src} -> {c.dst}/{c.proto}"
+    where += f":{c.dport}" if c.dport is not None else " (any port)"
+    ttl = "never expires" if c.expires_at is None else f"expires in {a.ttl:g}s"
+    print(f"recorded: {where} -> {c.cls.value}  [{c.scope} scope, {ttl}]")
+    print(f"  {store.path}")
+    return 0
+
+
+def cmd_list(a) -> int:
+    store = CorrectionStore(a.file)
+    cs = store.corrections_for()
+    if not cs:
+        print(f"no corrections in {store.path}")
+        return 0
+    cs.sort(key=lambda c: (c.src, c.dst, c.proto, c.dport or -1))
+    print(f"{len(cs)} correction(s) in {store.path}\n")
+    for c in cs:
+        where = f"{c.src} -> {c.dst}/{c.proto}"
+        where += f":{c.dport}" if c.dport is not None else " (any port)"
+        print(f"  {c.cls.value:<26} {where}")
+        if c.reason:
+            print(f"    {'':26} why: {c.reason}")
+        if c.recorded_by:
+            print(f"    {'':26} by:  {c.recorded_by}")
+        if c.expires_at is not None:
+            print(f"    {'':26} ttl:  expires_at={c.expires_at:.0f}")
+    if store.stats.skipped_malformed:
+        print(f"\n{store.stats.skipped_malformed} malformed line(s) skipped: "
+              f"{', '.join(store.stats.malformed_lines)}")
+    return 0
+
+
+def cmd_check(a) -> int:
+    store = CorrectionStore(a.file)
+    flow = _flow_from_args(a)
+    c = store.lookup(flow)
+    if c is None:
+        print(f"no correction applies to {flow.key}")
+        print(f"  (hits={store.stats.hits} misses={store.stats.misses} "
+              f"expired={store.stats.expired})")
+        return 1
+    print(f"{flow.key} -> {c.cls.value}")
+    print(f"  scope: {c.scope}   recorded_by: {c.recorded_by or '-'}")
+    if c.reason:
+        print(f"  why:   {c.reason}")
+    if c.expires_at is not None:
+        print(f"  ttl:   expires_at={c.expires_at:.0f}")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="aciqctl", description="operator commands for ACIQ")
+    p.add_argument("--file", default=str(DEFAULT_PATH),
+                   help=f"corrections file (default: {DEFAULT_PATH})")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    def flow_args(sp):
+        sp.add_argument("--src", required=True)
+        sp.add_argument("--dst", required=True)
+        sp.add_argument("--proto", default="tcp", choices=["tcp", "udp"])
+        sp.add_argument("--dport", type=int)
+
+    c = sub.add_parser("correct", help="record a correction")
+    flow_args(c)
+    c.add_argument("--as", dest="as_", required=True, metavar="CLASS",
+                   help="target class. canonical: "
+                        + ", ".join(x.value for x in TrafficClass)
+                        + "; aliases: " + ", ".join(sorted(CLASS_ALIASES)))
+    c.add_argument("--scope", choices=["port", "host"], default=None,
+                   help="match one port (default) or every port on the host pair")
+    c.add_argument("--why", default="", help="why the inference was wrong")
+    c.add_argument("--by", default="user", help="who is recording this")
+    c.add_argument("--ttl", type=float, default=DEFAULT_TTL_S,
+                   help=f"seconds until it expires; 0 = never "
+                        f"(default: {DEFAULT_TTL_S:g})")
+    c.set_defaults(func=cmd_correct)
+
+    lst = sub.add_parser("list", help="show recorded corrections")
+    lst.set_defaults(func=cmd_list)
+
+    ck = sub.add_parser("check", help="what correction applies to a flow?")
+    flow_args(ck)
+    ck.set_defaults(func=cmd_check)
+    return p
+
+
+def main(argv=None) -> int:
+    args = build_parser().parse_args(argv)
+    try:
+        return args.func(args)
+    except CorrectionError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
