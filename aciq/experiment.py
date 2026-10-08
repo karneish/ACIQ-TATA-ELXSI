@@ -172,6 +172,18 @@ class ExperimentRunner:
         self.enforce = False
         self._tracker: FlowTracker | None = None
         self._ct: ConntrackSource | None = None
+        #: Enforcement health. Watched because ConntrackSource.read() swallows
+        #: every error and returns "", so a broken conntrack read, a wrong
+        #: namespace and flows that never cross the shaped device all look
+        #: exactly like an idle link.
+        #:
+        #: `_enf_steered` counts ticks where a verdict reached the kernel. That is
+        #: the only number that answers the question that matters -- a tick that
+        #: saw four flows and declined all four (they were too young) did no work
+        #: either, and counting it would let a run look healthy on the strength of
+        #: having looked at traffic.
+        self._enf_ticks = 0
+        self._enf_steered = 0
 
     def run_paths(self, scenario: str, system: SystemSpec, mode: CapacityMode,
                   seed: int) -> RunPaths:
@@ -379,9 +391,7 @@ class ExperimentRunner:
         # steers the next run's traffic before it has decided anything -- which
         # is the residue gate check 20 exists to catch, and the reason
         # enforcement cannot be a write-and-forget.
-        enforcement_note = ("per-flow enforcement ON (filters removed on teardown)"
-                            if enforcement_on else
-                            f"per-flow enforcement OFF ({enforcement_why})")
+        enforcement_note = self._enforcement_note(enforcement_on, enforcement_why)
         if enforcement_on:
             self.harness.disable_enforcement()
             self._tracker = self._ct = None
@@ -422,6 +432,7 @@ class ExperimentRunner:
             # Losing one poll must not kill the run; the next tick re-reads.
             return {}
         self._tracker.observe(text, now)
+        self._enf_ticks += 1
 
         # Port -> label. The dport is the join key: it is what the generator
         # chose and what conntrack reports, and unlike the source port it does
@@ -443,7 +454,30 @@ class ExperimentRunner:
                 "tier": v.classification.tier, "corrected": v.corrected,
                 "changed": v.changed,
             }
+        if any(v["changed"] for v in out.values()):
+            self._enf_steered += 1
         return out
+
+    def _enforcement_note(self, enforcement_on: bool, why: str) -> str:
+        """One line, in result.json, saying what enforcement actually did.
+
+        The check that stops a broken conntrack read from reading as a working
+        one. Enforcement can be "on", install nothing, and still produce a run
+        that looks fine -- so if it never classified a single flow the run says
+        so in those words, instead of leaving a reader to infer health from the
+        presence of the word "enforcement".
+        """
+        if not enforcement_on:
+            return f"per-flow enforcement OFF ({why})"
+        if self._enf_ticks and not self._enf_steered:
+            return (f"per-flow enforcement ON but STEERED NOTHING on any of "
+                    f"{self._enf_ticks} ticks -- conntrack produced no usable "
+                    f"flows, or no flow was mature enough to classify. This run "
+                    f"measures the reporting path, not enforcement.")
+        if self._enf_steered < self._enf_ticks:
+            return (f"per-flow enforcement ON ({self._enf_steered}/{self._enf_ticks} "
+                    f"ticks changed a filter)")
+        return "per-flow enforcement ON"
 
     def _settle(self, paths: RunPaths, ports, sc, settle_s: float) -> None:
         """Run interactive workloads only, and record nothing.

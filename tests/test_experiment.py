@@ -577,6 +577,78 @@ class TestEnforcementWiring(unittest.TestCase):
             self.assertEqual(r._enforcement_step([("v", 7001, None)], 1.0), {})
 
 
+class TestSilentEnforcementIsCalledOut(unittest.TestCase):
+    """Enforcement that runs and classifies nothing must not read as working.
+
+    ConntrackSource.read() catches every error and returns "", so a broken read,
+    a wrong namespace, or flows that never cross the shaped device all look
+    identical to an idle link. Without a count, the run reports "enforcement
+    ON" and a reader concludes the mechanism worked.
+    """
+
+    def _runner(self, tmp, ct_text):
+        r = ExperimentRunner(
+            launcher=DryLauncher(),
+            harness=Harness(runner=FakeRunner(auto_readback=True), clock=lambda: 0.0),
+            results_dir=Path(tmp), real_time=False, tick_s=1.0)
+        r._ct = type("CT", (), {"read": lambda self: ct_text})()
+        return r
+
+    CT_MATURE = ("udp 17 29 src=203.0.113.2 dst=10.0.1.2 sport=40001 dport=7001 "
+                 "packets=40000 bytes=40000000 [UNREPLIED] src=10.0.1.2 "
+                 "dst=203.0.113.2 sport=7001 dport=40001 packets=0 bytes=0 "
+                 "mark=0 use=1\n")
+
+    def test_an_empty_conntrack_read_steers_nothing(self):
+        from aciq.flowtrack import FlowTracker
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d, "")
+            r._tracker = FlowTracker()
+            r._enf_ticks = r._enf_steered = 0
+            r._enforcement_step([("video", 7001, None)], 1.0)
+            self.assertEqual((r._enf_ticks, r._enf_steered), (1, 0))
+
+    def test_seeing_a_flow_is_not_the_same_as_steering_it(self):
+        """A tick can find four flows and decline every one of them -- they were
+        too young. Counting that as work would let a run look healthy on the
+        strength of having looked at traffic."""
+        from aciq.flowtrack import FlowTracker
+        ct = ("udp 17 29 src=203.0.113.2 dst=10.0.1.2 sport=40001 dport=7001 "
+              "packets=4 bytes=4000 [UNREPLIED] src=10.0.1.2 dst=203.0.113.2 "
+              "sport=7001 dport=40001 packets=0 bytes=0 mark=0 use=1\n")
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d, ct)
+            r._tracker = FlowTracker()
+            r.harness.enable_enforcement(executor=_Exec())
+            r._enf_ticks = r._enf_steered = 0
+            out = r._enforcement_step([("video", 7001, None)], 1.0)
+            self.assertEqual(set(out), {"video"}, "the flow should have been seen")
+            self.assertFalse(out["video"]["changed"], "but declined: age 0")
+            self.assertEqual(r._enf_steered, 0, "seeing a flow counted as steering")
+
+    def _note(self, ticks, steered, on=True, why="not requested"):
+        r = ExperimentRunner(launcher=DryLauncher(),
+                             harness=Harness(runner=FakeRunner(auto_readback=True),
+                                              clock=lambda: 0.0))
+        r._enf_ticks, r._enf_steered = ticks, steered
+        return r._enforcement_note(on, why)
+
+    def test_the_note_says_on_but_steered_nothing_when_it_never_did(self):
+        n = self._note(7, 0)
+        self.assertIn("ON", n)
+        self.assertIn("STEERED NOTHING", n)
+        self.assertIn("reporting path", n)
+
+    def test_a_partial_run_says_how_many_ticks_did_work(self):
+        self.assertIn("6/40", self._note(40, 6))
+
+    def test_a_fully_working_run_says_only_that_it_was_on(self):
+        self.assertEqual(self._note(40, 40), "per-flow enforcement ON")
+
+    def test_an_off_run_carries_its_reason(self):
+        self.assertIn("dry run", self._note(0, 0, on=False, why="dry run launches no traffic"))
+
+
 class _Exec:
     """Answers tc's -j listing with an empty device."""
 
