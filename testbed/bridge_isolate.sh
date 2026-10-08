@@ -128,6 +128,8 @@ sleep 1
 B1=$(b 1:20); B3n=$(b 1:30)
 NPKT=$($R nft list ruleset | grep 'dport 7001' | sed -n 's/.*counter packets \([0-9]*\).*/\1/p')
 echo "  1:20 $B0 -> $B1    1:30 $B3 -> $B3n    nft rule matched ${NPKT:-?} pkt"
+if [ "${B1:-0}" -gt "${B0:-0}" ]; then res "B: nftables-set DSCP reaches 1:20" 0
+else res "B: nftables-set DSCP reaches 1:20" 1; fi
 
 echo "  --- what the client actually receives ---"
 $C nft delete table ip isowatch 2>/dev/null
@@ -137,8 +139,13 @@ $C nft add rule ip isowatch c ip dscp 0x18 counter
 $C nft add rule ip isowatch c ip dscp 0x00 counter
 send 7001 00 60
 sleep 1
-echo "  client sees DSCP 0x18: $($C nft list table ip isowatch | sed -n '2p' | sed -n 's/.*counter packets \([0-9]*\).*/\1/p')"
-echo "  client sees DSCP 0x00: $($C nft list table ip isowatch | sed -n '3p' | sed -n 's/.*counter packets \([0-9]*\).*/\1/p')"
+echo "  --- the client-side watch, in full ---"
+$C nft list table ip isowatch | sed 's/^/    /'
+W18=$($C nft list table ip isowatch | grep 'ip dscp 0x18' \
+        | sed -n 's/.*counter packets \([0-9]*\).*/\1/p')
+W00=$($C nft list table ip isowatch | grep 'ip dscp 0x00' \
+        | sed -n 's/.*counter packets \([0-9]*\).*/\1/p')
+echo "  client saw DSCP 0x18: ${W18:-?}    DSCP 0x00: ${W00:-?}"
 echo
 
 # ---------------------------------------------------------------------------
@@ -156,6 +163,33 @@ if [ "${C1:-0}" -gt "${C0:-0}" ]; then res "C: meta priority makes it work" 0
 else res "C: meta priority makes it work (no)" 1; fi
 echo
 
+# ---------------------------------------------------------------------------
+# D: u32 instead of flower, for IPv4.
+#
+# `u32 match ip dsfield` reads the IP header directly. flower `ip_tos` has now
+# been shown not to respond to a DSCP written by nftables even though the client
+# receives the packet correctly marked. If u32 DOES route it, the header is
+# demonstrably 0x18 at tc time, flower specifically is reading something else,
+# and u32 is a working IPv4 mechanism.
+#
+# This is the pragmatic fix candidate: u32 for IPv4 (already proven by gate check
+# 13 for DSCP-EF), flower for IPv6.
+echo "--- D: u32 'match ip dsfield' instead of flower, IPv4 only ---"
+$R tc filter add dev "$DEV" parent 1: protocol ip prio 9 u32 \
+   match ip dsfield 0x18 0xfc flowid 1:20
+$R tc filter show dev "$DEV" parent 1: | grep -A2 'pref 9 u32' | sed 's/^/  /'
+D0=$(b 1:20); D3=$(b 1:30)
+send 7001 00 60
+sleep 1
+D1=$(b 1:20); D3n=$(b 1:30)
+echo "  1:20 $D0 -> $D1    1:30 $D3 -> $D3n"
+if [ "${D1:-0}" -gt "${D0:-0}" ]; then
+  res "D: u32 reads the header flower will not -- u32 is the IPv4 mechanism" 0
+else
+  res "D: u32 does not route it either, so the header is NOT 0x18 at tc time" 1
+fi
+echo
+
 echo "=== SUMMARY ==="
 echo "PASS $PASS  FAIL $FAIL"
 echo
@@ -165,5 +199,10 @@ echo "                    in the write/read interaction, not in sets, not in"
 echo "                    priorities, not in the HTB tree."
 echo "  A fail          -> flower ip_tos does not work on IPv4 egress here and"
 echo "                    gate 16a's PASS was not reproducible."
-echo "  A pass, B pass  -> the fault needs something the full gate adds (the"
-echo "                    pref-1 u32 EF filter, fq_codel leaves, five filters)."
+echo "  A pass, B pass  -> the fault needs something the full gate adds."
+echo
+echo "  D pass          -> the header IS 0x18 when tc sees it, flower ip_tos is"
+echo "                    reading something else, and u32 works. Ship u32 for"
+echo "                    IPv4 and keep flower for IPv6."
+echo "  D fail          -> the header is NOT 0x18 at tc time, which contradicts"
+echo "                    the client seeing 0x18 and needs explaining."
