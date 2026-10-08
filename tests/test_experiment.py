@@ -577,6 +577,86 @@ class TestEnforcementWiring(unittest.TestCase):
             self.assertEqual(r._enforcement_step([("v", 7001, None)], 1.0), {})
 
 
+class _LiveishLauncher:
+    """Not a DryLauncher, but launches nothing real.
+
+    Standing in for NetnsLauncher so `will_enforce` is True and run() reaches the
+    lines that build the tracker and the conntrack source. Those lines are why
+    the missing import below went unnoticed for a whole test run: the dry-run
+    guard meant no test ever executed them, and `import aciq.experiment` still
+    succeeded because `from __future__ import annotations` leaves those names as
+    strings until the line actually runs.
+    """
+
+    def __init__(self):
+        self.stopped = False
+
+    def spawn_sink(self, kind, port, log_path):
+        return None
+
+    def spawn_source(self, kind, dst, port, duration, dscp, json_out, log_path):
+        return None
+
+    def collect(self):
+        return []
+
+    def stop(self):
+        self.stopped = True
+
+
+class TestEnforcementPathIsReachable(unittest.TestCase):
+    """Guards against a whole class of bug: code that no test executes.
+
+    The real run died with `NameError: name 'FlowTracker' is not defined`
+    despite 471 passing tests, because the only reachable branch skipped the
+    lines that use the name and postponed annotations meant the module still
+    imported cleanly.
+    """
+
+    def _run(self, tmp):
+        r = ExperimentRunner(
+            launcher=_LiveishLauncher(),
+            harness=Harness(runner=FakeRunner(auto_readback=True), clock=lambda: 0.0),
+            results_dir=Path(tmp), real_time=False, tick_s=1.0,
+            bridge_executor=_Exec())
+        res = r.run("s3_tv_and_gaming", SystemSpec.ACIQ, enforce=True)
+        return r, res
+
+    def test_the_enforcement_branch_actually_executes(self):
+        """Checked through the tick counter, not the live objects: teardown runs
+        before run() returns, so by the time a caller looks, the enforcer and the
+        tracker are both gone by design. The counter outlives them."""
+        with tempfile.TemporaryDirectory() as d:
+            r, res = self._run(d)
+            self.assertGreater(r._enf_ticks, 0,
+                               "the enforcement tick never ran")
+            self.assertIn("enforcement ON", " ".join(res.notes))
+
+    def test_it_reports_that_it_steered_nothing(self):
+        """This launcher spawns no traffic, so conntrack is empty and the run
+        measured only the reporting path. The note has to say exactly that --
+        it is the whole point of having a real run to check against."""
+        with tempfile.TemporaryDirectory() as d:
+            _r, res = self._run(d)
+            self.assertIn("STEERED NOTHING", " ".join(res.notes))
+
+    def test_and_teardown_ran(self):
+        """Filters must not outlive the run: a run that leaves them behind steers
+        the next run's traffic before it has decided anything."""
+        with tempfile.TemporaryDirectory() as d:
+            r, _res = self._run(d)
+            self.assertFalse(r.harness.enforcement_enabled)
+            self.assertTrue(r.launcher.stopped)
+            self.assertIsNone(r._tracker, "the tracker outlived the run")
+
+    def test_flowtracker_is_actually_imported(self):
+        """Directly, because the failure mode is an import that silently did not
+        happen rather than one that failed loudly."""
+        import aciq.experiment as E
+        self.assertEqual(E.FlowTracker.__module__, "aciq.flowtrack")
+        self.assertEqual(E.ConntrackSource.__module__, "aciq.flowtrack")
+
+
 class TestSilentEnforcementIsCalledOut(unittest.TestCase):
     """Enforcement that runs and classifies nothing must not read as working.
 

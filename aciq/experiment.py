@@ -27,6 +27,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .flowtrack import ConntrackSource, FlowTracker
 from .harness import SCENARIOS, CapacityMode, Harness, RunResult, SystemSpec
 from .metrics import EvaluationData, MetricsCollector, TextClassSource
 from .model import TrafficClass
@@ -159,6 +160,7 @@ class ExperimentRunner:
         tick_s: float = 1.0,
         real_time: bool = True,
         source=None,
+        bridge_executor=None,
     ):
         self.launcher = launcher or NetnsLauncher()
         self.harness = harness or Harness()
@@ -167,6 +169,9 @@ class ExperimentRunner:
         self.real_time = real_time
         #: counter source; injectable so a dry run never shells out to `tc`
         self.source = source
+        #: bridge executor, injectable for the same reason. Without it, exercising
+        #: the enforcement path in a test means running `tc` for real.
+        self.bridge_executor = bridge_executor
         #: Per-flow enforcement. Off unless `enforce=True` is passed to run();
         #: see aciq/closedloop.py for why it is not simply always on.
         self.enforce = False
@@ -285,7 +290,8 @@ class ExperimentRunner:
         enforcement_on = False
         if will_enforce:
             self.harness.enable_enforcement(
-                capacity_mbps=self.harness._estimator.current.mbps or link_mbps)
+                capacity_mbps=self.harness._estimator.current.mbps or link_mbps,
+                executor=self.bridge_executor)
             self._tracker = FlowTracker()
             self._ct = ConntrackSource(ns=self.harness.ns)
             enforcement_on = self.harness.enforcement_enabled
