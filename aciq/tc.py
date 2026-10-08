@@ -39,6 +39,20 @@ CLASS_IDS: dict[TrafficClass, str] = {
 ROOT_CLASS_ID = "1:1"
 BARE_CLASS_ID = "1:"
 
+#: Filter priorities. `tc` evaluates filters in ASCENDING priority, so a filter
+#: at a higher number is consulted later -- and therefore only ever reached if
+#: nothing above it matched.
+#:
+#: The DSCP-EF filters were previously prio 1/2, which put them ahead of
+#: everything. That was harmless when mark-driven filters did not exist. Now
+#: that the nftables bridge installs mark filters at prio 10-14, leaving EF at
+#: 1/2 would silently pre-empt them: a flow the bridge had explicitly placed in
+#: `unclassified` would still be promoted to EF priority, which is precisely the
+#: evasion `marks.py` and the two-sided EF conflict rule exist to prevent.
+#:
+#: Shared with `bridge.py` by import, so the two cannot drift apart.
+DSCP_FILTER_PRIO = {"ip": 30, "ipv6": 31}
+
 
 def leaf_args(leaf) -> tuple[str, ...]:
     """Normalise a leaf qdisc spec into separate argv elements.
@@ -140,8 +154,10 @@ def build_tree(
 
     filters: list[TcFilter] = []
     if with_filters and TrafficClass.INTERACTIVE in plan.rates:
-        filters.append(TcFilter(1, "ip", CLASS_IDS[TrafficClass.INTERACTIVE]))
-        filters.append(TcFilter(2, "ipv6", CLASS_IDS[TrafficClass.INTERACTIVE]))
+        filters.append(TcFilter(DSCP_FILTER_PRIO["ip"], "ip",
+                                CLASS_IDS[TrafficClass.INTERACTIVE]))
+        filters.append(TcFilter(DSCP_FILTER_PRIO["ipv6"], "ipv6",
+                                CLASS_IDS[TrafficClass.INTERACTIVE]))
 
     return TcTree(capacity_mbps=cap, classes=tuple(classes), filters=tuple(filters))
 

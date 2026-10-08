@@ -272,5 +272,151 @@ $R tc filter show dev veth-lan parent 1: | sed -n '1,14p'
 awk -v a="$BEF" -v b="$AFT" 'BEGIN{exit !(b+0 > a+0 + 5000)}' \
   && ok "check 14: IPv6 EF filter routes to 1:10" || die "check 14: 1:10 bytes did not grow ($BEF -> $AFT)"
 
+
+# ==========================================================================
+# M1 -> M4 bridge: nftables mark -> tc fw -> class
+#
+# Checks 15-20 drive the REAL aciq.bridge generators rather than hand-written
+# copies of the same commands. That is the point of splitting command
+# generation (pure, unit-tested offline) from execution (needs root): the gate
+# proves the kernel accepts what the shipped code emits, instead of proving that
+# a second hand-written transcription of it works.
+#
+# Direction: flows ARRIVE on veth-wan and are shaped EGRESS on veth-lan, so the
+# mark is set on ingress and read by the tc filters on the LAN side.
+# ==========================================================================
+BIN_IF=veth-wan
+EGR_IF=veth-lan
+
+# mark a flow using the shipped Bridge class
+bmark () {  # bmark <src> <dst> <proto> <dport> <class> [timeout]
+  $VENV/bin/python - "$1" "$2" "$3" "$4" "$5" "${6:-120s}" <<'PY'
+import sys
+from aciq.bridge import Bridge, FlowKey
+from aciq.marks import (CLASS_UNCLASSIFIED, CLASS_INTERACTIVE, CLASS_ADAPTIVE,
+                        CLASS_BULK, CLASS_LEASED)
+src, dst, proto, dport, cls, timeout = sys.argv[1:7]
+ids = {"unclassified": CLASS_UNCLASSIFIED, "interactive": CLASS_INTERACTIVE,
+       "adaptive": CLASS_ADAPTIVE, "bulk": CLASS_BULK, "leased": CLASS_LEASED}
+b = Bridge(dev="veth-lan", in_if="veth-wan", ns="router")
+key = FlowKey(src, dst, proto, int(dport))
+argv = generate_add_element(b.family_of(src), key, ids[cls], timeout=timeout)
+import subprocess
+p = subprocess.run(list(argv), capture_output=True, text=True)
+if p.returncode:
+    sys.exit(f"nft add element failed rc={p.returncode}: {p.stderr.strip()}")
+print("marked", src, dst, proto, dport, "->", cls)
+PY
+}
+
+# bytes on an HTB class, by classid
+cbytes () { $R tc -s class show dev "$EGR_IF" \
+  | awk -v c="class htb $1" '$0 ~ c {f=1} f && /Sent/ {print $2; exit}'; }
+
+# send UDP from wan, optionally with an EF DSCP mark
+send () {  # send <dst> <port> <size> <ef:0|1> [count]
+  ip netns exec wan "$VENV/bin/python" - "$1" "$2" "$3" "$4" "${5:-40}" <<'PY'
+import socket, sys, time
+dst, port, size, ef, n = sys.argv[1:6]
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+if ef == "1":
+    s.setsockopt(socket.IPPROTO_IP, socket.IP_TOS, 0xB8)   # DSCP EF
+for _ in range(int(n)):
+    s.sendto(b"x" * int(size), (dst, int(port)))
+    time.sleep(0.002)
+s.close()
+PY
+}
+
+send6 () {  # send6 <dst> <port> <size> [count]
+  ip netns exec wan "$VENV/bin/python" - "$1" "$2" "$3" "${4:-40}" <<'PY'
+import socket, sys, time
+dst, port, size, n = sys.argv[1:5]
+s = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+for _ in range(int(n)):
+    s.sendto(b"x" * int(size), (dst, int(port), 0, 0))
+    time.sleep(0.002)
+s.close()
+PY
+}
+
+# ---------- 15 bridge installs ----------
+export PYTHONPATH="$PWD/.."
+$VENV/bin/python - <<'PY' || die "check 15: bridge setup failed"
+import sys
+sys.path.insert(0, "..")
+from aciq.bridge import Bridge
+Bridge(dev="veth-lan", in_if="veth-wan", ns="router").setup()
+print("bridge setup ok")
+PY
+ip netns exec router nft list table ip aciq >/dev/null 2>&1 \
+  || die "check 15: ip table aciq not created"
+ip netns exec router nft list table ip6 aciq >/dev/null 2>&1 \
+  || die "check 15: ip6 table aciq not created"
+$R nft list set ip aciq interactive | grep -q "flags timeout" \
+  || die "check 15: interactive set lacks 'flags timeout' (mark expiry)"
+$R tc filter show dev "$EGR_IF" parent 1: | grep -q "fw" \
+  || die "check 15: no fw filter installed"
+$R tc filter show dev "$EGR_IF" parent 1: | sed -n '1,20p'
+ok "check 15: bridge installs (nft tables, timeout sets, tc fw filters)"
+
+# ---------- 16 IPv4 mark routes to the marked class ----------
+A20=$(cbytes 1:20); A10=$(cbytes 1:10)
+bmark 203.0.113.2 10.0.1.2 udp 7001 adaptive || die "check 16: marking failed"
+send 10.0.1.2 7001 1000 0 60
+B20=$(cbytes 1:20); B10=$(cbytes 1:10)
+echo "1:20 $A20 -> $B20   1:10 $A10 -> $B10"
+awk -v a="$A20" -v b="$B20" 'BEGIN{exit !(b+0 > a+0 + 20000)}' \
+  && ok "check 16: IPv4 mark routes udp/7001 to class 1:20" \
+  || die "check 16: 1:20 did not grow ($A20 -> $B20)"
+
+# ---------- 17 a flow marked unclassified loses EF priority ----------
+# The evasion path: a flow that claims DSCP EF but was classified as bulk or
+# unclassified must NOT reach 1:10. Without the 'seen' bit it would fall through
+# to the DSCP-EF filter at prio 30 and get interactive priority anyway.
+C10=$(cbytes 1:10)
+bmark 203.0.113.2 10.0.1.2 udp 7002 unclassified || die "check 17: marking failed"
+send 10.0.1.2 7002 1000 1 60     # DSCP EF set
+sleep 1
+D10=$(cbytes 1:10)
+echo "EF-marked but classified unclassified: 1:10 $C10 -> $D10"
+awk -v a="$C10" -v b="$D10" 'BEGIN{exit !(b+0 <= a+0 + 2000)}' \
+  && ok "check 17: unclassified flow denied EF priority" \
+  || die "check 17: EF-claimed unclassified flow still reached 1:10 ($C10 -> $D10)"
+
+# ---------- 18 IPv6 mark routes to the marked class ----------
+A20=$(cbytes 1:20)
+bmark 2001:db8::2 fd00:1::2 udp 7003 adaptive || die "check 18: marking failed"
+send6 fd00:1::2 7003 1000 60
+sleep 1
+B20=$(cbytes 1:20)
+echo "ipv6 1:20 $A20 -> $B20"
+awk -v a="$A20" -v b="$B20" 'BEGIN{exit !(b+0 > a+0 + 20000)}' \
+  && ok "check 18: IPv6 mark routes udp/7003 to class 1:20" \
+  || die "check 18: IPv6 1:20 did not grow ($A20 -> $B20)"
+
+# ---------- 19 mark expiry ----------
+# A short-lived element must age out in the kernel. This is the whole of mark
+# expiry: no userspace sweeper, and a crashed ACIQ cannot leave stale marks
+# alive because the kernel's timers keep running.
+bmark 203.0.113.2 10.0.1.2 udp 7004 adaptive 3s || die "check 19: marking failed"
+$R nft list set ip aciq adaptive | grep -q 7004 \
+  || die "check 19: element absent immediately after add"
+sleep 6
+$R nft list set ip aciq adaptive | grep -q 7004 \
+  && die "check 19: element still present after its 3s timeout" \
+  || ok "check 19: mark expires via kernel set timeout"
+
+# ---------- 20 teardown ----------
+$VENV/bin/python - <<'PY' || die "check 20: bridge teardown failed"
+import sys
+sys.path.insert(0, "..")
+from aciq.bridge import Bridge
+Bridge(dev="veth-lan", in_if="veth-wan", ns="router").teardown()
+PY
+ip netns exec router nft list table ip aciq >/dev/null 2>&1 \
+  && die "check 20: ip table aciq still present after teardown" \
+  || ok "check 20: teardown removes the bridge tables"
+
 summary
 echo; echo "log saved to $LOG"
