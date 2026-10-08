@@ -837,16 +837,21 @@ class Bridge:
         return self._do(generate_del_flow_filter(
             self.dev, handle_for(key), proto, self.ns), missing_ok=True)
 
-    def classify_flow(self, key: FlowKey, class_id: int | None) -> list[tuple[str, ...]]:
+    def classify_flow(self, key: FlowKey, class_id: int | None,
+                      confidence: float = 0.0) -> list[tuple[str, ...]]:
         """Apply a classification verdict, where None means "unclassified".
 
         An unclassified flow gets its filter removed rather than pointed at a
         default class, so it falls through to the HTB default exactly as an
         unclassified flow should.
+
+        `confidence` is forwarded to `mark` rather than taken and discarded: it
+        is the classifier's own statement of how sure it is, and a bridge that
+        threw it away could not tell a confident verdict from a marginal one.
         """
         if class_id is None:
             return self.forget(key)
-        return self.mark(key, class_id)
+        return self.mark(key, class_id, confidence=confidence)
 
     def family_of(self, src: str) -> str:
         """Address family from the literal. Delegates to the module-level

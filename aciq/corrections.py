@@ -217,18 +217,24 @@ class CorrectionStore:
     # -- writing -----------------------------------------------------------
     def record(self, flow: Flow, cls: TrafficClass, reason: str = "",
                by: str = "user", dport: int | None | object = _UNSET,
-               ttl_s: float | None = DEFAULT_TTL_S) -> Correction:
+               ttl_s: float | None | object = _UNSET) -> Correction:
         """Append a correction. Creates `data/` if needed.
 
         `dport` defaults to the flow's port. Pass `dport=None` explicitly for
         host scope. A plain `None` default would have conflated "not specified"
         with "every port", silently turning a host-wide correction into a
         single-port one.
+
+        `ttl_s` defaults to the *store's* ttl_s, for the same reason and with the
+        same `_UNSET` sentinel: it used to default to DEFAULT_TTL_S directly, so
+        `CorrectionStore(ttl_s=60)` kept corrections alive for 24 hours and the
+        caller's TTL was silently discarded. `ttl_s=None` means never expires.
         """
         if cls is None:
             raise CorrectionError("a correction must name a class")
         now = time.time() if self._now is None else self._now
-        expires = None if ttl_s is None else now + ttl_s
+        ttl = self.ttl_s if ttl_s is _UNSET else ttl_s
+        expires = None if ttl is None else now + ttl
         c = Correction(
             src=flow.src, dst=flow.dst, proto=flow.proto,
             dport=flow.dport if dport is _UNSET else dport,  # type: ignore[arg-type]

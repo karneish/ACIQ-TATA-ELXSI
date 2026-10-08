@@ -30,7 +30,11 @@ import time
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 
+from .bridge import Bridge
 from .capacity import CapacityEstimator
+from .closedloop import ClosedLoop, Verdict
+from .classify import FlowFeatures
+from .corrections import CorrectionStore
 from .metrics import ClassCounters, CounterSnapshot, MetricsCollector
 from .model import Lease, RatePlan, TrafficClass
 from .policy import build_plan
@@ -183,6 +187,63 @@ class Harness:
         self._estimator = CapacityEstimator()
         self._collector: MetricsCollector | None = None
         self.policy_changes = 0
+        #: None until enable_enforcement() is called. See aciq/enforce.py for why
+        #: this is opt-in rather than always-on.
+        self._enforcer: ClosedLoop | None = None
+
+    # ---------------- enforcement: opt-in, see aciq/enforce.py ----------------
+    @property
+    def enforcement_enabled(self) -> bool:
+        return self._enforcer is not None
+
+    def enable_enforcement(self, corrections=None, capacity_mbps: float = 100.0,
+                           dev: str | None = None, in_if: str | None = None,
+                           ns: str | None = None, executor=None) -> ClosedLoop:
+        """Turn classification into per-flow tc filters.
+
+        Idempotent: calling it twice returns the same enforcer rather than
+        building a second Bridge, because two bridges would each enumerate and
+        delete the same filters on teardown.
+        """
+        if self._enforcer is not None:
+            return self._enforcer
+        # executor is injectable for the same reason `runner` is on __init__:
+        # setup() enumerates the tc tree, which needs root, and a control-logic
+        # test should not need root to prove a decision reaches the kernel.
+        self._enforcer = ClosedLoop(
+            Bridge(dev or self.dev, in_if or "eth0", ns or self.ns,
+                   executor=executor),
+            corrections=corrections if corrections is not None else CorrectionStore(),
+            capacity_mbps=capacity_mbps,
+        )
+        self._enforcer.bridge.setup()
+        return self._enforcer
+
+    def disable_enforcement(self) -> None:
+        """Remove every filter and go back to reporting-only.
+
+        Teardown rather than just dropping the reference: a filter that outlives
+        the enforcer keeps steering a flow to a class nothing is watching, which
+        is exactly the residue check 20 was written to catch.
+        """
+        if self._enforcer is not None:
+            self._enforcer.teardown()
+            self._enforcer = None
+
+    def enforce(self, features: FlowFeatures, now: float | None = None) -> Verdict | None:
+        """Classify one flow and enforce the verdict. None if not enabled.
+
+        Returning None rather than raising when enforcement is off: most callers
+        run in reporting-only mode, and a run that silently classified without
+        enforcing is a legitimate thing to want.
+        """
+        if self._enforcer is None:
+            return None
+        if self._enforcer.capacity_mbps != self._current_capacity:
+            self._enforcer.set_capacity(self._current_capacity)
+        return self._enforcer.apply(features, now=now)
+
+    _current_capacity: float = 100.0
 
     # ---------------- the invariant ----------------
     def set_capacity(self, capacity_mbps: float) -> tuple[str, ...]:
@@ -198,6 +259,7 @@ class Harness:
             "rate", f"{capacity_mbps:.4f}mbit", "ceil", f"{capacity_mbps:.4f}mbit",
         )
         self.runner.run(argv)
+        self._current_capacity = capacity_mbps
         return argv
 
     # ---------------- system setup ----------------
