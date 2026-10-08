@@ -476,6 +476,13 @@ B20=$(cbytes 1:20); B30=$(cbytes 1:30)
 PKT=$(rulepkts adaptive)
 echo "16b (steered by nft): 1:20 $A20 -> $B20   1:30 $A30 -> $B30   rule matched $PKT pkt"
 $R nft list set ip aciq adaptive | sed -n '1,8p'
+echo "--- the rule as the kernel has it (does it set meta priority?) ---"
+$R nft list ruleset | grep '@adaptive' | head -1
+echo "--- PER-FILTER packet counters ---"
+# Decisive and previously unused: if filter pref 12 shows 0 packets, flower did
+# not match the DSCP. If it shows 60 and 1:20 is still flat, the flowid is not
+# being applied -- a different fault with a different fix.
+$R tc -s filter show dev "$EGR_IF" parent 1: | grep -E 'pref|ip_tos|packets'
 echo "--- steer filters ---"
 $R tc filter show dev "$EGR_IF" parent 1: | grep -E 'pref|ip_tos'
 awk -v p="$PKT" 'BEGIN{exit !(p+0 > 0)}' \
