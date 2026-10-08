@@ -289,6 +289,61 @@ if [ "${G1:-0}" -gt "${G0:-0}" ]; then res "G: flower matches skb->priority -- t
 else res "G: flower ignores skb->priority; it reads the header" 1; fi
 echo
 
+# ---------------------------------------------------------------------------
+# H: the destination port may be the variable that has been hiding all along.
+#
+#   A  dport 7010, sender sets DSCP 0x18            -> PASS
+#   F  dport 7010, sender sets DSCP 0x18, u32       -> PASS
+#   B  dport 7001, nft rewrites DSCP to 0x18        -> FAIL
+#   D  dport 7001, nft rewrites DSCP to 0x18, u32   -> FAIL
+#
+# Port has been a silent confound throughout. Every pass used 7010 and every
+# failure used 7001, and the two differ in BOTH the port and how the DSCP got
+# there -- so "the DSCP written by nftables is invisible to tc" and "something
+# about 7001" fit the evidence equally well.
+#
+# H separates them: the nftables rule steers 7010, and the sender sets DSCP 0.
+# Same mechanism as B, different port.
+# ---------------------------------------------------------------------------
+echo "--- H: identical mechanism, dport 7010 instead of 7001 ---"
+$R tc filter del dev "$DEV" parent 1: protocol ip pref 9 2>/dev/null
+$R nft delete table ip isote 2>/dev/null
+$R nft add table ip isote
+$R nft add chain ip isote c '{ type filter hook prerouting priority mangle; policy accept; }'
+$R nft add rule ip isote c iifname "$IN" th dport 7010 ip dscp set cs3 counter
+H0=$(b 1:20); H3=$(b 1:30)
+send 7010 00 60
+sleep 1
+H1=$(b 1:20); H3n=$(b 1:30)
+HPK=$($R nft list ruleset | grep 'isote' | grep 'dport 7010' \
+       | sed -n 's/.*counter packets \([0-9]*\).*/\1/p')
+echo "  1:20 $H0 -> $H1    1:30 $H3 -> $H3n    nft rule matched ${HPK:-?} pkt"
+if [ "${H1:-0}" -gt "${H0:-0}" ]; then
+  res "H: nftables-steered DSCP WORKS on dport 7010 -- the port was the variable" 0
+else
+  res "H: nftables-steered DSCP fails on 7010 too -- it is the mechanism" 1
+fi
+echo
+
+# ---------------------------------------------------------------------------
+# I: and the mirror image -- sender sets the DSCP on dport 7001, no nftables.
+# If I passes while B fails with identical packets except provenance, provenance
+# is the variable. If I fails too, the port is.
+# ---------------------------------------------------------------------------
+echo "--- I: mirror of H -- sender sets DSCP 0x18 on dport 7001, no nftables ---"
+$R nft delete table ip isote 2>/dev/null
+I0=$(b 1:20)
+send 7001 18 60
+sleep 1
+I1=$(b 1:20)
+echo "  1:20 $I0 -> $I1"
+if [ "${I1:-0}" -gt "${I0:-0}" ]; then
+  res "I: sender-set DSCP works on 7001 -- the port is innocent, provenance is it" 0
+else
+  res "I: sender-set DSCP fails on 7001 -- the PORT is the variable" 1
+fi
+echo
+
 echo "=== SUMMARY ==="
 echo "PASS $PASS  FAIL $FAIL"
 echo
@@ -311,3 +366,9 @@ echo "                    priority, and test C's failure is then the anomaly"
 echo "                    worth chasing."
 echo "  G fail          -> flower reads the header, and test B's failure cannot"
 echo "                    be explained by hook counters. Re-examine the premise."
+echo
+echo "  H pass, I pass  -> provenance: an nftables-written DSCP is not visible to"
+echo "                    tc, a sender-written one is. The fix is a different"
+echo "                    signalling channel, not a different classifier."
+echo "  H pass, I fail  -> the port: 7001 specifically defeats both classifiers."
+echo "  H fail, I pass  -> the mechanism, confirmed with the port held constant."
