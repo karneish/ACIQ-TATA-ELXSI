@@ -1,0 +1,29 @@
+# ACIQ — generated data, run artefacts, logs
+data/*
+# ...except the frozen v0 baseline, which must be versioned: it is the only
+# measured evidence the project has, and the driver deletes each run directory
+# before re-running.
+!data/baselines/
+data/baselines/*/
+!data/baselines/v0/
+!data/baselines/v0/**
+testbed/logs/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Never commit real secrets. Only .env.example belongs in version control.
+.env
+*.key
+*.pem
