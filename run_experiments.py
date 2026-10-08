@@ -54,6 +54,11 @@ def main() -> int:
     ap.add_argument("--mode", default="adaptive",
                     choices=[m.value for m in CapacityMode])
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--seeds", type=int, default=None,
+                    help="run this many seeds starting at --seed, in one "
+                         "invocation. The report needs >=6 paired runs before it "
+                         "will emit a p-value, and one invocation means the "
+                         "testbed is built and torn down once instead of per seed.")
     ap.add_argument("--link", type=float, default=100.0)
     ap.add_argument("--drop", type=float, default=20.0)
     ap.add_argument("--drop-at", type=float, default=None,
@@ -122,22 +127,28 @@ def main() -> int:
         source=source,
     )
 
+    # One seed unless --seeds was given. Kept as a list so the loop reads the same
+    # either way, rather than branching inside the inner loop.
+    seeds = ([args.seed] if not args.seeds
+             else [args.seed + i for i in range(args.seeds)])
+
     try:
         for sc in scenarios:
             for sysspec in systems:
                 m = mode if sysspec is SystemSpec.ACIQ else CapacityMode.STATIC
-                print(f"\n=== {sc} / {sysspec.value} / {m.value} / seed {args.seed} ===")
-                res = runner.run(
-                    sc, sysspec, m, args.seed, args.link, args.drop, args.drop_at,
-                    settle_s=args.settle, enforce=args.enforce)
-                for n in res.notes:
-                    # only real problems get a warning marker; a note like
-                    # "no capacity drop" is informational and alarming it would
-                    # make every successful run look like a failure
-                    warn = "failed" in n.lower() or "error" in n.lower()
-                    print(f"    {'!' if warn else '  '} {n}")
-                print(f"    estimator={res.estimator_mbps} "
-                      f"policy_changes={res.policy_changes}")
+                for seed in seeds:
+                    print(f"\n=== {sc} / {sysspec.value} / {m.value} / seed {seed} ===")
+                    res = runner.run(
+                        sc, sysspec, m, seed, args.link, args.drop, args.drop_at,
+                        settle_s=args.settle, enforce=args.enforce)
+                    for n in res.notes:
+                        # only real problems get a warning marker; a note like
+                        # "no capacity drop" is informational and alarming it
+                        # would make every successful run look like a failure
+                        warn = "failed" in n.lower() or "error" in n.lower()
+                        print(f"    {'!' if warn else '  '} {n}")
+                    print(f"    estimator={res.estimator_mbps} "
+                          f"policy_changes={res.policy_changes}")
     finally:
         if not args.no_setup:
             print("\n=== tearing down testbed ===")
