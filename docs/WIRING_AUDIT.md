@@ -155,6 +155,10 @@ Three errors of mine, verified by re-running the code:
 
 > The measured system is **DSCP-EF filtering + HTB + `fq_codel`**.
 > The behavioural classifier is tested but not connected to enforcement.
+
+*(That label describes the v0 baseline only. The classifier-to-enforcement join
+exists as of 2026-10-08 and is proven by gate checks 16-20, but no run has been
+measured with it enabled, so no result here should be read as post-wiring.)*
 > In scenario 3 the three video streams were classified into **BULK**, not
 > ADAPTIVE. No lease was exercised. These are the results of system **v0**.
 
@@ -381,10 +385,31 @@ filters left by a crashed run survive until the device is reconfigured. Clearing
 them properly needs enumeration of the tc tree, which is not implemented. In the
 gate this is invisible because each run rebuilds the namespaces.
 
-## Still NOT wired
+## SUPERSEDED (2026-10-08): now wired
 
-`aciq/harness.py` does not import `aciq.bridge`. Nothing in the runtime calls
-`classify()` or `Bridge.mark()` yet.
+Everything above was measured, and it was true when measured. The gap it
+recorded is closed:
+
+* `aciq/closedloop.py` calls `classify()`, then `CorrectionStore.lookup()`, then
+  `Bridge.classify_flow()`, in that order.
+* `Harness.enable_enforcement()` builds the bridge; `Harness.enforce(features)`
+  applies one verdict.
+* Enforcement is **opt-in**: `enforcement_enabled` is False until a run asks.
+
+What this document's evidence sections still prove, unchanged:
+
+* The v0 baseline results remain DSCP-EF + HTB + fq_codel. They predate the join
+  and are labelled that way in `data/baselines/v0/README.md`. **No post-wiring
+  run has been measured yet**, so `adaptive_video: goodput 0.0` is still the last
+  observed value and "the classifier is inert" is still true *of those results*.
+* "ADAPTIVE is unreachable" was a claim about `tc.py` emitting filters only to
+  `1:10`. ADAPTIVE is now reachable by a different mechanism -- a per-flow `tc
+  flower` filter at priority 5/6 -- proven by gate checks 16, 18, 19 and 20.
+
+Gate check 20 also retired the residue paragraph above: `setup()` and `teardown()`
+now enumerate the tc tree with `tc -j filter show` and delete every flower filter
+at our two priorities, which is why a fresh `Bridge` can clear a predecessor's
+filters.
 
 ## The bridge: what the first real run proved
 
