@@ -299,6 +299,13 @@ EGR_IF=veth-lan
 
 # mark a flow using the shipped Bridge class
 bmark () {  # bmark <src> <dst> <proto> <dport> <class> [timeout]
+  # Preflight: the table must exist in the ROUTER namespace. `ns` defaults to
+  # None, so omitting it runs nft in the host namespace where table `aciq` does
+  # not exist, and nft answers "No such file or directory" pointing at the set
+  # name -- which reads like a missing set in the bridge rather than a missing
+  # namespace in this helper.
+  ip netns exec router nft list table ip aciq >/dev/null 2>&1 \
+    || die "bmark: no aciq table in the router namespace (is check 15 installed it?)"
   $VENV/bin/python - "$1" "$2" "$3" "$4" "$5" "${6:-120s}" <<'PY'
 import sys
 from aciq.bridge import FlowKey, family_of, generate_add_element
@@ -308,12 +315,15 @@ src, dst, proto, dport, cls, timeout = sys.argv[1:7]
 ids = {"unclassified": CLASS_UNCLASSIFIED, "interactive": CLASS_INTERACTIVE,
        "adaptive": CLASS_ADAPTIVE, "bulk": CLASS_BULK, "leased": CLASS_LEASED}
 key = FlowKey(src, dst, proto, int(dport))
-argv = generate_add_element(family_of(src), key, ids[cls], timeout=timeout)
+# ns="router" is essential: without it the element is added in the host
+# namespace and fails with "No such file or directory" on the set name.
+argv = generate_add_element(family_of(src), key, ids[cls], timeout=timeout,
+                            ns="router")
 import subprocess
 p = subprocess.run(list(argv), capture_output=True, text=True)
 if p.returncode:
     sys.exit(f"nft add element failed rc={p.returncode}: {p.stderr.strip()}")
-print("marked", src, dst, proto, dport, "->", cls)
+print("steered", src, dst, proto, dport, "->", cls, "(ns=router)")
 PY
 }
 
@@ -412,7 +422,13 @@ awk -v a="$C10" -v b="$D10" 'BEGIN{exit !(b+0 <= a+0 + 2000)}' \
 
 # ---------- 18 IPv6 mark routes to the marked class ----------
 A20=$(cbytes 1:20)
-bmark 2001:db8::2 fd00:1::2 udp 7003 adaptive || die "check 18: steering failed"
+# Source must be the wan namespace's IPv6 address. Check 13's conntrack line
+# reads `src=fd00:2::2 dst=fd00:1::2 dport=7003`, and the nft set key is matched
+# on (saddr, daddr, proto, dport) -- so the wrong source address yields an
+# element that never matches, and the check fails while looking like a broken
+# IPv6 steering path. The earlier value here was 2001:db8::2, taken from a
+# documentation-range fixture rather than from the testbed's own addressing.
+bmark fd00:2::2 fd00:1::2 udp 7003 adaptive || die "check 18: steering failed"
 send6 fd00:1::2 7003 1000 60
 sleep 1
 B20=$(cbytes 1:20)
@@ -425,7 +441,7 @@ awk -v a="$A20" -v b="$B20" 'BEGIN{exit !(b+0 > a+0 + 20000)}' \
 # A short-lived element must age out in the kernel. This is the whole of mark
 # expiry: no userspace sweeper, and a crashed ACIQ cannot leave stale marks
 # alive because the kernel's timers keep running.
-bmark 203.0.113.2 10.0.1.2 udp 7004 adaptive 3s || die "check 19: marking failed"
+bmark 203.0.113.2 10.0.1.2 udp 7004 adaptive 3s || die "check 19: steering failed"
 $R nft list set ip aciq adaptive | grep -q 7004 \
   || die "check 19: element absent immediately after add"
 sleep 6

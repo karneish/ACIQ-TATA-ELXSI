@@ -915,3 +915,37 @@ class TestFamilyOf(unittest.TestCase):
     def test_method_delegates_to_the_helper(self):
         from aciq.bridge import Bridge
         self.assertEqual(Bridge("d", "e").family_of("2001:db8::1"), "ip6")
+
+
+class TestNamespaceDefault(unittest.TestCase):
+    """`ns` defaults to None, which means "the current namespace".
+
+    Documented rather than changed: making it mandatory would be the safer
+    default, but it is a public keyword on five generators and the unit tests
+    legitimately call them with ns=None.
+
+    This footgun cost a gate run. The gate's `bmark` helper omitted `ns`, so
+    `nft add element` ran in the host namespace where table `aciq` does not
+    exist, and nft answered "No such file or directory" pointing at the SET
+    name -- which reads like a missing set in the bridge rather than a missing
+    namespace in the caller.
+    """
+
+    def test_ns_none_omits_the_prefix(self):
+        self.assertEqual(
+            generate_add_element("ip", V4, CLASS_BULK, ns=None)[:3], ("nft", "add", "element"))
+        self.assertEqual(
+            generate_add_element("ip", V4, CLASS_BULK, ns="router")[:4],
+            ("ip", "netns", "exec", "router"))
+
+    def test_every_generator_defaults_ns_to_none(self):
+        import inspect
+        for fn in (generate_add_element, generate_del_element,
+                   generate_table, generate_sets, generate_rules,
+                   generate_steer_filters, generate_teardown, generate_flush):
+            self.assertIsNone(inspect.signature(fn).parameters["ns"].default, fn)
+
+    def test_passing_a_namespace_changes_only_the_prefix(self):
+        plain = bare(generate_add_element("ip", V4, CLASS_BULK))
+        namespaced = bare(generate_add_element("ip", V4, CLASS_BULK, ns="router"))
+        self.assertEqual(plain, namespaced)
