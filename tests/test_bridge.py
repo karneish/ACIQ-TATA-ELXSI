@@ -23,6 +23,7 @@ from aciq.bridge import (
     FLOW_FILTER_PRIO,
     MARKED_CLASSES,
     MAX_FLOW_HANDLE,
+    handle_for,
     Bridge,
     BridgeError,
     FlowKey,
@@ -157,6 +158,58 @@ class TestFlowFilter(unittest.TestCase):
             with self.assertRaises(BridgeError):
                 generate_flow_filter(V4, CLASS_ADAPTIVE, "d", bad)
 
+
+class TestHandlesAreDerived(unittest.TestCase):
+    """tc's handle namespace is per DEVICE, so a per-process counter collides.
+
+    Gate check 17 found this: every gate helper is a fresh Bridge, so each one
+    restarted its counter at 1 and the second `tc filter add` failed with
+    "Filter already exists".
+    """
+
+    def test_same_flow_same_handle(self):
+        self.assertEqual(handle_for(V4), handle_for(V4))
+
+    def test_different_flows_different_handles(self):
+        other = FlowKey("203.0.113.2", "10.0.1.2", "udp", 7002)
+        self.assertNotEqual(handle_for(V4), handle_for(other))
+
+    def test_every_field_participates(self):
+        base = handle_for(V4)
+        for k in (FlowKey("203.0.113.3", "10.0.1.2", "udp", 7001),
+                  FlowKey("203.0.113.2", "10.0.1.3", "udp", 7001),
+                  FlowKey("203.0.113.2", "10.0.1.2", "tcp", 7001),
+                  FlowKey("203.0.113.2", "10.0.1.2", "udp", 7002)):
+            self.assertNotEqual(handle_for(k), base, k)
+
+    def test_never_zero(self):
+        """tc treats handle 0 as unassigned."""
+        for i in range(500):
+            self.assertNotEqual(
+                handle_for(FlowKey(f"10.0.0.{i % 254}", "1.1.1.1", "tcp", i)), 0)
+
+    def test_fits_32_bits(self):
+        for i in range(200):
+            h = handle_for(FlowKey(f"10.0.0.{i % 254}", "1.1.1.1", "udp", 1 + i))
+            self.assertTrue(0 < h <= MAX_FLOW_HANDLE)
+
+    def test_identical_across_bridge_instances(self):
+        k = FlowKey("203.0.113.2", "10.0.1.2", "udp", 7001)
+        b1 = Bridge("d", "e", dry_run=True)
+        b2 = Bridge("d", "e", dry_run=True)
+        h1 = [c[c.index("handle") + 1] for c in b1.mark(k, CLASS_BULK)
+              if bare(c)[2] == "add"][0]
+        h2 = [c[c.index("handle") + 1] for c in b2.mark(k, CLASS_ADAPTIVE)
+              if bare(c)[2] == "add"][0]
+        self.assertEqual(h1, h2)
+
+    def test_two_instances_on_different_flows_do_not_collide(self):
+        b1 = Bridge("d", "e", dry_run=True)
+        b2 = Bridge("d", "e", dry_run=True)
+        b1.mark(V4, CLASS_BULK)
+        b2.mark(V6, CLASS_ADAPTIVE)
+        self.assertNotEqual(handle_for(V4), handle_for(V6))
+
     def test_precedes_the_dscp_ef_fallback(self):
         """An explicit classification must beat the EF heuristic -- the ordering
         the `seen` bit used to encode, now expressed in tc."""
@@ -213,11 +266,14 @@ class TestDeleteFilter(unittest.TestCase):
 
 
 class TestBridgeMarking(unittest.TestCase):
-    def test_first_mark_installs_one_filter(self):
+    def test_first_mark_deletes_then_adds(self):
+        """The delete is unconditional even with nothing to delete, so a restart
+        re-adopts its own filters instead of colliding with them."""
         r = Recorder()
         Bridge("d", "eth1", "router", executor=r).mark(V4, CLASS_ADAPTIVE)
-        self.assertEqual(len(r.calls), 1)
-        self.assertEqual(bare(r.calls[0])[:3], ("tc", "filter", "add"))
+        self.assertEqual(len(r.calls), 2)
+        self.assertEqual(bare(r.calls[0])[:3], ("tc", "filter", "del"))
+        self.assertEqual(bare(r.calls[1])[:3], ("tc", "filter", "add"))
 
     def test_repeat_mark_in_same_class_is_a_no_op(self):
         """An add per tick per flow would spend the entire netlink budget for
@@ -225,42 +281,59 @@ class TestBridgeMarking(unittest.TestCase):
         r = Recorder()
         b = Bridge("d", "eth1", "router", executor=r)
         b.mark(V4, CLASS_ADAPTIVE)
+        self.assertEqual(len(r.calls), 2)          # del + add
         for _ in range(50):
             self.assertEqual(b.mark(V4, CLASS_ADAPTIVE), [])
-        self.assertEqual(len(r.calls), 1)
+        self.assertEqual(len(r.calls), 2, "no further netlink traffic")
 
     def test_reclassification_deletes_then_adds(self):
         r = Recorder()
         b = Bridge("d", "eth1", "router", executor=r)
         b.mark(V4, CLASS_BULK)
         b.mark(V4, CLASS_INTERACTIVE)
-        self.assertEqual(len(r.calls), 3)
-        self.assertEqual(bare(r.calls[1])[:3], ("tc", "filter", "del"))
-        self.assertIn("1:10", r.calls[2])
+        # each mark is del+add
+        self.assertEqual(len(r.calls), 4)
+        self.assertEqual(bare(r.calls[2])[:3], ("tc", "filter", "del"))
+        self.assertIn("1:10", r.calls[3])
 
-    def test_reclassification_uses_a_fresh_handle(self):
-        """A reused handle would let a stale delete remove another flow's filter."""
+    def test_mark_after_a_fake_restart_does_not_collide(self):
+        """The check-17 failure, as a test: a second Bridge marking a DIFFERENT
+        flow must not reuse handle 1."""
+        r1 = Recorder()
+        Bridge("d", "eth1", "router", executor=r1).mark(V4, CLASS_BULK)
+        r2 = Recorder()
+        other = FlowKey("203.0.113.2", "10.0.1.2", "udp", 7002)
+        Bridge("d", "eth1", "router", executor=r2).mark(other, CLASS_ADAPTIVE)
+        h1 = [c[c.index("handle") + 1] for c in r1.calls
+              if bare(c)[2] == "add"][0]
+        h2 = [c[c.index("handle") + 1] for c in r2.calls
+              if bare(c)[2] == "add"][0]
+        self.assertNotEqual(h1, h2)
+
+    def test_reclassification_reuses_the_same_handle(self):
+        """Deliberate: the same flow must land on the same handle so the old
+        filter is replaced rather than left orphaned beside the new one."""
         r = Recorder()
         b = Bridge("d", "eth1", "router", executor=r)
         b.mark(V4, CLASS_BULK)
         b.mark(V4, CLASS_ADAPTIVE)
         handles = [c[c.index("handle") + 1] for c in r.calls
                    if bare(c)[2] == "add"]
-        self.assertEqual(len(set(handles)), 2)
+        self.assertEqual(len(set(handles)), 1)
 
-    def test_handles_are_never_reused_across_flows(self):
+    def test_handles_are_distinct_across_flows(self):
         b = Bridge("d", "eth1", "router", executor=Recorder())
         for i in range(20):
             b.mark(FlowKey("1.1.1.1", "2.2.2.2", "tcp", 1000 + i), CLASS_BULK)
         handles = [s.handle for s in b.state.slots.values()]
         self.assertEqual(len(set(handles)), 20)
 
-    def test_handle_exhaustion_raises(self):
+    def test_no_handle_exhaustion(self):
+        """Handles are derived, so there is no counter to exhaust."""
         b = Bridge("d", "eth1", "router", executor=Recorder())
-        b.state.next_handle = MAX_FLOW_HANDLE
-        b.mark(V4, CLASS_BULK)
-        with self.assertRaises(BridgeError):
-            b.mark(FlowKey("1.1.1.1", "2.2.2.2", "tcp", 9999), CLASS_BULK)
+        for i in range(300):
+            b.mark(FlowKey(f"10.0.0.{i % 254}", "2.2.2.2", "tcp", 1 + i),
+                   CLASS_BULK)
 
     def test_flows_are_tracked_separately(self):
         b = Bridge("d", "eth1", "router", executor=Recorder())
@@ -277,11 +350,22 @@ class TestBridgeMarking(unittest.TestCase):
         self.assertEqual(bare(r.calls[0])[:3], ("tc", "filter", "del"))
         self.assertEqual(len(b.state.slots), 0)
 
-    def test_forget_on_an_unknown_flow_is_a_no_op(self):
+    def test_forget_works_with_empty_state(self):
+        """A fresh Bridge must still be able to release a flow. The gate's
+        bunmark helper is exactly that case, and it silently did nothing while
+        forget depended on in-process state."""
         r = Recorder()
         b = Bridge("d", "eth1", "router", executor=r)
-        self.assertEqual(b.forget(V4), [])
-        self.assertEqual(r.calls, [])
+        ran = b.forget(V4)
+        self.assertEqual(len(ran), 1)
+        self.assertEqual(bare(ran[0])[:3], ("tc", "filter", "del"))
+        self.assertEqual(bare(ran[0])[bare(ran[0]).index("handle") + 1],
+                         f"0x{handle_for(V4):08x}")
+
+    def test_forget_on_an_unknown_flow_still_issues_a_delete(self):
+        r = Recorder()
+        Bridge("d", "eth1", "router", executor=r).forget(V4)
+        self.assertEqual(len(r.calls), 1)
 
     def test_lease_release_then_remark(self):
         r = Recorder()
@@ -307,7 +391,9 @@ class TestBridgeMarking(unittest.TestCase):
         r = Recorder()
         b = Bridge("d", "eth1", "router", executor=r)
         b.classify_flow(V4, CLASS_INTERACTIVE)
-        self.assertEqual(bare(r.calls[0])[:3], ("tc", "filter", "add"))
+        # del then add; the add carries the class
+        self.assertEqual(bare(r.calls[-1])[:3], ("tc", "filter", "add"))
+        self.assertIn("1:10", r.calls[-1])
 
     def test_ipv6_flow_uses_the_ipv6_protocol_and_prio(self):
         r = Recorder()
@@ -334,6 +420,7 @@ class TestLifecycle(unittest.TestCase):
         b.teardown()
         # two filter deletes, then one table teardown per address family
         self.assertEqual(len(r.calls), 4)
+        self.assertEqual(b.state.slots, {})
         self.assertEqual(sum(1 for c in r.calls if "tc" in c), 2)
         self.assertTrue(all(bare(c)[:3] == ("tc", "filter", "del")
                             for c in r.calls if "tc" in c))
@@ -355,10 +442,26 @@ class TestLifecycle(unittest.TestCase):
         self.assertEqual(len(r.calls), 1)
         self.assertEqual(bare(r.calls[0])[:3], ("tc", "filter", "del"))
 
+    def test_setup_on_an_empty_state_cannot_see_residue(self):
+        """A fresh process has empty state, so setup() cannot know which filters
+        a previous run left. Documented as a real limit rather than glossed:
+        clearing residue across restarts needs enumeration, which this does not
+        yet do."""
+        r = Recorder()
+        Bridge("d", "eth1", "router", executor=r).setup()
+        self.assertEqual(r.calls, [])
+
     def test_setup_on_a_clean_bridge_does_nothing(self):
         r = Recorder()
         Bridge("d", "eth1", "router", executor=r).setup()
         self.assertEqual(r.calls, [])
+
+    def test_state_is_cleared_by_teardown(self):
+        r = Recorder()
+        b = Bridge("d", "eth1", "router", executor=r)
+        b.mark(V4, CLASS_BULK)
+        b.teardown()
+        self.assertEqual(b.state.slots, {})
 
     def test_dry_run_executes_nothing(self):
         r = Recorder()

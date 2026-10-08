@@ -92,6 +92,7 @@ classified.
 from __future__ import annotations
 
 import subprocess
+import zlib
 from dataclasses import dataclass, field
 
 from .marks import (
@@ -165,10 +166,26 @@ MAX_STEER_PRIO = max(STEER_PRIO_BASE.values()) + len(MARKED_CLASSES) - 1
 #: marks.py, now expressed in tc instead of nftables.
 FLOW_FILTER_PRIO = {"ip": 5, "ipv6": 6}
 
-#: Highest handle a flow may be given. Handles are what make a per-flow filter
-#: deletable: `tc filter del` needs either the full match or the handle, and
-#: re-specifying the match to delete it is fragile.
-MAX_FLOW_HANDLE = 0xFFFF
+#: Handles are derived from the flow key, not allocated from a counter.
+#:
+#: A counter gives "never reused" only WITHIN a process, while tc's handle
+#: namespace is PER DEVICE. Two Bridge instances -- or the same one restarted --
+#: both allocate handle 1, and the second `tc filter add` fails with
+#: "Filter already exists". Gate check 17 hit exactly that: each helper is a
+#: fresh Bridge, so it restarted the counter and collided with check 16's filter.
+#:
+#: Deriving the handle from the key makes the bridge stateless with respect to tc:
+#: any instance computes the same handle for the same flow, so `forget()` works
+#: even with empty in-process state, and a restart re-adopts its own filters
+#: instead of colliding with them.
+MAX_FLOW_HANDLE = 0xFFFFFFFF
+
+
+def handle_for(key: "FlowKey") -> int:
+    """Deterministic tc filter handle for a flow. Never 0, which tc treats as
+    "unassigned" and would reject or silently misplace."""
+    digest = zlib.crc32("|".join(map(str, key.signature)).encode()) & MAX_FLOW_HANDLE
+    return digest or 1
 
 #: DSCP-EF fallback lives here so it can never pre-empt the bridge. Imported
 #: from `tc` rather than redeclared: the bridge installs steering filters and
@@ -614,22 +631,13 @@ class BridgeState:
     speculative delete against every filter, and so `teardown()` knows exactly
     what to remove.
 
-    `next_handle` is monotonic and never reused within a process, so a handle
-    always identifies exactly one filter. A reused handle would let a stale
-    delete remove a different flow's filter.
+    Handles are derived from flow keys (see `handle_for`), so this is a cache of
+    what is known to be installed, not the source of truth. Losing it costs a
+    redundant delete-then-add, never a wrong filter: `forget()` recomputes the
+    handle rather than looking it up.
     """
 
     slots: dict[tuple[str, str, str, int], "FlowSlot"] = field(default_factory=dict)
-    next_handle: int = 1
-
-    def allocate(self) -> int:
-        if self.next_handle > MAX_FLOW_HANDLE:
-            raise BridgeError(
-                f"exhausted the {MAX_FLOW_HANDLE:#x} per-flow handles; the tc "
-                f"tree cannot hold more per-flow filters")
-        h = self.next_handle
-        self.next_handle += 1
-        return h
 
     @property
     def membership(self) -> dict:
@@ -721,11 +729,15 @@ class Bridge:
             return []
 
         ran = []
-        if prev is not None:
-            ran += self._do(generate_del_flow_filter(
-                self.dev, prev.handle, prev.protocol, self.ns), missing_ok=True)
+        proto = "ipv6" if family_of(key.src) == "ip6" else "ip"
+        handle = handle_for(key)
+        # Delete by derived handle, not by the recorded one: on a restart the
+        # recorded slot is empty but the filter is still on the device, and
+        # adding without deleting would fail with "Filter already exists".
+        ran += self._do(generate_del_flow_filter(
+            self.dev, handle, proto, self.ns), missing_ok=True)
 
-        handle = self.state.allocate()
+        handle = handle_for(key)
         ran += self._do(generate_flow_filter(
             key, class_id, self.dev, handle, self.ns))
         proto = "ipv6" if family_of(key.src) == "ip6" else "ip"
@@ -738,11 +750,13 @@ class Bridge:
         Required for lease release, and the only way a flow that has stopped
         being classified stops being steered. No-op for a flow with no filter.
         """
-        slot = self.state.slots.pop(key.signature, None)
-        if slot is None:
-            return []
+        self.state.slots.pop(key.signature, None)
+        proto = "ipv6" if family_of(key.src) == "ip6" else "ip"
+        # Deliberately not gated on the slot: a fresh Bridge must still be able to
+        # release a flow, which is exactly the case the gate's bunmark exercises
+        # and the reason handles are derived rather than counted.
         return self._do(generate_del_flow_filter(
-            self.dev, slot.handle, slot.protocol, self.ns), missing_ok=True)
+            self.dev, handle_for(key), proto, self.ns), missing_ok=True)
 
     def classify_flow(self, key: FlowKey, class_id: int | None) -> list[tuple[str, ...]]:
         """Apply a classification verdict, where None means "unclassified".

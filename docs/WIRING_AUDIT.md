@@ -356,7 +356,32 @@ Gains: nothing is mutated on the wire, so the DSCP-rewrite side effect and its
 collision risk disappear; no dependency on `tc fw`; no dependency on nftables'
 DSCP write being visible to tc.
 
-### Still NOT wired
+#### Handles are derived, not counted
+
+The first version allocated filter handles from a per-`Bridge` counter. tc's
+handle namespace is per **device**, so two `Bridge` instances -- or one restarted
+-- both allocate handle 1, and the second `tc filter add` fails with
+"Filter already exists". Gate check 17 hit this: every gate helper is a fresh
+`Bridge`, so each restarted the counter.
+
+Handles are now CRC32 of the flow key, masked to 32 bits and never zero. That
+makes the bridge stateless with respect to tc: any instance computes the same
+handle for the same flow, so `forget()` works even with empty in-process state,
+and a restart re-adopts its own filters rather than colliding with them.
+
+Cost: `mark()` now always issues a delete before the add, even when there is
+nothing to delete, because that is what makes it restart-safe. Two netlink
+transactions per reclassification rather than one.
+
+### Still unresolved
+
+**A fresh process cannot clear residue from a previous one.** `setup()` deletes
+the filters this instance knows about, and after a restart it knows none, so
+filters left by a crashed run survive until the device is reconfigured. Clearing
+them properly needs enumeration of the tc tree, which is not implemented. In the
+gate this is invisible because each run rebuilds the namespaces.
+
+## Still NOT wired
 
 `aciq/harness.py` does not import `aciq.bridge`. Nothing in the runtime calls
 `classify()` or `Bridge.mark()` yet.
