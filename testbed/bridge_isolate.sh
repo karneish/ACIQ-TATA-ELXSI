@@ -121,6 +121,58 @@ $R nft add rule ip isote c iifname "$IN" th dport 7001 ip dscp set cs3 counter
 $R nft list ruleset | grep 'isote' | grep dport
 echo
 
+# ---------------------------------------------------------------------------
+# E: WHERE does the rewritten DSCP exist?
+#
+# The contradiction: the CLIENT receives all 60 packets with DSCP 0x18, yet
+# neither flower (which matches ip_tos) nor u32 (which reads the header
+# directly) routes them. Those facts cannot both hold unless the DSCP is not
+# 0x18 at tc time.
+#
+# So count it at each hook inside the router:
+#
+#   prerouting   - where the rule writes it
+#   forward      - after routing, before egress. Should still be 0x18.
+#   postrouting  - immediately before dev_queue_xmit
+#
+# Whichever hook first shows 0 tells us where it is being lost, which is a
+# question about hook ordering rather than about DSCP, sets, or tc.
+# ---------------------------------------------------------------------------
+echo "--- E: where does the rewritten DSCP exist inside the router? ---"
+$R nft delete table ip isopost 2>/dev/null
+$R nft add table ip isopost
+$R nft add chain ip isopost f '{ type filter hook forward priority mangle; policy accept; }'
+$R nft add chain ip isopost p '{ type filter hook postrouting priority mangle; policy accept; }'
+$R nft add chain ip isopost q '{ type filter hook prerouting priority -200; policy accept; }'
+$R nft add rule ip isopost q th dport 7001 ip dscp 0x18 counter
+$R nft add rule ip isopost q th dport 7001 ip dscp 0x00 counter
+$R nft add rule ip isopost f th dport 7001 ip dscp 0x18 counter
+$R nft add rule ip isopost f th dport 7001 ip dscp 0x00 counter
+$R nft add rule ip isopost p th dport 7001 ip dscp 0x18 counter
+$R nft add rule ip isopost p th dport 7001 ip dscp 0x00 counter
+
+# re-assert the steering rule (test C replaced the table)
+$R nft delete table ip isote 2>/dev/null
+$R nft add table ip isote
+$R nft add chain ip isote c '{ type filter hook prerouting priority mangle; policy accept; }'
+$R nft add rule ip isote c iifname "$IN" th dport 7001 ip dscp set cs3 counter
+
+E20=$(b 1:20)
+send 7001 00 60
+sleep 1
+E21=$(b 1:20)
+# Printed raw rather than parsed. An earlier attempt extracted counts with awk
+# keyed on the chain name and never reset state between chains, so it could
+# report a neighbouring chain's counter. Reading six lines is not worth an awk
+# bug -- and this harness has already had two of its own.
+echo "  1:20 $E20 -> $E21"
+echo "  chain q = prerouting at -200 (BEFORE the rewrite: expect 0x18 = 0)"
+echo "  chain f = forward at mangle     (AFTER  the rewrite: expect 0x18 = 60)"
+echo "  chain p = postrouting at mangle (expect 0x18 = 60)"
+echo
+$R nft list table ip isopost | grep -E 'chain |ip dscp' | sed 's/^/    /'
+echo
+
 echo "--- B: DSCP 0x18 set by NFTABLES on dport 7001 ---"
 B0=$(b 1:20); B3=$(b 1:30)
 send 7001 00 60
