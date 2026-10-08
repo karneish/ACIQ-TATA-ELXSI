@@ -332,13 +332,27 @@ cbytes () { $R tc -s class show dev "$EGR_IF" \
   | awk -v c="class htb $1" '$0 ~ c {f=1} f && /Sent/ {print $2; exit}'; }
 
 # send UDP from wan, optionally with an EF DSCP mark
-send () {  # send <dst> <port> <size> <ef:0|1> [count]
+# NOTE: the TOS argument is a HEX byte or the literal "ef". A bare "1" is no
+# longer accepted as a boolean: after the rename to tos, "1" parses as IP_TOS
+# 0x01, which is DSCP 0 with the ECN bits set -- silently the wrong value, and
+# check 17 depends on claiming real EF.
+send () {  # send <dst> <port> <size> <tos:hex|ef> [count]
   ip netns exec wan "$VENV/bin/python" - "$1" "$2" "$3" "$4" "${5:-40}" <<'PY'
 import socket, sys, time
-dst, port, size, ef, n = sys.argv[1:6]
+dst, port, size, tos, n = sys.argv[1:6]
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-if ef == "1":
-    s.setsockopt(socket.IPPROTO_IP, socket.IP_TOS, 0xB8)   # DSCP EF
+if tos == "ef":
+    tos = 0xB8
+elif tos in ("0", "", "none"):
+    tos = 0
+else:
+    # reject a bare "1"/"0": those read as booleans to whoever wrote the call
+    # site, and 0x01 is DSCP 0 with ECN set rather than what was intended
+    if len(tos) < 2:
+        sys.exit(f"ambiguous TOS {tos!r}: pass a hex byte like '18', or 'ef', or '0'")
+    tos = int(tos, 16)
+if tos:
+    s.setsockopt(socket.IPPROTO_IP, socket.IP_TOS, tos)
 for _ in range(int(n)):
     s.sendto(b"x" * int(size), (dst, int(port)))
     time.sleep(0.002)
@@ -392,23 +406,49 @@ $R tc filter show dev "$EGR_IF" parent 1: | grep -q "ip_tos" \
 $R tc filter show dev "$EGR_IF" parent 1: | sed -n '1,20p'
 ok "check 15: bridge installs (nft tables, timeout sets, flower steer filters)"
 
-# ---------- 16 IPv4 mark routes to the marked class ----------
-A20=$(cbytes 1:20); A10=$(cbytes 1:10); A30=$(cbytes 1:30)
-bmark 203.0.113.2 10.0.1.2 udp 7001 adaptive || die "check 16: steering failed"
+# Counter for one steering rule, read from the nft ruleset.
+rulepkts () {  # rulepkts <setname>
+  $R nft list ruleset | grep "@$1 " | head -1 \
+    | sed -n 's/.*counter packets \([0-9]*\).*/\1/p'
+}
+
+# ---------- 16a does flower ip_tos match IPv4 on EGRESS at all? ----------
+# This sends a packet whose DSCP is ALREADY the adaptive selector code, so no
+# nftables rule is involved. It isolates the tc reader from the nft writer.
+#
+# Why this must be tested separately: check 13 proved IPv4 DSCP-EF with u32, and
+# check 14 proved flower ip_tos with IPv6. flower ip_tos on IPv4 EGRESS had never
+# been exercised behaviourally -- only installed. Installing is not matching.
+A20=$(cbytes 1:20); A30=$(cbytes 1:30)
+send 10.0.1.2 7010 1000 18 60          # TOS 0x18 == CS3 == adaptive
+sleep 1
+B20=$(cbytes 1:20); B30=$(cbytes 1:30)
+echo "16a (DSCP set by sender): 1:20 $A20 -> $B20   1:30 $A30 -> $B30"
+awk -v a="$A20" -v b="$B20" 'BEGIN{exit !(b+0 > a+0 + 20000)}' \
+  && ok "check 16a: flower ip_tos routes IPv4 DSCP 0x18 to 1:20 on egress" \
+  || die "check 16a: flower ip_tos did NOT match IPv4 0x18 on egress (1:20 $A20 -> $B20).
+A packet already carrying DSCP 0x18 was sent with no nftables rule involved.
+If 1:20 did not grow, the tc READER cannot match IPv4 DSCP on egress, and the
+steering mechanism must change rather than being debugged further."
+
+# ---------- 16b the full nftables -> DSCP -> tc path ----------
+A20=$(cbytes 1:20); A30=$(cbytes 1:30)
+bmark 203.0.113.2 10.0.1.2 udp 7001 adaptive || die "check 16b: steering failed"
 send 10.0.1.2 7001 1000 0 60
 sleep 1
-B20=$(cbytes 1:20); B10=$(cbytes 1:10); B30=$(cbytes 1:30)
-echo "1:20 $A20 -> $B20   1:10 $A10 -> $B10   1:30 $A30 -> $B30"
-# Where did the packets go, and did the rule even match?
-echo "--- rule counters (separates 'rule did not match' from 'tc did not route') ---"
-$R nft list ruleset | grep -A2 -E 'iifname|packets' | head -30
-echo "--- steer filters as installed ---"
-$R tc filter show dev "$EGR_IF" parent 1: | grep -E 'pref|ip_tos' | head -20
-echo "--- element actually in the set ---"
-$R nft list set ip aciq adaptive
+B20=$(cbytes 1:20); B30=$(cbytes 1:30)
+PKT=$(rulepkts adaptive)
+echo "16b (steered by nft): 1:20 $A20 -> $B20   1:30 $A30 -> $B30   rule matched $PKT pkt"
+$R nft list set ip aciq adaptive | sed -n '1,8p'
+echo "--- steer filters ---"
+$R tc filter show dev "$EGR_IF" parent 1: | grep -E 'pref|ip_tos'
+awk -v p="$PKT" 'BEGIN{exit !(p+0 > 0)}' \
+  || die "check 16b: the nft rule matched nothing (counter=$PKT); the set lookup is broken"
 awk -v a="$A20" -v b="$B20" 'BEGIN{exit !(b+0 > a+0 + 20000)}' \
-  && ok "check 16: IPv4 mark routes udp/7001 to class 1:20" \
-  || die "check 16: 1:20 did not grow ($A20 -> $B20)"
+  && ok "check 16b: steered IPv4 flow routed to 1:20 (rule matched $PKT pkt)" \
+  || die "check 16b: rule matched $PKT pkt and set DSCP cs3, but 1:20 did not grow ($A20 -> $B20).
+The nft WRITER ran (counter is non-zero) and the reader is proven by check 16a,
+so the DSCP written in prerouting is not the DSCP seen on egress."
 
 # ---------- 17 a flow marked unclassified loses EF priority ----------
 # The evasion path: a flow that claims DSCP EF but is classified as bulk or
@@ -420,7 +460,7 @@ awk -v a="$A20" -v b="$B20" 'BEGIN{exit !(b+0 > a+0 + 20000)}' \
 # ordering, because the rewrite has already happened.
 C10=$(cbytes 1:10)
 bmark 203.0.113.2 10.0.1.2 udp 7002 unclassified || die "check 17: steering failed"
-send 10.0.1.2 7002 1000 1 60     # DSCP EF set
+send 10.0.1.2 7002 1000 ef 60    # DSCP EF claimed on the wire
 sleep 1
 D10=$(cbytes 1:10)
 echo "EF-marked but classified unclassified: 1:10 $C10 -> $D10"
