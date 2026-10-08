@@ -130,51 +130,88 @@ echo
 # ==========================================================================
 # 2. HOW DOES A PACKET MARK REACH A CLASS?
 #
-# This is the load-bearing question and the probe settled it: iproute2 6.1.0's
-# `fw` classifier accepts ONLY classid / indev / action. No `handle`, no `mask`.
-# So "nftables sets -> mark -> static tc fw filters", which is the whole design
-# in aciq/bridge.py, cannot be built on this toolchain.
+# Answer so far: `tc fw` cannot match a mark on iproute2 6.1.0. It accepts only
+# classid, indev and action -- no `handle`, no `mask`, in either syntax. The
+# "nftables sets -> mark -> static tc fw filters" design in aciq/bridge.py
+# cannot be built on this toolchain. That is an absent capability, not a syntax
+# slip, so no amount of argument reordering fixes it.
 #
-# Every candidate below is probed, because which one works is a property of the
-# kernel and iproute2, not something the unit suite can answer. First to pass
-# becomes the design; the rest are recorded as dead ends.
+# The first run of this section was also invalid: it created fresh namespaces,
+# so there was no HTB qdisc and every tc filter failed with "Parent Qdisc
+# doesn't exists" BEFORE its syntax was ever parsed. A missing parent qdisc
+# hides a syntax error, so every "FAIL" below the qdisc line was meaningless.
+# The tree is now built first, and a baseline flower filter is probed to prove
+# flower itself works before concluding anything about its key set.
 # ==========================================================================
-echo "--- mark -> class candidates ---"
+echo "--- preparing an HTB tree to attach filters to ---"
+NS="ip netns exec router"
+# mirrors gate.sh check 6; classes match aciq.tc.CLASS_IDS
+$NS tc qdisc del dev "$DEV" root 2>/dev/null
+try "root htb"    ip netns exec router tc qdisc add dev "$DEV" root handle 1: htb default 30
+try "class 1:1"   ip netns exec router tc class add dev "$DEV" parent 1: classid 1:1 htb rate 100mbit
+for c in 10 20 30 40; do
+  try "class 1:$c" ip netns exec router tc class add dev "$DEV" parent 1:1 classid 1:$c htb rate 40mbit ceil 99mbit
+done
+echo
+
+echo "--- baseline: does flower work at all here? ---"
 D="ip netns exec router tc filter add dev $DEV parent 1:"
+try "flower ip_proto (baseline)"  $D protocol ip prio 20 flower skip_hw ip_proto udp flowid 1:10
+ip netns exec router tc filter del dev "$DEV" parent 1: prio 20 2>/dev/null
+try "flower ip_tos (known-good)"  $D protocol ip prio 20 flower skip_hw ip_tos 0xb8/0xfc flowid 1:10
+ip netns exec router tc filter del dev "$DEV" parent 1: prio 20 2>/dev/null
+echo
 
-try "fw handle 0x01/0x0f (primary)"   $D protocol ip prio 11 fw handle 0x01/0x0f flowid 1:10
+echo "--- mark -> class candidates (parent qdisc now exists) ---"
+try "fw handle 0x01/0x0f"          $D protocol ip prio 11 fw handle 0x01/0x0f flowid 1:10
 ip netns exec router tc filter del dev "$DEV" parent 1: prio 11 2>/dev/null
-try "fw mask 0xf handle 0x1 (fallback)" $D protocol ip prio 11 fw mask 0xf handle 0x1 flowid 1:10
+try "fw mask 0xf handle 0x1"        $D protocol ip prio 11 fw mask 0xf handle 0x1 flowid 1:10
 ip netns exec router tc filter del dev "$DEV" parent 1: prio 11 2>/dev/null
-try "flower meta mark"                 $D protocol all prio 11 flower skip_hw meta mark 0x1/0xf flowid 1:10
+try "flower meta mark"              $D protocol all prio 11 flower skip_hw meta mark 0x1/0xf flowid 1:10
 ip netns exec router tc filter del dev "$DEV" parent 1: prio 11 2>/dev/null
-try "basic ematch meta"                $D protocol all prio 11 basic matchall ematch meta 0x1 0xf action pass
+# first attempt used `basic matchall ematch ...`, which is not the grammar:
+# `basic` takes `match EMATCH_TREE`, so the ematch expression goes in quotes.
+try "basic match \"meta 0x1 0xf\"" $D protocol all prio 11 basic match "meta 0x1 0xf" flowid 1:10
 ip netns exec router tc filter del dev "$DEV" parent 1: prio 11 2>/dev/null
+try "basic match \"meta\" only"   $D protocol all prio 11 basic match "meta" flowid 1:10
+ip netns exec router tc filter del dev "$DEV" parent 1: prio 11 2>/dev/null
+echo
 
-# If no mark matcher exists, nftables can still steer tc indirectly: rewrite
-# DSCP to a reserved selector code, and let a flower filter -- already proven to
-# work in gate check 14 -- match on it. Costs a header rewrite on the wire.
-try "nft dscp set (steer via DSCP)"    ip netns exec router nft add rule ip aciq probe   ip saddr . ip daddr . meta l4proto . th dport @leased dscp set af41
-try "flower ip_tos 0x28 (reads DSCP)"  $D protocol ip prio 11 flower skip_hw ip_tos 0x28/0xfc flowid 1:20
-ip netns exec router tc filter del dev "$DEV" parent 1: prio 11 2>/dev/null
-ip netns exec router nft delete rule ip aciq probe 2>/dev/null
+# If nothing can read a mark, nftables can still steer tc indirectly: rewrite
+# DSCP to a reserved selector code and let a flower filter match on it. Both
+# components are already proven (flower ip_tos above, gate check 14). The first
+# attempt used the symbolic name `af41`, which this nftables rejected with
+# "syntax error, unexpected set"; numeric values are tried here too.
+echo "--- steering via DSCP rewrite (if no mark matcher exists) ---"
+try "nft dscp set 0x28"      $NS nft add rule ip aciq probe \
+  ip saddr . ip daddr . meta l4proto . th dport @leased dscp set 0x28
+try "nft meta dsfield set"   $NS nft add rule ip aciq probe2 \
+  ip saddr . ip daddr . meta l4proto . th dport @leased meta dsfield set 0x28
+try "nft ip dscp set"        $NS nft add rule ip aciq probe3 \
+  ip saddr . ip daddr . meta l4proto . th dport @leased ip dscp set 0x28
+try "flower reads rewritten dscp" $D protocol ip prio 21 flower skip_hw ip_tos 0x28/0xfc flowid 1:20
+ip netns exec router tc filter del dev "$DEV" parent 1: prio 21 2>/dev/null
+for p in probe probe2 probe3; do $NS nft delete table ip aciq 2>/dev/null; done
 echo
 
 # ==========================================================================
 # 3. fallback key shape: can flower match the flow key directly?
 # If no mark matcher exists, per-class flower filters are the remaining option.
-# They are proven in gate check 14 (ip_tos), but matching addresses and ports
-# has never been tried here.
+# Trade-off: a netlink transaction per reclassification, which is exactly what
+# the nftables-set design existed to avoid. Acceptable only if the number of
+# concurrent classified flows is small, as it is for a home router.
 # ==========================================================================
 echo "--- flower flow-key matching ---"
-try "flower proto+dst_port"  $D protocol ip prio 12 flower skip_hw ip_proto udp dst_port 7001 flowid 1:20
-ip netns exec router tc filter del dev "$DEV" parent 1: prio 12 2>/dev/null
-try "flower src+dst+proto+port" $D protocol ip prio 12 flower skip_hw \
+try "flower proto+dst_port"  $D protocol ip prio 22 flower skip_hw ip_proto udp dst_port 7001 flowid 1:20
+ip netns exec router tc filter del dev "$DEV" parent 1: prio 22 2>/dev/null
+try "flower src+dst+proto+port" $D protocol ip prio 22 flower skip_hw \
   src_ip 203.0.113.2 dst_ip 10.0.1.2 ip_proto udp dst_port 7001 flowid 1:20
-ip netns exec router tc filter del dev "$DEV" parent 1: prio 12 2>/dev/null
-try "flower ipv6 flow key"  $D protocol ipv6 prio 12 flower skip_hw \
+ip netns exec router tc filter del dev "$DEV" parent 1: prio 22 2>/dev/null
+try "flower ipv6 flow key"  $D protocol ipv6 prio 22 flower skip_hw \
   src_ip 2001:db8::2 dst_ip fd00:1::2 ip_proto udp dst_port 7003 flowid 1:20
-ip netns exec router tc filter del dev "$DEV" parent 1: prio 12 2>/dev/null
+ip netns exec router tc filter del dev "$DEV" parent 1: prio 22 2>/dev/null
+try "flower src_ip only"    $D protocol ip prio 22 flower skip_hw src_ip 203.0.113.2 flowid 1:20
+ip netns exec router tc filter del dev "$DEV" parent 1: prio 22 2>/dev/null
 echo
 
 # ==========================================================================
