@@ -54,8 +54,11 @@ for t in tc ip conntrack nft iperf3 ethtool python3; do command -v $t >/dev/null
 
 # ---------- 2 modules ----------
 MISS=""
+# act_stats: the bridge's steer filters carry `action stats` so per-filter
+# packet counters exist. Without it, "tc filter add ... action stats" fails with
+# "Bad action type stats" -- an iproute2/kernel capability gap, not a syntax error.
 for m in sch_htb sch_netem sch_cake sch_fq_codel sch_prio act_gact act_police \
-         cls_flower cls_u32 nf_conntrack; do
+         act_stats cls_flower cls_u32 nf_conntrack; do
   modprobe -q "$m" 2>/dev/null || MISS="$MISS $m"
 done
 [ -z "$MISS" ] && ok "check 2: modules" || die "check 2: modules missing:$MISS"

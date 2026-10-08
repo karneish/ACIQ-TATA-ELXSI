@@ -24,6 +24,7 @@ reproducible:
 
 ```bash
 sudo modprobe sch_htb sch_netem sch_cake sch_fq_codel sch_prio \
+  act_gact act_police act_stats cls_flower cls_u32 nf_conntrack
                 act_gact act_police cls_flower cls_u32 nf_conntrack
 lsmod | grep -E 'sch_(htb|netem|cake|fq_codel)|nf_conntrack'
 ```

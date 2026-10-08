@@ -231,6 +231,16 @@ $NS nft delete chain ip aciq probe 2>/dev/null
 $NS nft delete chain ip aciq probe2 2>/dev/null
 echo
 
+# The steer filters carry `action stats`, which requires the act_stats module.
+# Without it: "Bad action type stats". Probe it here so a missing module is
+# caught as a capability gap rather than looking like a syntax error.
+echo "--- action stats capability ---"
+modprobe -q act_stats 2>/dev/null
+try "action stats (needs act_stats)" $D protocol ip prio 25 flower skip_hw \
+  ip_tos 0x08/0xfc flowid 1:30 action stats
+ip netns exec router tc filter del dev "$DEV" parent 1: prio 25 2>/dev/null
+echo
+
 # ==========================================================================
 # 3. fallback key shape: can flower match the flow key directly?
 # If no mark matcher exists, per-class flower filters are the remaining option.
