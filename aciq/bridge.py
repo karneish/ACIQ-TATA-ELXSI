@@ -157,6 +157,19 @@ def steer_prio(protocol: str, class_id: int) -> int:
 #: ordering assertion against DSCP_FILTER_PRIO.
 MAX_STEER_PRIO = max(STEER_PRIO_BASE.values()) + len(MARKED_CLASSES) - 1
 
+#: Per-flow steering filters, one per classified flow, all sharing one priority
+#: per protocol so they form a chain and the first match wins.
+#:
+#: These come BEFORE the DSCP-EF fallback (30/31) so an explicit classification
+#: beats the EF heuristic -- the same ordering the `seen` bit encoded in
+#: marks.py, now expressed in tc instead of nftables.
+FLOW_FILTER_PRIO = {"ip": 5, "ipv6": 6}
+
+#: Highest handle a flow may be given. Handles are what make a per-flow filter
+#: deletable: `tc filter del` needs either the full match or the handle, and
+#: re-specifying the match to delete it is fragile.
+MAX_FLOW_HANDLE = 0xFFFF
+
 #: DSCP-EF fallback lives here so it can never pre-empt the bridge. Imported
 #: from `tc` rather than redeclared: the bridge installs steering filters and
 #: `tc` installs the EF filters into the same parent, so two copies of these
@@ -467,6 +480,88 @@ def generate_steer_filters(dev: str, ns: str | None = None,
     return tuple(cmds)
 
 
+def generate_flow_filter(key: "FlowKey", class_id: int, dev: str,
+                         handle: int, ns: str | None = None) -> tuple[str, ...]:
+    """One `tc flower` filter matching a flow's key directly.
+
+    ## Why per-flow filters, and not DSCP steering
+
+    The mechanism this module originally used was: nftables stamps a DSCP
+    selector code on the packet in prerouting, and static filters read it. It
+    does not work, and the reason is now measured rather than guessed.
+
+    On this toolchain, with controls for every other variable:
+
+        both classifiers read the header   flower ignores skb->priority alone
+        u32 works                          positive control passes
+        the header IS 0x18 at postrouting  the chain counters read 60
+        the wire IS 0x18                   the client reads 60
+        a SENDER-written DSCP matches      passes
+        an NFTABLES-written one does NOT   fails, on two different ports
+
+    So a DSCP written by nftables is invisible to tc egress classifiers even
+    though the packet is transmitted carrying it. Five hypotheses died to this
+    one -- including a `meta l4proto` width mismatch, a lost skb->priority, and a
+    DSCP that did not survive to egress -- each consistent with everything known
+    at the time. See testbed/bridge_isolate.sh.
+
+    ## What this costs, stated plainly
+
+    One netlink transaction per reclassification, which is exactly what the
+    nftables-set indirection existed to avoid. For the handful of concurrent
+    flows a home router carries this is small: at 20 flows a full re-tick is
+    about 40 transactions, roughly 4-12 ms against a ~1 s tick.
+
+    In exchange:
+
+    * nothing is mutated on the wire, so the DSCP-rewrite side effect and its
+      collision risk disappear entirely;
+    * no dependency on `tc fw`, which cannot read a mark on iproute2 6.1.0;
+    * no dependency on nftables' DSCP write being visible to tc.
+
+    ## What is lost
+
+    Kernel-side expiry. The nftables sets gave mark expiry for free via
+    `flags timeout`, surviving even a crashed process. Per-flow filters do not:
+    if ACIQ dies mid-run, its filters remain and keep routing those flows to
+    classes that may no longer be configured. `Bridge.teardown()` clears them,
+    and callers should use it, but a hard kill leaves residue. That is a real
+    regression against the set design and is recorded rather than glossed.
+    """
+    if not 1 <= handle <= MAX_FLOW_HANDLE:
+        raise BridgeError(f"handle {handle} outside 1..{MAX_FLOW_HANDLE:#x}")
+    proto = "ipv6" if family_of(key.src) == "ip6" else "ip"
+    return _netns(ns) + (
+        "tc", "filter", "add", "dev", dev, "parent", "1:",
+        "protocol", proto,
+        "prio", str(FLOW_FILTER_PRIO[proto]),
+        "handle", f"0x{handle:04x}",
+        "flower", "skip_hw",
+        "src_ip", key.src,
+        "dst_ip", key.dst,
+        "ip_proto", key.proto,
+        "dst_port", str(key.dport),
+        "flowid", _flowid(class_id),
+    )
+
+
+def generate_del_flow_filter(dev: str, handle: int, proto: str,
+                             ns: str | None = None) -> tuple[str, ...]:
+    """Delete one per-flow filter by handle.
+
+    Deleting by handle rather than by re-stating the match: the match is four
+    fields and getting one wrong leaves the filter in place silently, and a
+    leftover filter routes a flow to a stale class indefinitely.
+    """
+    return _netns(ns) + (
+        "tc", "filter", "del", "dev", dev, "parent", "1:",
+        "protocol", proto,
+        "prio", str(FLOW_FILTER_PRIO[proto]),
+        "handle", f"0x{handle:04x}",
+        "flower",
+    )
+
+
 def _flowid(class_id: int) -> str:
     """Map a class id onto its HTB class.
 
@@ -494,20 +589,6 @@ def generate_teardown(family: str, ns: str | None = None) -> tuple[str, ...]:
     return _netns(ns) + ("nft", "delete", "table", family, NFT_TABLE)
 
 
-def family_of(src: str) -> str:
-    """Address family of a literal: "ip" or "ip6".
-
-    Deliberately string inspection rather than `socket.inet_pton`, so a zone id
-    (`fe80::1%eth0`) or a hostname does not raise from deep inside a
-    classification tick.
-
-    Module level so a caller adding one flow element does not have to construct
-    a Bridge -- which is what the gate's `bmark` helper was doing, and it read
-    as though the Bridge instance were needed.
-    """
-    return "ip6" if ":" in src else "ip"
-
-
 def _netns(ns: str | None) -> tuple[str, ...]:
     return ("ip", "netns", "exec", ns) if ns else ()
 
@@ -517,16 +598,43 @@ def _netns(ns: str | None) -> tuple[str, ...]:
 # --------------------------------------------------------------------------
 
 @dataclass
-class BridgeState:
-    """Which class each flow is currently in, per family.
+class FlowSlot:
+    """One per-flow tc filter currently installed."""
 
-    Tracked so a reclassification is one delete and one add, rather than a
-    speculative delete against every set (5 netlink calls per change, most of
-    which must tolerate ENOENT).
+    handle: int
+    protocol: str
+    class_id: int
+
+
+@dataclass
+class BridgeState:
+    """Which filter each flow currently has.
+
+    Tracked so a reclassification is one delete and one add rather than a
+    speculative delete against every filter, and so `teardown()` knows exactly
+    what to remove.
+
+    `next_handle` is monotonic and never reused within a process, so a handle
+    always identifies exactly one filter. A reused handle would let a stale
+    delete remove a different flow's filter.
     """
 
-    membership: dict[tuple[str, tuple[str, str, str, int]], int] = field(
-        default_factory=dict)
+    slots: dict[tuple[str, str, str, int], "FlowSlot"] = field(default_factory=dict)
+    next_handle: int = 1
+
+    def allocate(self) -> int:
+        if self.next_handle > MAX_FLOW_HANDLE:
+            raise BridgeError(
+                f"exhausted the {MAX_FLOW_HANDLE:#x} per-flow handles; the tc "
+                f"tree cannot hold more per-flow filters")
+        h = self.next_handle
+        self.next_handle += 1
+        return h
+
+    @property
+    def membership(self) -> dict:
+        """Keyed by flow signature -> class id, for callers that only want the class."""
+        return {k: v.class_id for k, v in self.slots.items()}
 
 
 def _run(executor, argv: tuple[str, ...]) -> tuple[int, str, str]:
@@ -542,11 +650,13 @@ class Bridge:
 
     def __init__(self, dev: str, in_if: str, ns: str | None = None,
                  families: tuple[str, ...] = ("ip", "ip6"),
-                 executor=None, dry_run: bool = False):
+                 executor=None, dry_run: bool = False,
+                 install_sets: bool = False):
         self.dev = dev
         self.in_if = in_if
         self.ns = ns
         self.families = families
+        self.install_sets = install_sets
         self.dry_run = dry_run
         self.executor = executor or _subprocess_executor
         self.state = BridgeState()
@@ -554,75 +664,96 @@ class Bridge:
 
     # -- lifecycle ---------------------------------------------------------
     def setup(self) -> list[tuple[str, ...]]:
-        """Idempotent install.
+        """Remove anything left over from a previous run.
 
-        nft's `add` fails on an existing table, so teardown runs first. That is
-        deliberate: a half-installed bridge whose rules disagree with the code
-        is worse than a brief window with no bridge, and it keeps setup to one
-        code path instead of `add` with fallback to `create`.
+        Per-flow filters are installed by `mark()` as flows are classified, so
+        there is no static filter block to create. What setup must do is clear
+        residue: a filter left by a crashed run keeps routing its flow to a
+        class that may no longer be configured, and nothing else would remove it.
+
+        The nftables tables are removed too when `install_sets` was requested.
+        They are no longer part of enforcement -- see `generate_flow_filter` for
+        why DSCP steering was abandoned -- so they are off by default.
         """
         ran = []
-        # Two passes, not one interleaved per family: delete both tables before
-        # creating either. Interleaving means a failure while building the IPv6
-        # table leaves a stale IPv4 table behind, and the next run then deletes
-        # it -- so the window where rules and code disagree is wider than
-        # necessary.
-        for family in self.families:
-            ran += self._do(generate_teardown(family, self.ns), missing_ok=True)
-        for family in self.families:
-            ran += self._do(generate_table(family, self.ns))
-            ran += self._do(generate_sets(family, self.ns))
-            ran += self._do(generate_rules(family, self.in_if, self.ns))
-        ran += self._do(generate_steer_filters(self.dev, self.ns))
+        for slot in list(self.state.slots.values()):
+            ran += self._do(generate_del_flow_filter(
+                self.dev, slot.handle, slot.protocol, self.ns), missing_ok=True)
+        self.state.slots.clear()
+        if self.install_sets:
+            for family in self.families:
+                ran += self._do(generate_teardown(family, self.ns), missing_ok=True)
         return ran
 
     def teardown(self) -> list[tuple[str, ...]]:
+        """Remove every filter this bridge installed.
+
+        Must be called. Per-flow filters are not kernel-timed, so an unclean exit
+        leaves them behind routing traffic to stale classes.
+        """
         ran = []
+        for slot in list(self.state.slots.values()):
+            ran += self._do(generate_del_flow_filter(
+                self.dev, slot.handle, slot.protocol, self.ns), missing_ok=True)
+        self.state.slots.clear()
         for family in self.families:
             ran += self._do(generate_teardown(family, self.ns), missing_ok=True)
-        self.state.membership.clear()
         return ran
 
     # -- per-flow ----------------------------------------------------------
     def mark(self, key: FlowKey, class_id: int, confidence: float = 0.0,
              reason: int = 0, lease_id: int = 0) -> list[tuple[str, ...]]:
-        """Place a flow in a class, moving it if it was somewhere else.
+        """Give a flow a per-flow tc filter pointing at its class.
 
-        Re-marking a flow in the class it is already in is a no-op: re-adding an
-        existing element resets its timeout, and doing that on every tick would
-        keep a dead flow's mark alive forever. That is how a stale mark becomes
-        permanent, so it is avoided rather than tolerated.
+        Re-marking a flow in the class it is already in is a no-op. That matters
+        more here than it did with the nftables sets: an add would be another
+        netlink transaction per flow per tick for no behavioural change, and at
+        N flows that is the whole budget.
+
+        Re-classification deletes the old filter and installs a new one with a
+        fresh handle. Handles are never reused, so a stale delete can never remove
+        a filter belonging to some other flow.
         """
-        families = self._families_for(key)
-        prev = self.state.membership.get((families[0], key.signature))
-        if prev == class_id:
+        if self._families_for(key) == ():
+            return []
+        prev = self.state.slots.get(key.signature)
+        if prev is not None and prev.class_id == class_id:
             return []
 
         ran = []
-        for family in families:
-            if prev is not None:
-                # missing_ok: a 120s kernel timeout may already have removed it
-                ran += self._do(generate_del_element(family, key, prev, self.ns),
-                                missing_ok=True)
-            ran += self._do(generate_add_element(
-                family, key, class_id, confidence=confidence, reason=reason,
-                lease_id=lease_id, ns=self.ns))
-        self.state.membership[(families[0], key.signature)] = class_id
+        if prev is not None:
+            ran += self._do(generate_del_flow_filter(
+                self.dev, prev.handle, prev.protocol, self.ns), missing_ok=True)
+
+        handle = self.state.allocate()
+        ran += self._do(generate_flow_filter(
+            key, class_id, self.dev, handle, self.ns))
+        proto = "ipv6" if family_of(key.src) == "ip6" else "ip"
+        self.state.slots[key.signature] = FlowSlot(handle, proto, class_id)
         return ran
 
     def forget(self, key: FlowKey) -> list[tuple[str, ...]]:
-        """Drop a flow's mark explicitly. Not normally needed -- the kernel's
-        element timeout expires it -- but required for lease release."""
-        families = self._families_for(key)
-        prev = self.state.membership.get((families[0], key.signature))
-        if prev is None:
+        """Remove a flow's filter.
+
+        Required for lease release, and the only way a flow that has stopped
+        being classified stops being steered. No-op for a flow with no filter.
+        """
+        slot = self.state.slots.pop(key.signature, None)
+        if slot is None:
             return []
-        ran = []
-        for family in families:
-            ran += self._do(generate_del_element(family, key, prev, self.ns),
-                            missing_ok=True)
-        self.state.membership.pop((families[0], key.signature), None)
-        return ran
+        return self._do(generate_del_flow_filter(
+            self.dev, slot.handle, slot.protocol, self.ns), missing_ok=True)
+
+    def classify_flow(self, key: FlowKey, class_id: int | None) -> list[tuple[str, ...]]:
+        """Apply a classification verdict, where None means "unclassified".
+
+        An unclassified flow gets its filter removed rather than pointed at a
+        default class, so it falls through to the HTB default exactly as an
+        unclassified flow should.
+        """
+        if class_id is None:
+            return self.forget(key)
+        return self.mark(key, class_id)
 
     def family_of(self, src: str) -> str:
         """Address family from the literal. Delegates to the module-level
@@ -677,18 +808,30 @@ class Bridge:
         return ran
 
     def plan(self) -> list[tuple[str, ...]]:
-        """Every command setup() would run, without running any."""
+        """Every static command setup() would run, without running any.
+
+        There are no static filter commands any more: per-flow filters are added
+        by mark(). Kept because callers use it to preview work.
+        """
         out = []
-        for family in self.families:
-            # appended as one element, not splatted: generate_teardown returns a
-            # single argv, and `list()` on it yields its tokens
-            out.append(generate_teardown(family, self.ns))
-        for family in self.families:
-            out += list(generate_table(family, self.ns))
-            out += list(generate_sets(family, self.ns))
-            out += list(generate_rules(family, self.in_if, self.ns))
-        out += list(generate_steer_filters(self.dev, self.ns))
+        if self.install_sets:
+            for family in self.families:
+                out.append(generate_teardown(family, self.ns))
         return out
+
+
+def family_of(src: str) -> str:
+    """Address family of a literal: "ip" or "ip6".
+
+    Deliberately string inspection rather than `socket.inet_pton`, so a zone id
+    (`fe80::1%eth0`) or a hostname does not raise from deep inside a
+    classification tick.
+
+    Module level so a caller adding one flow filter does not have to construct
+    a Bridge -- which is what the gate's `bmark` helper was doing, and it read as
+    though the Bridge instance were needed.
+    """
+    return "ip6" if ":" in src else "ip"
 
 
 def _subprocess_executor(argv: tuple[str, ...]) -> tuple[int, str, str]:

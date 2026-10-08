@@ -296,6 +296,71 @@ still does not consult them**, because the runtime chain still does not call
 
 ---
 
+## The bridge: DSCP steering does not work on this toolchain
+
+Two mechanisms were built and measured. The first was impossible; the second was
+possible and did not work. Both findings are controls-backed.
+
+### 1. No tc classifier can read a packet mark (iproute2 6.1.0)
+
+Every spelling rejected:
+
+    fw handle 0xNN/0x0f         fw has no `handle`
+    fw mask 0xf handle 0x1      fw has no `mask`
+    flower meta mark            flower has no `meta` key at all
+    basic match "skb/mark ..."  not the ematch grammar
+    basic ematch "..."          `basic` takes `match`, not `ematch`
+
+An absent capability, not a syntax slip. This killed `marks.py`'s original role.
+
+### 2. A DSCP written by nftables is invisible to tc
+
+The replacement used nftables to stamp a CSx selector code in prerouting and a
+static `flower ip_tos` filter to read it on egress. It installed perfectly and
+never matched once. `testbed/bridge_isolate.sh` reproduced it with one filter,
+one rule, no sets and no fq_codel, then established each fact with a control:
+
+| fact | control |
+|---|---|
+| flower ignores `skb->priority` | setting priority alone does nothing |
+| u32 works | u32 + sender-set DSCP routes |
+| header is 0x18 at postrouting | chain counters read 60 |
+| the wire is 0x18 | the client reads 60 |
+| a **sender**-written DSCP matches | passes |
+| an **nftables**-written DSCP does not | fails, on two different ports |
+
+So the fault is provenance: the same header value, written by a sender, is
+matched; written by nftables, it is not. Five hypotheses died to this one,
+including a `meta l4proto` width mismatch (the rule matched all 60 packets), a
+lost `skb->priority`, and a DSCP that did not survive to egress. Each was
+consistent with every measurement available at the time; four of them died to an
+*uncontrolled variable* rather than to being wrong -- destination port and
+provenance were confounded until tests H and I separated them.
+
+### What ships instead
+
+One `tc flower` filter per flow, matching src/dst/proto/dport directly. Proven
+behaviourally in isolate tests J and K, K being the control that proves it does
+not over-match.
+
+Costs, stated:
+
+* one netlink transaction per reclassification -- roughly 4-12 ms per tick at 20
+  flows, against a ~1 s tick;
+* **kernel-side expiry is lost.** The nftables sets expired marks for free via
+  `flags timeout`, surviving even a crashed process. Per-flow filters are not
+  kernel-timed, so an unclean exit leaves filters routing flows to stale classes.
+  `Bridge.teardown()` clears them and callers must use it.
+
+Gains: nothing is mutated on the wire, so the DSCP-rewrite side effect and its
+collision risk disappear; no dependency on `tc fw`; no dependency on nftables'
+DSCP write being visible to tc.
+
+### Still NOT wired
+
+`aciq/harness.py` does not import `aciq.bridge`. Nothing in the runtime calls
+`classify()` or `Bridge.mark()` yet.
+
 ## The bridge: what the first real run proved
 
 `testbed/bridge_probe.sh` ran for the first time on Pop!_OS kernel 7.1.5,

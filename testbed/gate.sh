@@ -298,32 +298,31 @@ BIN_IF=veth-wan
 EGR_IF=veth-lan
 
 # mark a flow using the shipped Bridge class
-bmark () {  # bmark <src> <dst> <proto> <dport> <class> [timeout]
-  # Preflight: the table must exist in the ROUTER namespace. `ns` defaults to
-  # None, so omitting it runs nft in the host namespace where table `aciq` does
-  # not exist, and nft answers "No such file or directory" pointing at the set
-  # name -- which reads like a missing set in the bridge rather than a missing
-  # namespace in this helper.
-  ip netns exec router nft list table ip aciq >/dev/null 2>&1 \
-    || die "bmark: no aciq table in the router namespace (is check 15 installed it?)"
-  $VENV/bin/python - "$1" "$2" "$3" "$4" "$5" "${6:-120s}" <<'PY'
+bmark () {  # bmark <src> <dst> <proto> <dport> <class>
+  $VENV/bin/python - "$1" "$2" "$3" "$4" "$5" <<'PY'
 import sys
-from aciq.bridge import FlowKey, family_of, generate_add_element
+sys.path.insert(0, "..")
+from aciq.bridge import Bridge, FlowKey
 from aciq.marks import (CLASS_UNCLASSIFIED, CLASS_INTERACTIVE, CLASS_ADAPTIVE,
                         CLASS_BULK, CLASS_LEASED)
-src, dst, proto, dport, cls, timeout = sys.argv[1:7]
+src, dst, proto, dport, cls = sys.argv[1:6]
 ids = {"unclassified": CLASS_UNCLASSIFIED, "interactive": CLASS_INTERACTIVE,
        "adaptive": CLASS_ADAPTIVE, "bulk": CLASS_BULK, "leased": CLASS_LEASED}
-key = FlowKey(src, dst, proto, int(dport))
-# ns="router" is essential: without it the element is added in the host
-# namespace and fails with "No such file or directory" on the set name.
-argv = generate_add_element(family_of(src), key, ids[cls], timeout=timeout,
-                            ns="router")
-import subprocess
-p = subprocess.run(list(argv), capture_output=True, text=True)
-if p.returncode:
-    sys.exit(f"nft add element failed rc={p.returncode}: {p.stderr.strip()}")
-print("steered", src, dst, proto, dport, "->", cls, "(ns=router)")
+b = Bridge(dev="veth-lan", in_if="veth-wan", ns="router")
+b.mark(FlowKey(src, dst, proto, int(dport)), ids[cls])
+print("steered", src, dst, proto, dport, "->", cls)
+PY
+}
+
+# Remove one flow's filter, via the shipped Bridge.
+bunmark () {  # bunmark <src> <dst> <proto> <dport>
+  $VENV/bin/python - "$1" "$2" "$3" "$4" <<'PY'
+import sys
+sys.path.insert(0, "..")
+from aciq.bridge import Bridge, FlowKey
+b = Bridge(dev="veth-lan", in_if="veth-wan", ns="router")
+b.forget(FlowKey(sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])))
+print("released", sys.argv[1], sys.argv[4])
 PY
 }
 
@@ -372,199 +371,86 @@ s.close()
 PY
 }
 
-# ---------- 15 bridge installs ----------
-export PYTHONPATH="$PWD/.."
-$VENV/bin/python - <<'PY' || die "check 15: bridge setup failed"
-import sys
-sys.path.insert(0, "..")
-from aciq.bridge import Bridge
-Bridge(dev="veth-lan", in_if="veth-wan", ns="router").setup()
-print("bridge setup ok")
-PY
-ip netns exec router nft list table ip aciq >/dev/null 2>&1 \
-  || die "check 15: ip table aciq not created"
-ip netns exec router nft list table ip6 aciq >/dev/null 2>&1 \
-  || die "check 15: ip6 table aciq not created"
-# Print the set definition and match on `timeout` rather than the literal
-# "flags timeout". The previous assertion assumed nft prints that exact phrase in
-# the listing, which is a claim about nftables' output format rather than about
-# the bridge. The semantic requirement is that the set carries a timeout, so
-# that is what is matched -- and the raw definition is echoed, so a failure
-# reports what nft actually printed instead of only what was expected.
-$R nft list set ip aciq interactive | tee /tmp/g15_set.txt
-grep -q "timeout" /tmp/g15_set.txt \
-  || die "check 15: interactive set carries no timeout (see /tmp/g15_set.txt)"
-# Expiry itself is not assumed here -- check 19 proves the kernel ages an element
-# out. This only proves the set was declared with the capability.
-# Capture the filter list ONCE, report its exit status, and show it whatever
-# the outcome. `cmd | grep -q` throws away both the exit status and the output,
-# so "no flower filter installed" cannot be distinguished from "tc filter show
-# errored" -- and this check has already failed for three unrelated reasons.
-$R tc filter show dev "$EGR_IF" parent 1: > /tmp/g15_filters.txt 2>/tmp/g15_filters.err
-F_RC=$?
-echo "--- tc filter show rc=$F_RC, $(wc -l < /tmp/g15_filters.txt) lines ---"
-cat /tmp/g15_filters.txt
-[ -s /tmp/g15_filters.err ] && { echo "--- stderr ---"; cat /tmp/g15_filters.err; }
-# The steer filters must key on the DSCP selector codes the rules stamp.
-# Checking for `fw` here would have passed on the old design and fails now,
-# which is the point: `tc fw` cannot read a packet mark on this toolchain.
-[ "$F_RC" -eq 0 ] || die "check 15: 'tc filter show' failed rc=$F_RC (see /tmp/g15_filters.err)"
-grep -q "flower" /tmp/g15_filters.txt \
-  || die "check 15: no flower steer filter among $(wc -l < /tmp/g15_filters.txt) lines (see /tmp/g15_filters.txt)"
-grep -q "ip_tos" /tmp/g15_filters.txt \
-  || die "check 15: steer filters do not match on ip_tos (see /tmp/g15_filters.txt)"
-ok "check 15: bridge installs (nft tables, timeout sets, flower steer filters)"
+# ---------- 15 per-flow filters install ----------
+# Enforcement is a per-flow `tc flower` filter installed by Bridge.mark(). There
+# is no static filter block, so this asserts the tc tree accepts one.
+$R tc filter add dev "$EGR_IF" parent 1: protocol ip prio 99 flower skip_hw \
+   src_ip 10.0.0.1 dst_ip 10.0.0.2 ip_proto tcp dst_port 65535 flowid 1:30 \
+  || die "check 15: could not install a per-flow flower filter"
+$R tc filter del dev "$EGR_IF" parent 1: protocol ip prio 99
+ok "check 15: per-flow flower filters install"
 
-# Counter for one steering rule, read from the nft ruleset.
-rulepkts () {  # rulepkts <setname>
-  $R nft list ruleset | grep "@$1 " | head -1 \
-    | sed -n 's/.*counter packets \([0-9]*\).*/\1/p'
-}
-
-# Watch the DSCP arriving at the CLIENT -- the last point before the wire.
-#
-# If the router's rewrite survives forwarding, the client sees 0x18. If the client
-# sees 0x00, the DSCP was lost inside the router, which narrows the fault from
-# "the writer" to "prerouting vs forwarding vs egress". Two tables rather than
-# one with two rules, because identifying which counter belongs to which rule by
-# rule order alone is exactly the kind of fragile parsing this gate has already
-# been bitten by.
-dscpwatch () {
-  CN="ip netns exec client"
-  $CN nft delete table ip dscp18 2>/dev/null
-  $CN nft delete table ip dscp00 2>/dev/null
-  $CN nft add table ip dscp18
-  $CN nft add table ip dscp00
-  $CN nft add chain ip dscp18 c '{ type filter hook prerouting priority mangle; policy accept; }'
-  $CN nft add chain ip dscp00 c '{ type filter hook prerouting priority mangle; policy accept; }'
-  $CN nft add rule ip dscp18 c ip dscp 0x18 counter
-  $CN nft add rule ip dscp00 c ip dscp 0x00 counter
-}
-dscpwatch_read () {
-  CN="ip netns exec client"
-  echo "  arriving at client, DSCP 0x18 (steered):   $($CN nft list table ip dscp18 | sed -n 's/.*counter packets \([0-9]*\).*/\1/p')"
-  echo "  arriving at client, DSCP 0x00 (untouched): $($CN nft list table ip dscp00 | sed -n 's/.*counter packets \([0-9]*\).*/\1/p')"
-}
-
-# ---------- 16a does flower ip_tos match IPv4 on EGRESS at all? ----------
-# This sends a packet whose DSCP is ALREADY the adaptive selector code, so no
-# nftables rule is involved. It isolates the tc reader from the nft writer.
-#
-# Why this must be tested separately: check 13 proved IPv4 DSCP-EF with u32, and
-# check 14 proved flower ip_tos with IPv6. flower ip_tos on IPv4 EGRESS had never
-# been exercised behaviourally -- only installed. Installing is not matching.
+# ---------- 16 steered IPv4 flow reaches its class ----------
+# This replaces the DSCP-steering check. A DSCP written by nftables is invisible
+# to tc egress classifiers on this toolchain even though the packet is
+# transmitted carrying it; a per-flow filter matches the flow key directly.
+# See testbed/bridge_isolate.sh tests J and K.
 A20=$(cbytes 1:20); A30=$(cbytes 1:30)
-send 10.0.1.2 7010 1000 18 60          # TOS 0x18 == CS3 == adaptive
-sleep 1
-B20=$(cbytes 1:20); B30=$(cbytes 1:30)
-echo "16a (DSCP set by sender): 1:20 $A20 -> $B20   1:30 $A30 -> $B30"
-awk -v a="$A20" -v b="$B20" 'BEGIN{exit !(b+0 > a+0 + 20000)}' \
-  && ok "check 16a: flower ip_tos routes IPv4 DSCP 0x18 to 1:20 on egress" \
-  || die "check 16a: flower ip_tos did NOT match IPv4 0x18 on egress (1:20 $A20 -> $B20).
-A packet already carrying DSCP 0x18 was sent with no nftables rule involved.
-If 1:20 did not grow, the tc READER cannot match IPv4 DSCP on egress, and the
-steering mechanism must change rather than being debugged further."
-
-# ---------- 16b the full nftables -> DSCP -> tc path ----------
-A20=$(cbytes 1:20); A30=$(cbytes 1:30)
-bmark 203.0.113.2 10.0.1.2 udp 7001 adaptive || die "check 16b: steering failed"
-dscpwatch
+bmark 203.0.113.2 10.0.1.2 udp 7001 adaptive || die "check 16: steering failed"
 send 10.0.1.2 7001 1000 0 60
 sleep 1
-dscpwatch_read
 B20=$(cbytes 1:20); B30=$(cbytes 1:30)
-PKT=$(rulepkts adaptive)
-echo "16b (steered by nft): 1:20 $A20 -> $B20   1:30 $A30 -> $B30   rule matched $PKT pkt"
-$R nft list set ip aciq adaptive | sed -n '1,8p'
-echo "--- the rule as the kernel has it (does it set meta priority?) ---"
-$R nft list ruleset | grep '@adaptive' | head -1
-echo "--- PER-FILTER packet counters ---"
-# Decisive and previously unused: if filter pref 12 shows 0 packets, flower did
-# not match the DSCP. If it shows 60 and 1:20 is still flat, the flowid is not
-# being applied -- a different fault with a different fix.
-# NOTE: per-filter packet counters are NOT available here. \`action stats\` needs
-# the act_stats module, which this kernel does not provide, and \`tc -s filter
-# show\` prints no statistics for a flower filter without it. A missing module
-# also surfaces as "Bad action type stats", which reads like a syntax error.
-#
-# The isolation is therefore done in testbed/bridge_isolate.sh instead: one
-# filter, one rule, nothing else in the path.
-echo "  (per-filter counters unavailable: no act_stats on this kernel --"
-echo "   see testbed/bridge_isolate.sh for the minimal reproduction)"
-echo "--- steer filters ---"
-$R tc filter show dev "$EGR_IF" parent 1: | grep -E 'pref|ip_tos'
-awk -v p="$PKT" 'BEGIN{exit !(p+0 > 0)}' \
-  || die "check 16b: the nft rule matched nothing (counter=$PKT); the set lookup is broken"
+echo "1:20 $A20 -> $B20   1:30 $A30 -> $B30"
+echo "--- the filter that was installed ---"
+$R tc filter show dev "$EGR_IF" parent 1: | grep -E 'pref 5 |src_ip|dst_ip|dst_port' \
+  | sed 's/^/  /'
 awk -v a="$A20" -v b="$B20" 'BEGIN{exit !(b+0 > a+0 + 20000)}' \
-  && ok "check 16b: steered IPv4 flow routed to 1:20 (rule matched $PKT pkt)" \
-  || die "check 16b: rule matched $PKT pkt and set DSCP cs3, but 1:20 did not grow ($A20 -> $B20).
-The nft WRITER ran (counter is non-zero) and the reader is proven by check 16a,
-so the DSCP written in prerouting is not the DSCP seen on egress.
+  && ok "check 16: steered IPv4 flow routed to 1:20 -- ADAPTIVE receives traffic" \
+  || die "check 16: 1:20 did not grow ($A20 -> $B20). This is the first check that
+ADAPTIVE has ever received anything: adaptive_video reported goodput 0.0 in every
+v0 sample because nothing routed to class 1:20."
 
-The client-side watch shows DSCP 0x18 arriving, so the header rewrite succeeds
-end to end. The skb->priority explanation was tested and is wrong:
-'meta priority set' is visibly in the rule and 1:20 still does not grow.
-
-Run ./testbed/bridge_isolate.sh, which repeats this with ONE filter and ONE
-rule and nothing else in the path."
-
-# ---------- 17 a flow marked unclassified loses EF priority ----------
-# The evasion path: a flow that claims DSCP EF but is classified as bulk or
-# unclassified must NOT reach 1:10.
-#
-# nftables prerouting rewrites the DSCP to the class selector code BEFORE tc sees
-# the packet on egress, so by filter time the claim is gone and the steer filter
-# for `unclassified` (CS1) routes it to 1:30. That holds regardless of prio
-# ordering, because the rewrite has already happened.
+# ---------- 17 a rejected EF-claiming flow does not reach 1:10 ----------
+# The classifier must be able to deny EF priority to a flow that claims it. The
+# per-flow filter sits at prio 5, ahead of the DSCP-EF fallback at prio 30, so an
+# explicit verdict wins regardless of what the sender put in the header.
 C10=$(cbytes 1:10)
 bmark 203.0.113.2 10.0.1.2 udp 7002 unclassified || die "check 17: steering failed"
-send 10.0.1.2 7002 1000 ef 60    # DSCP EF claimed on the wire
+send 10.0.1.2 7002 1000 ef 60
 sleep 1
 D10=$(cbytes 1:10)
-echo "EF-marked but classified unclassified: 1:10 $C10 -> $D10"
+echo "EF-claiming but classified unclassified: 1:10 $C10 -> $D10"
 awk -v a="$C10" -v b="$D10" 'BEGIN{exit !(b+0 <= a+0 + 2000)}' \
-  && ok "check 17: unclassified flow denied EF priority" \
-  || die "check 17: EF-claimed unclassified flow still reached 1:10 ($C10 -> $D10)"
+  && ok "check 17: a rejected EF-claiming flow does not reach 1:10" \
+  || die "check 17: EF-claiming flow reached 1:10 anyway ($C10 -> $D10)"
 
-# ---------- 18 IPv6 mark routes to the marked class ----------
+# ---------- 18 steered IPv6 flow reaches its class ----------
 A20=$(cbytes 1:20)
-# Source must be the wan namespace's IPv6 address. Check 13's conntrack line
-# reads `src=fd00:2::2 dst=fd00:1::2 dport=7003`, and the nft set key is matched
-# on (saddr, daddr, proto, dport) -- so the wrong source address yields an
-# element that never matches, and the check fails while looking like a broken
-# IPv6 steering path. The earlier value here was 2001:db8::2, taken from a
-# documentation-range fixture rather than from the testbed's own addressing.
 bmark fd00:2::2 fd00:1::2 udp 7003 adaptive || die "check 18: steering failed"
 send6 fd00:1::2 7003 1000 60
 sleep 1
 B20=$(cbytes 1:20)
 echo "ipv6 1:20 $A20 -> $B20"
 awk -v a="$A20" -v b="$B20" 'BEGIN{exit !(b+0 > a+0 + 20000)}' \
-  && ok "check 18: IPv6 mark routes udp/7003 to class 1:20" \
+  && ok "check 18: steered IPv6 flow routed to 1:20" \
   || die "check 18: IPv6 1:20 did not grow ($A20 -> $B20)"
 
-# ---------- 19 mark expiry ----------
-# A short-lived element must age out in the kernel. This is the whole of mark
-# expiry: no userspace sweeper, and a crashed ACIQ cannot leave stale marks
-# alive because the kernel's timers keep running.
-bmark 203.0.113.2 10.0.1.2 udp 7004 adaptive 3s || die "check 19: steering failed"
-$R nft list set ip aciq adaptive | grep -q 7004 \
-  || die "check 19: element absent immediately after add"
-sleep 6
-$R nft list set ip aciq adaptive | grep -q 7004 \
-  && die "check 19: element still present after its 3s timeout" \
-  || ok "check 19: mark expires via kernel set timeout"
+# ---------- 19 removing the filter returns the flow to the default class ----------
+# REPLACES the old "mark expiry" check. Per-flow filters have no kernel-side
+# timeout: the nftables-set design expired them for free, and that capability is
+# genuinely lost. So expiry is no longer something the kernel does for us, and
+# removal has to be shown working rather than assumed.
+E0=$(cbytes 1:20); E3=$(cbytes 1:30)
+bunmark 203.0.113.2 10.0.1.2 udp 7001 || die "check 19: removal failed"
+send 10.0.1.2 7001 1000 0 60
+sleep 1
+F20=$(cbytes 1:20); F30=$(cbytes 1:30)
+echo "after removing the filter: 1:20 $E0 -> $F20   1:30 $E3 -> $F30"
+awk -v a="$E0" -v b="$F20" 'BEGIN{exit !(b+0 <= a+0 + 2000)}' \
+  && ok "check 19: removing the filter returns the flow to the default class" \
+  || die "check 19: 1:20 still growing after the filter was removed ($E0 -> $F20)"
 
 # ---------- 20 teardown ----------
 $VENV/bin/python - <<'PY' || die "check 20: bridge teardown failed"
 import sys
 sys.path.insert(0, "..")
-from aciq.bridge import Bridge
-Bridge(dev="veth-lan", in_if="veth-wan", ns="router").teardown()
+from aciq.bridge import Bridge, FlowKey
+b = Bridge(dev="veth-lan", in_if="veth-wan", ns="router")
+b.teardown()
 PY
-ip netns exec router nft list table ip aciq >/dev/null 2>&1 \
-  && die "check 20: ip table aciq still present after teardown" \
-  || ok "check 20: teardown removes the bridge tables"
+$R tc filter show dev "$EGR_IF" parent 1: | grep -q 'dst_port 700' \
+  && die "check 20: a per-flow filter survived teardown" \
+  || ok "check 20: teardown removes the bridge's filters"
 
 summary
 echo; echo "log saved to $LOG"
