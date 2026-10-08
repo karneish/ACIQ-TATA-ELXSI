@@ -238,8 +238,55 @@ echo "  1:20 $D0 -> $D1    1:30 $D3 -> $D3n"
 if [ "${D1:-0}" -gt "${D0:-0}" ]; then
   res "D: u32 reads the header flower will not -- u32 is the IPv4 mechanism" 0
 else
-  res "D: u32 does not route it either, so the header is NOT 0x18 at tc time" 1
+  res "D: u32 does not route the nftables-written DSCP" 1
 fi
+echo "  NOTE: D on its own proves nothing. The u32 filter is installed only in"
+echo "  test D, so u32 has never been shown to work HERE at all -- not even for"
+echo "  a DSCP the sender set. Test F is its positive control."
+echo
+
+# ---------------------------------------------------------------------------
+# F and G: establish what each mechanism can actually read.
+#
+# D was inconclusive because u32 had never been tested against a working case,
+# and because "meta priority" (test C) may not do what I assumed. Both need a
+# positive control.
+# ---------------------------------------------------------------------------
+echo "--- F: u32 with a SENDER-set DSCP (positive control for u32) ---"
+$R tc filter del dev "$DEV" parent 1: protocol ip pref 9 2>/dev/null
+$R tc filter add dev "$DEV" parent 1: protocol ip prio 9 u32 \
+   match ip dsfield 0x18 0xfc flowid 1:20
+$R nft delete table ip isote 2>/dev/null   # no nftables rule active
+F0=$(b 1:20); F3=$(b 1:30)
+send 7010 18 60
+sleep 1
+F1=$(b 1:20); F3n=$(b 1:30)
+echo "  1:20 $F0 -> $F1    1:30 $F3 -> $F3n"
+if [ "${F1:-0}" -gt "${F0:-0}" ]; then res "F: u32 DOES read a sender-set DSCP (u32 works)" 0
+else res "F: u32 fails even for a sender-set DSCP (u32 is simply broken here)" 1; fi
+echo
+
+echo "--- G: nftables sets ONLY skb->priority, no DSCP rewrite ---"
+# Isolates the skb->priority hypothesis completely: no dscp write at all, so the
+# header stays 0x00 and only skb->priority becomes 0x18.
+#
+# If flower now matches, flower reads skb->priority, the hypothesis is right, and
+# the fix is to set priority -- for which test C is the negative control.
+# If it does not match, flower reads the header, and test B's failure means the
+# header is somehow not 0x18 for tc despite postrouting counting 0x18.
+$R tc filter del dev "$DEV" parent 1: protocol ip prio 9 2>/dev/null
+$R nft delete table ip isote 2>/dev/null
+$R nft add table ip isote
+$R nft add chain ip isote c '{ type filter hook prerouting priority mangle; policy accept; }'
+$R nft add rule ip isote c iifname "$IN" th dport 7001 meta priority set 0x18 counter
+$R nft list ruleset | grep 'isote' | grep dport | sed 's/^/  rule: /'
+G0=$(b 1:20); G3=$(b 1:30)
+send 7001 00 60
+sleep 1
+G1=$(b 1:20); G3n=$(b 1:30)
+echo "  1:20 $G0 -> $G1    1:30 $G3 -> $G3n"
+if [ "${G1:-0}" -gt "${G0:-0}" ]; then res "G: flower matches skb->priority -- that is what it reads" 0
+else res "G: flower ignores skb->priority; it reads the header" 1; fi
 echo
 
 echo "=== SUMMARY ==="
@@ -253,8 +300,14 @@ echo "  A fail          -> flower ip_tos does not work on IPv4 egress here and"
 echo "                    gate 16a's PASS was not reproducible."
 echo "  A pass, B pass  -> the fault needs something the full gate adds."
 echo
-echo "  D pass          -> the header IS 0x18 when tc sees it, flower ip_tos is"
-echo "                    reading something else, and u32 works. Ship u32 for"
-echo "                    IPv4 and keep flower for IPv6."
-echo "  D fail          -> the header is NOT 0x18 at tc time, which contradicts"
-echo "                    the client seeing 0x18 and needs explaining."
+echo
+echo "  F pass + D fail -> u32 works but rejects an nftables-written DSCP:"
+echo "                    u32 reads the header, so the header is not 0x18 for"
+echo "                    tc even though postrouting counts 0x18. Something"
+echo "                    between postrouting and the classifier restores it."
+echo "  F fail          -> u32 is unusable here; only flower is in play."
+echo "  G pass          -> flower reads skb->priority. The fix is to set"
+echo "                    priority, and test C's failure is then the anomaly"
+echo "                    worth chasing."
+echo "  G fail          -> flower reads the header, and test B's failure cannot"
+echo "                    be explained by hook counters. Re-examine the premise."
