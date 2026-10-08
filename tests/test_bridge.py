@@ -29,7 +29,7 @@ from aciq.bridge import (
     generate_add_element,
     generate_del_element,
     generate_flush,
-    generate_mark_filters,
+    generate_steer_filters,
     generate_rules,
     generate_sets,
     generate_table,
@@ -95,7 +95,7 @@ class TestTokenisation(unittest.TestCase):
         out += list(generate_sets("ip", "router"))
         out += list(generate_rules("ip", "veth-lan", "router"))
         out += [generate_add_element("ip", V4, CLASS_INTERACTIVE, ns="router")]
-        out += list(generate_mark_filters("veth-lan", "router"))
+        out += list(generate_steer_filters("veth-lan", "router"))
         return out
 
     def test_every_command_is_a_tuple_of_str(self):
@@ -219,33 +219,53 @@ class TestRules(unittest.TestCase):
 
 class TestMarkFilters(unittest.TestCase):
     def test_one_per_class_per_protocol(self):
-        self.assertEqual(len(generate_mark_filters("veth-lan")),
+        self.assertEqual(len(generate_steer_filters("veth-lan")),
                          len(MARKED_CLASSES) * 2)
 
     def test_both_protocols_present(self):
         protos = {f[f.index("protocol") + 1]
-                  for f in generate_mark_filters("veth-lan")}
+                  for f in generate_steer_filters("veth-lan")}
         self.assertEqual(protos, {"ip", "ipv6"})
 
-    def test_handle_is_masked_to_the_class_nibble(self):
-        """Without the mask, one filter per (class x confidence x reason) would
-        be needed -- 80 filters -- and a new bucket would invalidate them."""
-        for f in generate_mark_filters("veth-lan"):
-            handle = f[f.index("handle") + 1]
-            self.assertIn("/0x0f", handle)
+    def test_matches_dscp_selector_codes(self):
+        """flower reads the DSCP the nft rules stamp, so the two must agree."""
+        for f in generate_steer_filters("veth-lan"):
+            self.assertIn("ip_tos", f)
+        self.assertTrue(any("0x08/0xfc" in f for f in
+                            generate_steer_filters("veth-lan")))
 
-    def test_handle_matches_the_encoder(self):
-        handles = {f[f.index("handle") + 1]
-                   for f in generate_mark_filters("veth-lan")}
-        self.assertEqual(handles, {class_handle(c) for c in MARKED_CLASSES})
+    def test_only_the_dscp_bits_are_masked(self):
+        """DSCP is the top 6 bits of TOS; the low 2 are ECN and must not be
+        matched, or traffic would be classified by its ECN marks."""
+        for f in generate_steer_filters("veth-lan"):
+            self.assertIn("/0xfc", f[f.index("ip_tos") + 1])
+
+    def test_no_fw_filters_are_emitted(self):
+        """`tc fw` cannot match a mark on iproute2 6.1.0 -- it accepts only
+        classid, indev and action. Emitting one makes setup fail outright."""
+        for f in generate_steer_filters("veth-lan"):
+            self.assertNotIn("fw", f)
+
+    def test_dscp_codes_are_csx_and_unique(self):
+        from aciq.bridge import CS_DSCP_NAMES, CS_DSCP_VALUES
+        vals = [CS_DSCP_VALUES[c] for c in MARKED_CLASSES]
+        self.assertEqual(len(set(vals)), len(vals), "codes must not collide")
+        for c in MARKED_CLASSES:
+            self.assertTrue(CS_DSCP_NAMES[c].startswith("cs"))
+
+    def test_skip_hw_present(self):
+        """flower is hardware-offloadable; without skip_hw the kernel may try to
+        push these filters to the NIC and fail on a veth pair."""
+        for f in generate_steer_filters("veth-lan"):
+            self.assertIn("skip_hw", f)
 
     def test_protocol_can_be_collapsed(self):
-        self.assertEqual(len(generate_mark_filters("d", protocol_filter=False)),
+        self.assertEqual(len(generate_steer_filters("d", protocol_filter=False)),
                          len(MARKED_CLASSES))
 
     def test_flowids(self):
         flowids = {f[f.index("flowid") + 1]
-                   for f in generate_mark_filters("veth-lan")}
+                   for f in generate_steer_filters("veth-lan")}
         self.assertEqual(flowids, {"1:10", "1:20", "1:30", "1:40"})
 
     def test_unclassified_goes_to_the_default_class(self):
@@ -298,7 +318,7 @@ class TestFilterPriority(unittest.TestCase):
         """Distinct prios per class make evaluation order explicit instead of
         relying on same-prio chaining rules."""
         combos = [(f[f.index("prio") + 1], f[f.index("protocol") + 1])
-                  for f in generate_mark_filters("d")]
+                  for f in generate_steer_filters("d")]
         self.assertEqual(len(combos), len(set(combos)))
 
 
@@ -585,7 +605,7 @@ class TestEndToEndPlan(unittest.TestCase):
         uncls = [c for c in b.commands
                  if "element" in c and SET_NAMES[CLASS_UNCLASSIFIED] in c]
         self.assertTrue(uncls)
-        prios = [c[c.index("prio") + 1] for c in generate_mark_filters("d")]
+        prios = [c[c.index("prio") + 1] for c in generate_steer_filters("d")]
         self.assertTrue(all(int(p) < min(DSCP_FILTER_PRIO.values()) for p in prios))
 
 
@@ -771,3 +791,82 @@ class TestConcatenationDots(unittest.TestCase):
         self.assertEqual(fields, ["10.0.1.2", "203.0.113.2", "tcp", "443"])
         # 4 fields => 3 separators
         self.assertEqual(self._rule().count("."), len(fields) - 1)
+
+
+class TestSteeringCodes(unittest.TestCase):
+    """The DSCP selector codes, and the collision that nearly happened."""
+
+    def test_cs0_is_never_used(self):
+        """DSCP 0x00 is ordinary best-effort traffic. A CS0 filter would capture
+        every unsteered packet and route it to 1:30 -- correct outcome, wrong
+        reason, and it destroyed the difference between 'the bridge decided this
+        is unclassified' and 'the bridge never looked at this packet'."""
+        from aciq.bridge import CS_DSCP_NAMES, CS_DSCP_VALUES
+        self.assertNotIn(0x00, CS_DSPF := CS_DSCP_VALUES.values())
+        self.assertNotIn("cs0", CS_DSCP_NAMES.values())
+        self.assertGreater(min(CS_DSPF), 0x00)
+
+    def test_steering_codes_start_at_cs1(self):
+        from aciq.bridge import CS_DSCP_VALUES
+        self.assertEqual(min(CS_DSCP_VALUES.values()), 0x08)
+
+    def test_codes_are_unique(self):
+        from aciq.bridge import CS_DSCP_VALUES
+        vals = list(CS_DSCP_VALUES.values())
+        self.assertEqual(len(set(vals)), len(vals))
+
+    def test_codes_are_consecutive_csx(self):
+        from aciq.bridge import CS_DSCP_VALUES
+        vals = sorted(CS_DSCP_VALUES.values())
+        self.assertEqual(vals, list(range(0x08, 0x08 + 8 * len(vals), 8)))
+
+    def test_every_class_has_a_code(self):
+        from aciq.bridge import CS_DSCP_VALUES, MARKED_CLASSES
+        self.assertEqual(set(CS_DSCP_VALUES), set(MARKED_CLASSES))
+
+    def test_no_code_collides_with_dscp_ef(self):
+        """EF is 0xb8. A steering code equal to it would let an EF probe capture
+        a steered flow, and the trust logic in classify.py would stop meaning
+        anything."""
+        from aciq.bridge import CS_DSCP_VALUES
+        for c, v in CS_DSCP_VALUES.items():
+            self.assertNotEqual(v, 0xB8, f"{c} steers onto DSCP EF")
+
+    def test_steering_filter_value_matches_the_rule(self):
+        """The rule stamps DSCP; the filter must read exactly that value. A
+        mismatch here would be invisible -- both commands are individually
+        valid -- and would silently route every steered flow to the default."""
+        from aciq.bridge import (CLASS_PRECEDENCE, CS_DSCP_VALUES,
+                                 generate_rules, generate_steer_filters)
+        for family in ("ip", "ip6"):
+            for rule, c in zip(generate_rules(family, "veth-wan"),
+                               CLASS_PRECEDENCE):
+                name = CS_DSCP_VALUES[c]
+                self.assertIn(f"set {f'cs{(name // 8) & 0x7:d}'}", " ".join(rule))
+        handles = {f[f.index("ip_tos") + 1].split("/")[0]
+                   for f in generate_steer_filters("d")}
+        self.assertEqual(handles,
+                         {f"{v:#04x}" for v in CS_DSCP_VALUES.values()})
+
+    def test_ipv4_and_ipv6_spell_dscp_differently(self):
+        """`ip dscp set` and `ip6 dscp set` are different keywords."""
+        v4 = " ".join(generate_rules("ip", "veth-wan")[0])
+        v6 = " ".join(generate_rules("ip6", "veth-wan")[0])
+        self.assertIn("ip dscp set", v4)
+        self.assertIn("ip6 dscp set", v6)
+
+    def test_mark_is_still_set_alongside_dscp(self):
+        """DSCP is 6 bits and carries only the class. The mark additionally
+        carries confidence, reason and lease id, so both are written."""
+        for family in ("ip", "ip6"):
+            for rule in generate_rules(family, "veth-wan"):
+                self.assertIn("meta", rule)
+                self.assertIn("mark", rule)
+
+    def test_dscp_steering_precedes_ef_filters(self):
+        """A steered flow must not be able to fall through to the EF filter,
+        which is exactly the evasion the seen-bit design was built to close."""
+        from aciq.bridge import MARK_FILTER_PRIO
+        from aciq.tc import DSCP_FILTER_PRIO
+        self.assertLess(max(MARK_FILTER_PRIO.values()),
+                        min(DSCP_FILTER_PRIO.values()))

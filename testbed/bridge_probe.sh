@@ -206,8 +206,16 @@ try "nft ip dscp set 0x28"  $NS nft add rule ip aciq probe \
   ip saddr . ip daddr . meta l4proto . th dport @leased ip dscp set 0x28
 try "nft ip dscp set ef"    $NS nft add rule ip aciq probe2 \
   ip saddr . ip daddr . meta l4proto . th dport @leased ip dscp set af41
-try "nft ip dscp set cs?"   $NS nft add rule ip aciq probe2 \
-  ip saddr . ip daddr . meta l4proto . th dport @interactive ip dscp set cs0
+try "nft ip dscp set cs5"   $NS nft add rule ip aciq probe2 \
+  ip saddr . ip daddr . meta l4proto . th dport @interactive ip dscp set cs5
+# The IPv6 spelling is `ip6 dscp set`, which the probe has never exercised. The
+# generator emits it, so it must be verified rather than assumed.
+$NS nft add table ip6 aciqprobe 2>/dev/null
+$NS nft add set ip6 aciqprobe s6 \
+  '{ type ipv6_addr . ipv6_addr . inet_proto . inet_service ; flags timeout ; timeout 120s ; }' 2>/dev/null
+try "nft ip6 dscp set cs5"  $NS nft add rule ip6 aciqprobe ip6 saddr . ip6 daddr . \
+  meta l4proto . th dport @s6 ip6 dscp set cs5
+$NS nft delete table ip6 aciqprobe 2>/dev/null
 try "flower reads rewritten dscp" $D protocol ip prio 21 flower skip_hw ip_tos 0x28/0xfc flowid 1:20
 ip netns exec router tc filter del dev "$DEV" parent 1: prio 21 2>/dev/null
 $NS nft delete chain ip aciq probe 2>/dev/null

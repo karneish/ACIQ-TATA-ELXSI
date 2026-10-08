@@ -30,9 +30,39 @@ the part that gets exhaustive tests.
 - **No catch-all rule.** Only flows present in a set get marked, so unmarked
   traffic still reaches the pre-existing DSCP-EF filters. The bridge claims
   authority over what it has actually classified and no more.
-- **Static `tc fw` filters**, one per class per protocol, matching the mark's
-  class nibble via `handle 0xNN/0x0f`. Reclassification touches one set element
-  and nothing in the tc tree.
+- **Static `tc flower` filters**, one per class per protocol, keyed on the DSCP
+  selector code the nftables rule stamps. Reclassification touches one set
+  element and nothing in the tc tree.
+
+## Why DSCP and not the packet mark
+
+The original design had nftables write the packet **mark** and static `tc fw`
+filters read it, matching the mark's class nibble. That is impossible on this
+toolchain, and it was measured rather than assumed -- every spelling rejected by
+iproute2 6.1.0:
+
+    fw handle 0xNN/0x0f         fw has no `handle`
+    fw mask 0xf handle 0x1      fw has no `mask`
+    flower meta mark            flower has no `meta` key at all
+    basic match "skb/mark ..."  not the ematch grammar
+    basic ematch "..."          `basic` takes `match`, not `ematch`
+
+An absent capability, not a syntax slip, so no argument reordering recovers it.
+The alternative was per-flow `flower` filters matching the flow key directly,
+which is proven working and mutates nothing -- but it costs a netlink
+transaction per reclassification and gives up kernel-side expiry. That was
+rejected because the churn it avoids is the entire reason the nftables-set
+design existed.
+
+So the class selector travels in DSCP, using **CSx codes**, which are reserved
+for local assignment and therefore not expected to be carrying anything.
+`flower ip_tos` is the reader because it is proven on this exact toolchain:
+gate check 14 routes IPv6 EF traffic with `flower ip_tos 0xb8/0xfc`.
+
+The mark is still written as well. DSCP is 6 bits and carries the class and
+nothing else, while the mark additionally carries confidence, reason and lease
+id -- facts that matter for the lease feature and for any later accuracy work.
+Both are set, and `marks.py` remains the authority on the field layout.
 
 ## Filter priority
 
@@ -88,7 +118,8 @@ NFT_HOOK_PRIORITY = "mangle"
 #: whole of mark expiry: a flow that stops being classified stops being marked.
 NFT_ELEMENT_TIMEOUT = "120s"
 
-#: Mark-driven filter priorities, per class. Distinct per class so evaluation
+#: Steer-filter priorities, per class. `tc` evaluates ascending, so these
+#: precede the DSCP-EF fallback at prio 30-31. Distinct per class so evaluation
 #: order is explicit rather than relying on same-prio chaining rules.
 MARK_FILTER_PRIO = {
     CLASS_UNCLASSIFIED: 10,
@@ -127,6 +158,44 @@ CLASS_PRECEDENCE = (
     CLASS_BULK,
     CLASS_UNCLASSIFIED,
 )
+
+#: DSCP selector codes used to steer traffic into an HTB class.
+#:
+#: **CS0-CS7 are used because nothing sends them.** They are "class selector"
+#: codes, reserved precisely so an in-network agent may assign them locally.
+#: AF41-AF43 would have been the other candidate and are deliberately avoided:
+#: they are the network control codes, the ones a downstream network is most
+#: likely to already be relying on, so overwriting them can break admission
+#: control somewhere this router cannot see.
+#:
+#: Costs 6 bits, which is why the mark is set as well -- see `generate_rules`.
+#:
+#: CS0 is deliberately NOT used. DSCP 0x00 is ordinary best-effort traffic, so a
+#: CS0 filter would capture every unsteered packet on the link and route it to
+#: 1:30 -- which happens to be the default class, so the outcome was correct but
+#: for the wrong reason, and the filter could no longer distinguish "the bridge
+#: decided this is unclassified" from "the bridge never touched it". Starting at
+#: CS1 means a matching filter always implies a steering decision.
+CS_DSCP_VALUES = {
+    CLASS_UNCLASSIFIED: 0x08,   # CS1
+    CLASS_INTERACTIVE: 0x10,    # CS2
+    CLASS_ADAPTIVE: 0x18,       # CS3
+    CLASS_BULK: 0x20,           # CS4
+    CLASS_LEASED: 0x28,         # CS5
+}
+
+#: DSCP names, for readable command lines. nftables and tc both accept these.
+CS_DSCP_NAMES = {
+    CLASS_UNCLASSIFIED: "cs1",
+    CLASS_INTERACTIVE: "cs2",
+    CLASS_ADAPTIVE: "cs3",
+    CLASS_BULK: "cs4",
+    CLASS_LEASED: "cs5",
+}
+
+#: DSCP occupies the top 6 bits of the TOS byte; the low 2 are ECN and must not
+#: be matched. Same mask gate check 14 already proves for EF (0xb8/0xfc).
+DSCP_MASK = "0xfc"
 
 SUPPORTED_PROTOS = frozenset({"tcp", "udp"})
 
@@ -190,8 +259,10 @@ class FlowKey:
 #: `ip6 daddr` and ipv6_addr. A single `inet` table cannot express both, which
 #: is why there are two tables rather than one clever one.
 _FAMILY = {
-    "ip": ("ipv4_addr", "ipv4_addr", ("ip", "saddr"), ("ip", "daddr")),
-    "ip6": ("ipv6_addr", "ipv6_addr", ("ip6", "saddr"), ("ip6", "daddr")),
+    "ip": ("ipv4_addr", "ipv4_addr", ("ip", "saddr"), ("ip", "daddr"),
+           ("ip", "dscp")),
+    "ip6": ("ipv6_addr", "ipv6_addr", ("ip6", "saddr"), ("ip6", "daddr"),
+            ("ip6", "dscp")),
 }
 
 #: The address expressions are TOKEN TUPLES, not strings. nftables parses `ip`
@@ -203,7 +274,7 @@ _ADDRESS_TOKEN_EXCEPTIONS: frozenset[str] = frozenset({"{", "}"})
 
 
 def _set_type(family: str) -> str:
-    src_t, dst_t, _, _ = _FAMILY[family]
+    src_t, dst_t, _, _, _ = _FAMILY[family]
     return f"{src_t} . {dst_t} . inet_proto . inet_service"
 
 
@@ -244,7 +315,7 @@ def generate_rules(family: str, in_if: str,
     than dict iteration order.
     """
     pre = _netns(ns)
-    _, _, src_toks, dst_toks = _FAMILY[family]
+    _, _, src_toks, dst_toks, dscp_expr = _FAMILY[family]
     cmds = []
     for c in CLASS_PRECEDENCE:
         mark = encode(c)
@@ -262,6 +333,14 @@ def generate_rules(family: str, in_if: str,
             *src_toks, ".", *dst_toks, ".",
             "meta", "l4proto", ".", "th", "dport",
             "@" + SET_NAMES[c],
+            # The DSCP write is what tc actually reads. `ip dscp set` for IPv4,
+            # `ip6 dscp set` for IPv6 -- the two families spell this differently.
+            # The mark is set as well, and not only for symmetry: DSCP has 6 bits
+            # and can carry the class and nothing else, while the mark also
+            # carries confidence, reason and lease id. Keeping both means the
+            # richer per-flow facts survive even though no tc classifier on this
+            # toolchain can read them yet.
+            dscp_expr[0], dscp_expr[1], "set", CS_DSCP_NAMES[c],
             "meta", "mark", "set", str(mark),
         ))
     return tuple(cmds)
@@ -291,15 +370,41 @@ def generate_del_element(family: str, key: FlowKey, class_id: int,
                   SET_NAMES[class_id], key.element(timeout=None))
 
 
-def generate_mark_filters(dev: str, ns: str | None = None,
-                          protocol_filter: bool = True) -> tuple[tuple[str, ...], ...]:
-    """Static `tc fw` filters, one per class per protocol, matching the class
-    nibble of the mark.
+def generate_steer_filters(dev: str, ns: str | None = None,
+                           protocol_filter: bool = True) -> tuple[tuple[str, ...], ...]:
+    """Static `tc flower` filters, one per class per protocol, keyed on the DSCP
+    selector code the bridge stamped on the packet.
 
-    `handle 0xNN/0x0f` masks to the class field so confidence, reason and lease
-    id do not each need their own filter. With 5 classes x 4 confidence x 4
-    reasons that would otherwise be 80 filters, and one new bucket would
-    invalidate every one of them.
+    ## Why flower and not fw
+
+    The original design had nftables write the packet mark and static `tc fw`
+    filters read it, matching the mark's class nibble. **No classifier on
+    iproute2 6.1.0 can match a packet mark.** Measured, not assumed:
+
+        fw handle 0xNN/0x0f        rejected: fw has no `handle`
+        fw mask 0xf handle 0x1     rejected: fw has no `mask`
+        flower meta mark           rejected: flower has no `meta` key at all
+        basic match "skb/mark ..." rejected: not the ematch grammar
+
+    `flower ip_tos` is used instead because it is proven to work on this exact
+    toolchain: gate check 14 routes IPv6 EF traffic with `flower ip_tos 0xb8/0xfc`,
+    and the probe confirms `flower ip_tos 0x28/0xfc` alongside `ip_proto` and
+    full 4-tuple matching.
+
+    ## What this costs
+
+    The DSCP on the wire is rewritten to a CSx selector code, so the original
+    value is not visible downstream. That is a deliberate policy decision, not
+    an accident: many routers remark DSCP to reflect their own scheduling, and
+    CSx codes are reserved for exactly that kind of local assignment. If the
+    original value must survive, the alternative is per-flow `flower` filters
+    matching the flow key directly, which mutates nothing but costs a netlink
+    transaction per reclassification and loses kernel-side mark expiry.
+
+    ## Mask
+
+    DSCP is the top 6 bits of the TOS byte; the low 2 are ECN and must not be
+    matched, hence /0xfc. Identical to what gate check 14 already proves.
     """
     pre = _netns(ns)
     cmds = []
@@ -309,7 +414,8 @@ def generate_mark_filters(dev: str, ns: str | None = None,
                 "tc", "filter", "add", "dev", dev, "parent", "1:",
                 "protocol", protocol,
                 "prio", str(MARK_FILTER_PRIO[c]),
-                "fw", "handle", class_handle(c),
+                "flower", "skip_hw",
+                "ip_tos", f"{CS_DSCP_VALUES[c]:#04x}/{DSCP_MASK}",
                 "flowid", _flowid(c),
             ))
     return tuple(cmds)
@@ -407,7 +513,7 @@ class Bridge:
             ran += self._do(generate_table(family, self.ns))
             ran += self._do(generate_sets(family, self.ns))
             ran += self._do(generate_rules(family, self.in_if, self.ns))
-        ran += self._do(generate_mark_filters(self.dev, self.ns))
+        ran += self._do(generate_steer_filters(self.dev, self.ns))
         return ran
 
     def teardown(self) -> list[tuple[str, ...]]:
@@ -522,7 +628,7 @@ class Bridge:
             out += list(generate_table(family, self.ns))
             out += list(generate_sets(family, self.ns))
             out += list(generate_rules(family, self.in_if, self.ns))
-        out += list(generate_mark_filters(self.dev, self.ns))
+        out += list(generate_steer_filters(self.dev, self.ns))
         return out
 
 
