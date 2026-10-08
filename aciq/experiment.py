@@ -167,6 +167,11 @@ class ExperimentRunner:
         self.real_time = real_time
         #: counter source; injectable so a dry run never shells out to `tc`
         self.source = source
+        #: Per-flow enforcement. Off unless `enforce=True` is passed to run();
+        #: see aciq/closedloop.py for why it is not simply always on.
+        self.enforce = False
+        self._tracker: FlowTracker | None = None
+        self._ct: ConntrackSource | None = None
 
     def run_paths(self, scenario: str, system: SystemSpec, mode: CapacityMode,
                   seed: int) -> RunPaths:
@@ -183,7 +188,9 @@ class ExperimentRunner:
         drop_mbps: float = 20.0,
         drop_at_s: float | None = None,
         settle_s: float | None = None,
+        enforce: bool = False,
     ) -> RunResult:
+        self.enforce = enforce
         sc = SCENARIOS[scenario_name]
         # A settle period lets the link reach steady state before anything is
         # measured. Without it the first packets of the run race a flooding bulk
@@ -225,6 +232,25 @@ class ExperimentRunner:
             paths.write_json("result.json", json.loads(res.to_json()))
             self.launcher.stop()
             return res
+
+        # ---- 1b. opt-in per-flow enforcement
+        #
+        # Only for the ACIQ system: a baseline has no classifier to apply, and
+        # steering a baseline's traffic would make the comparison meaningless
+        # rather than merely unfair.
+        enforcement_on = False
+        if self.enforce and system is SystemSpec.ACIQ:
+            if isinstance(self.launcher, DryLauncher):
+                # A dry run launches nothing, so conntrack would report no flows
+                # and the loop would decide nothing -- a run that looks wired up
+                # while measuring nothing.
+                pass
+            else:
+                self.harness.enable_enforcement(
+                    capacity_mbps=self.harness._estimator.current.mbps or link_mbps)
+                self._tracker = FlowTracker()
+                self._ct = ConntrackSource(ns=self.harness.ns)
+                enforcement_on = self.harness.enforcement_enabled
 
         # ---- 2. launch workloads: sinks first so nothing races the listener
         for (label, port, dscp), w in zip(ports, _expand(sc)):
@@ -273,6 +299,8 @@ class ExperimentRunner:
             # the estimate stayed 0.0 for the whole run.
             if mode is CapacityMode.ADAPTIVE:
                 self._closed_loop_step(collector, self.tick_s, t0 + elapsed)
+            verdicts = (self._enforcement_step(ports, t0 + elapsed)
+                        if enforcement_on else {})
 
             lk = collector.last_link_counters()
             samples.append({
@@ -286,6 +314,10 @@ class ExperimentRunner:
                 "fairness": frame.fairness,
                 "cpu_fraction": frame.cpu_fraction,
                 "capacity_mbps": self.harness._estimator.current.mbps,
+                # What each workload was steered to this tick, if enforcement is
+                # on. Recorded per sample so the artefact shows the decision and
+                # its timing, rather than asking the reader to trust the code.
+                "verdicts": verdicts,
             })
 
             # the drop: the link changes, and only the link changes
@@ -315,6 +347,17 @@ class ExperimentRunner:
                     workloads[label] = {"error": "unparseable report"}
         self.launcher.stop()
 
+        # Remove every filter before returning. A run that leaves filters behind
+        # steers the next run's traffic before it has decided anything -- which
+        # is the residue gate check 20 exists to catch, and the reason
+        # enforcement cannot be a write-and-forget.
+        enforcement_note = ""
+        if enforcement_on:
+            self.harness.disable_enforcement()
+            self._tracker = self._ct = None
+            enforcement_note = ("per-flow enforcement was on; filters removed on "
+                                "teardown")
+
         paths.write_jsonl("samples.jsonl", samples)
         paths.write_json("workloads.json", workloads)
 
@@ -327,10 +370,52 @@ class ExperimentRunner:
             estimator_mbps=round(est, 2) if est else None,
             samples=samples[-3:],
             policy_changes=self.harness.policy_changes,
-            notes=[] if dropped else ["no capacity drop in this run"],
+            notes=([] if dropped else ["no capacity drop in this run"])
+                  + ([enforcement_note] if enforcement_note else []),
         )
         paths.write_json("result.json", json.loads(res.to_json()))
         return res
+
+    def _enforcement_step(self, ports, now: float) -> dict[str, dict]:
+        """One enforcement tick: observe flows, classify, steer.
+
+        Reads conntrack rather than anything the workload knows about itself, so
+        the decision rests on observed counters. The workload labels are used
+        only to decide which tracked flows belong to this run -- never as a
+        classification input. `dscp` is deliberately not forwarded to the
+        classifier: the DSCP-EF path is the v0 baseline mechanism, and feeding it
+        in here would let the new per-flow path be credited with a shortcut it
+        did not take.
+        """
+        assert self._tracker is not None and self._ct is not None
+        try:
+            text = self._ct.read()
+        except Exception:
+            # Losing one poll must not kill the run; the next tick re-reads.
+            return {}
+        self._tracker.observe(text, now)
+
+        # Port -> label. The dport is the join key: it is what the generator
+        # chose and what conntrack reports, and unlike the source port it does
+        # not change on reconnect.
+        want = {p: lbl for lbl, p, _d in ports}
+        out: dict[str, dict] = {}
+        for flow in self._tracker.flows():
+            label = want.get(flow.dport)
+            if label is None:
+                continue
+            f = self._tracker.features(flow.key)
+            if f is None:
+                continue
+            v = self.harness.enforce(f, now=now)
+            if v is None:
+                continue
+            out[label] = {
+                "class": v.label, "confidence": round(v.classification.confidence, 2),
+                "tier": v.classification.tier, "corrected": v.corrected,
+                "changed": v.changed,
+            }
+        return out
 
     def _settle(self, paths: RunPaths, ports, sc, settle_s: float) -> None:
         """Run interactive workloads only, and record nothing.

@@ -65,6 +65,10 @@ def main() -> int:
                     help="build everything but do not wait for the run to finish")
     ap.add_argument("--no-setup", action="store_true",
                     help="assume namespaces already exist")
+    ap.add_argument("--enforce", action="store_true",
+                    help="apply per-flow classifications as tc flower filters "
+                         "(ACIQ only; off by default so runs stay comparable "
+                         "to the v0 baseline)")
     ap.add_argument("--results-dir", default=str(RESULTS_DIR))
     ap.add_argument("--report", default=None, help="write the Markdown report here")
     args = ap.parse_args()
@@ -125,7 +129,7 @@ def main() -> int:
                 print(f"\n=== {sc} / {sysspec.value} / {m.value} / seed {args.seed} ===")
                 res = runner.run(
                     sc, sysspec, m, args.seed, args.link, args.drop, args.drop_at,
-                    settle_s=args.settle)
+                    settle_s=args.settle, enforce=args.enforce)
                 for n in res.notes:
                     # only real problems get a warning marker; a note like
                     # "no capacity drop" is informational and alarming it would

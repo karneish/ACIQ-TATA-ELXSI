@@ -152,13 +152,26 @@ class ClosedLoop:
         # label. Kept as one expression so no caller re-derives it.
         label = decision.cls.name.lower() if decision.cls is not None else "unclassified"
 
-        cmds = self.bridge.classify_flow(
-            key_of(f), class_id, confidence=decision.confidence)
+        key = key_of(f)
+        # A declined verdict for a flow that was never steered is a no-op on the
+        # device, but `forget` issues a delete regardless -- deliberately, so a
+        # fresh Bridge can release a filter it did not install. Called once per
+        # flow per tick, that is a netlink round trip per immature flow per tick
+        # for a filter that never existed. So the kernel is left alone unless
+        # there is something on it to remove.
+        if class_id is None and key.signature not in self.bridge.state.slots:
+            verdict = Verdict(classification=decision, cmds=[],
+                              corrected=correction is not None, class_id=None,
+                              label=label)
+            self.decisions[key] = verdict
+            return verdict
+
+        cmds = self.bridge.classify_flow(key, class_id, confidence=decision.confidence)
 
         verdict = Verdict(classification=decision, cmds=cmds,
                           corrected=correction is not None, class_id=class_id,
                           label=label)
-        self.decisions[key_of(f)] = verdict
+        self.decisions[key] = verdict
         return verdict
 
     def forget(self, f: FlowFeatures) -> list[tuple[str, ...]]:

@@ -153,6 +153,21 @@ class FlowTracker:
     def keys(self) -> list[str]:
         return list(self._samples)
 
+    def flows(self) -> list[Flow]:
+        """Every flow currently tracked, de-duplicated by identity.
+
+        Callers need the tuples, not just the keys: `Flow.key` includes the
+        source port, which the kernel's per-flow filter cannot match and which
+        changes on every reconnect. Matching on the observed tuple is therefore
+        the only way to line a tracked flow up with a workload.
+        """
+        out: dict[tuple, Flow] = {}
+        for s in self._samples.values():
+            fl = getattr(s, "flow", None)
+            if fl is not None:
+                out[(fl.src, fl.dst, fl.proto, fl.dport)] = fl
+        return list(out.values())
+
 
 class ConntrackSource:
     """Reads `conntrack -L` from a namespace. Needs root."""

@@ -471,3 +471,116 @@ class TestReport(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestEnforcementWiring(unittest.TestCase):
+    """The loop that makes classify() reach the kernel.
+
+    Every assertion here is about the join, because the previous failure was
+    exactly this: `enforce()` existed, was correct, and nothing called it.
+    """
+
+    # Two conntrack lines shaped like the ones the gate measured: a 1000-byte
+    # video flow and a 200-byte gaming flow, both UNREPLIED, both on 7001/7002.
+    CT = (
+        "udp 17 29 src=10.0.1.2 dst=10.0.1.3 sport=40001 dport=7001 "
+        "packets=4000 bytes=4000000 [UNREPLIED] src=10.0.1.3 dst=10.0.1.2 "
+        "sport=7001 dport=40001 packets=0 bytes=0 mark=0 use=1\n"
+        "udp 17 29 src=10.0.1.2 dst=10.0.1.3 sport=40002 dport=7002 "
+        "packets=4000 bytes=800000 [UNREPLIED] src=10.0.1.3 dst=10.0.1.2 "
+        "sport=7002 dport=40002 packets=0 bytes=0 mark=0 use=1\n"
+    )
+
+    def _runner(self, tmp, launcher=None):
+        r = ExperimentRunner(
+            launcher=launcher or DryLauncher(),
+            harness=Harness(runner=FakeRunner(auto_readback=True), clock=lambda: 0.0),
+            results_dir=Path(tmp), real_time=False, tick_s=1.0)
+        r._ct = type("CT", (), {"read": lambda self: self._CT})()
+        r._ct._CT = self.CT
+        return r
+
+    def test_enforcement_is_off_unless_asked_for(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r.run("s3_tv_and_gaming", SystemSpec.ACIQ)
+            p = r.run_paths("s3_tv_and_gaming", SystemSpec.ACIQ,
+                            CapacityMode.ADAPTIVE, 42)
+            sample = json.loads((p.root / "samples.jsonl").read_text().splitlines()[0])
+            self.assertEqual(sample["verdicts"], {})
+            self.assertFalse(r.harness.enforcement_enabled)
+
+    def test_a_dry_run_does_not_pretend_to_enforce(self):
+        """A dry run launches nothing, so conntrack reports no flows. Wiring the
+        loop on anyway would produce a run that looks connected while measuring
+        nothing."""
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r.run("s3_tv_and_gaming", SystemSpec.ACIQ, enforce=True)
+            self.assertFalse(r.harness.enforcement_enabled)
+
+    def test_baselines_are_never_steered(self):
+        """Steering a baseline would not make the comparison unfair, it would
+        make it meaningless -- the baseline would no longer be a baseline."""
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r.run("s3_tv_and_gaming", SystemSpec.B0, enforce=True)
+            self.assertFalse(r.harness.enforcement_enabled)
+
+    def test_verdicts_are_keyed_by_workload_label(self):
+        """The dport is the join key. The source port changes on every reconnect
+        and cannot appear in a flower filter at all."""
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            ports = [("video", 7001, None), ("gaming", 7002, None)]
+            r._tracker = type("T", (), {})()
+            from aciq.flowtrack import FlowTracker
+            tracker = FlowTracker()
+            r._tracker = tracker
+            # Two observations so age and bytes accumulate into real features.
+            tracker.observe(self.CT, 0.0)
+            tracker.observe(self.CT.replace("4000000", "4400000")
+                            .replace("800000", "880000"), 1.0)
+            r.harness.enable_enforcement(executor=_Exec())
+            out = r._enforcement_step(ports, 2.0)
+            self.assertEqual(set(out), {"video", "gaming"})
+            for label, v in out.items():
+                self.assertIn("class", v)
+                self.assertIn("confidence", v)
+
+    def test_a_flow_the_run_does_not_own_is_ignored(self):
+        """conntrack holds everything on the host -- this machine's own DNS, the
+        loopback entries gate check 3 printed, another run's leftovers. Steering
+        any of it because it happened to be in the table would be a spectacular
+        way to produce a plausible-looking number."""
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            from aciq.flowtrack import FlowTracker
+            tracker = FlowTracker()
+            r._tracker = tracker
+            tracker.observe(self.CT, 0.0)
+            tracker.observe(self.CT.replace("4000000", "4400000")
+                            .replace("800000", "880000"), 1.0)
+            r.harness.enable_enforcement(executor=_Exec())
+            # The run owns 7001 only; 7002 and the loopback traffic are not ours.
+            out = r._enforcement_step([("video", 7001, None)], 2.0)
+            self.assertEqual(set(out), {"video"})
+
+    def test_one_failed_conntrack_read_does_not_kill_the_run(self):
+        class Boom:
+            def read(self):
+                raise OSError("conntrack raced a flush")
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r._ct = Boom()
+            r._tracker = object()
+            self.assertEqual(r._enforcement_step([("v", 7001, None)], 1.0), {})
+
+
+class _Exec:
+    """Answers tc's -j listing with an empty device."""
+
+    def __call__(self, argv):
+        if "-j" in argv:
+            return 0, "[]", ""
+        return 0, "", ""

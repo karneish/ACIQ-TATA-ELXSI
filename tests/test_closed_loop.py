@@ -65,9 +65,15 @@ def mature(mbps=4.69, proto="tcp", dport=443, flow=None, **kw):
     return FlowFeatures(flow=flow, **base)
 
 
-def tiny(**kw):
-    """Below the maturity floor: the classifier declines."""
-    return feats(rx_bytes=100, packets=1, age_s=0.1, **kw)
+def tiny(flow=None, **kw):
+    """Below the maturity floor: the classifier declines.
+
+    Defaults to the *same tuple* as `mature()`, deliberately: "was steered, now
+    declines" is a statement about one flow changing its mind, and it only means
+    that if both halves describe the same 4-tuple.
+    """
+    flow = flow or Flow("10.0.1.2", 1, "1.1.1.1", 443, "tcp")
+    return FlowFeatures(flow=flow, rx_bytes=100, packets=1, age_s=0.1, **kw)
 
 
 def enforcer(**kw):
@@ -283,17 +289,36 @@ class TestVerdictReport(unittest.TestCase):
         e, _ = enforcer()
         self.assertIn("adaptive", str(e.apply(mature())))
 
-    def test_a_declined_verdict_still_runs_a_delete(self):
-        """Deliberate, and asserted here so it stays deliberate: `forget` is not
-        gated on a local slot, because a fresh Bridge must be able to release a
-        flow it never installed. Suppressing the delete to save one command would
-        reintroduce exactly the residue check 20 was written to catch."""
+    def test_a_declined_verdict_for_a_never_steered_flow_runs_nothing(self):
+        """`forget` deliberately issues a delete even with no local slot, so a
+        fresh Bridge can release a filter it did not install. Once per tick that
+        is a netlink round trip per immature flow for a filter that never
+        existed, so apply() short-circuits when there is provably nothing there.
+        Asserted both ways: the shortcut must not swallow the case below."""
         e, exec_ = enforcer()
         v = e.apply(tiny())
-        self.assertTrue(v.changed)
+        self.assertFalse(v.changed)
+        self.assertEqual(exec_.calls, [], "a declined verdict touched the device")
         self.assertEqual(adds(exec_), [], "a declined verdict installed a filter")
+
+    def test_a_declined_verdict_for_a_previously_steered_flow_does_delete(self):
+        """The case the shortcut must not swallow: the flow was steered on an
+        earlier tick, so there IS a filter to remove. Suppressing this would
+        reintroduce exactly the residue check 20 was written to catch."""
+        e, exec_ = enforcer()
+        self.assertTrue(e.apply(mature()).changed)
+        exec_.calls.clear()
+        v = e.apply(tiny())
+        self.assertTrue(v.changed)
         self.assertTrue([c for c in exec_.calls
-                         if bare(c)[:3] == ("tc", "filter", "del")])
+                         if bare(c)[:3] == ("tc", "filter", "del")],
+                        "a steered-then-declined flow kept its filter")
+
+    def test_the_shortcut_does_not_persist_a_stale_decision(self):
+        e, _ = enforcer()
+        e.apply(mature())
+        e.apply(tiny())
+        self.assertFalse(e.decisions[key_of(mature())].class_id)
 
 
 if __name__ == "__main__":
