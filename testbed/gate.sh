@@ -412,6 +412,31 @@ rulepkts () {  # rulepkts <setname>
     | sed -n 's/.*counter packets \([0-9]*\).*/\1/p'
 }
 
+# Watch the DSCP arriving at the CLIENT -- the last point before the wire.
+#
+# If the router's rewrite survives forwarding, the client sees 0x18. If the client
+# sees 0x00, the DSCP was lost inside the router, which narrows the fault from
+# "the writer" to "prerouting vs forwarding vs egress". Two tables rather than
+# one with two rules, because identifying which counter belongs to which rule by
+# rule order alone is exactly the kind of fragile parsing this gate has already
+# been bitten by.
+dscpwatch () {
+  CN="ip netns exec client"
+  $CN nft delete table ip dscp18 2>/dev/null
+  $CN nft delete table ip dscp00 2>/dev/null
+  $CN nft add table ip dscp18
+  $CN nft add table ip dscp00
+  $CN nft add chain ip dscp18 c '{ type filter hook prerouting priority mangle; policy accept; }'
+  $CN nft add chain ip dscp00 c '{ type filter hook prerouting priority mangle; policy accept; }'
+  $CN nft add rule ip dscp18 c ip dscp 0x18 counter
+  $CN nft add rule ip dscp00 c ip dscp 0x00 counter
+}
+dscpwatch_read () {
+  CN="ip netns exec client"
+  echo "  arriving at client, DSCP 0x18 (steered):   $($CN nft list table ip dscp18 | sed -n 's/.*counter packets \([0-9]*\).*/\1/p')"
+  echo "  arriving at client, DSCP 0x00 (untouched): $($CN nft list table ip dscp00 | sed -n 's/.*counter packets \([0-9]*\).*/\1/p')"
+}
+
 # ---------- 16a does flower ip_tos match IPv4 on EGRESS at all? ----------
 # This sends a packet whose DSCP is ALREADY the adaptive selector code, so no
 # nftables rule is involved. It isolates the tc reader from the nft writer.
@@ -434,8 +459,10 @@ steering mechanism must change rather than being debugged further."
 # ---------- 16b the full nftables -> DSCP -> tc path ----------
 A20=$(cbytes 1:20); A30=$(cbytes 1:30)
 bmark 203.0.113.2 10.0.1.2 udp 7001 adaptive || die "check 16b: steering failed"
+dscpwatch
 send 10.0.1.2 7001 1000 0 60
 sleep 1
+dscpwatch_read
 B20=$(cbytes 1:20); B30=$(cbytes 1:30)
 PKT=$(rulepkts adaptive)
 echo "16b (steered by nft): 1:20 $A20 -> $B20   1:30 $A30 -> $B30   rule matched $PKT pkt"
