@@ -393,11 +393,19 @@ $R tc filter show dev "$EGR_IF" parent 1: | sed -n '1,20p'
 ok "check 15: bridge installs (nft tables, timeout sets, flower steer filters)"
 
 # ---------- 16 IPv4 mark routes to the marked class ----------
-A20=$(cbytes 1:20); A10=$(cbytes 1:10)
+A20=$(cbytes 1:20); A10=$(cbytes 1:10); A30=$(cbytes 1:30)
 bmark 203.0.113.2 10.0.1.2 udp 7001 adaptive || die "check 16: steering failed"
 send 10.0.1.2 7001 1000 0 60
-B20=$(cbytes 1:20); B10=$(cbytes 1:10)
-echo "1:20 $A20 -> $B20   1:10 $A10 -> $B10"
+sleep 1
+B20=$(cbytes 1:20); B10=$(cbytes 1:10); B30=$(cbytes 1:30)
+echo "1:20 $A20 -> $B20   1:10 $A10 -> $B10   1:30 $A30 -> $B30"
+# Where did the packets go, and did the rule even match?
+echo "--- rule counters (separates 'rule did not match' from 'tc did not route') ---"
+$R nft list ruleset | grep -A2 -E 'iifname|packets' | head -30
+echo "--- steer filters as installed ---"
+$R tc filter show dev "$EGR_IF" parent 1: | grep -E 'pref|ip_tos' | head -20
+echo "--- element actually in the set ---"
+$R nft list set ip aciq adaptive
 awk -v a="$A20" -v b="$B20" 'BEGIN{exit !(b+0 > a+0 + 20000)}' \
   && ok "check 16: IPv4 mark routes udp/7001 to class 1:20" \
   || die "check 16: 1:20 did not grow ($A20 -> $B20)"

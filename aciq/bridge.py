@@ -367,6 +367,13 @@ def generate_rules(family: str, in_if: str,
             # toolchain can read them yet.
             dscp_expr[0], dscp_expr[1], "set", CS_DSCP_NAMES[c],
             "meta", "mark", "set", str(mark),
+            # Per-rule match counter. Without it, a steering failure has two
+            # indistinguishable causes -- the nft rule did not match the packet,
+            # or it matched and the tc filter did not route it -- and the only
+            # visible symptom was a class counter staying at zero. The counter
+            # separates them in one run. nftables counters cost a few bytes per
+            # rule and are readable with `nft list ruleset`.
+            "counter",
         ))
     return tuple(cmds)
 
