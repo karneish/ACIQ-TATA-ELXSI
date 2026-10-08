@@ -331,8 +331,8 @@ def generate_sets(family: str, ns: str | None = None) -> tuple[tuple[str, ...], 
     )
 
 
-def generate_rules(family: str, in_if: str,
-                   ns: str | None = None) -> tuple[tuple[str, ...], ...]:
+def generate_rules(family: str, in_if: str, ns: str | None = None,
+                   set_priority: bool = False) -> tuple[tuple[str, ...], ...]:
     """One rule per class, most authoritative first.
 
     nftables stops at the first matching rule in a chain, so the order of this
@@ -366,19 +366,21 @@ def generate_rules(family: str, in_if: str,
             # richer per-flow facts survive even though no tc classifier on this
             # toolchain can read them yet.
             dscp_expr[0], dscp_expr[1], "set", CS_DSCP_NAMES[c],
-            # ALSO set meta priority (skb->priority). `tc flower ip_tos` matches
-            # skb->priority, NOT iph->tos: the kernel copies TOS into
-            # skb->priority on ingress, and rewriting the header in prerouting
-            # does not update it. Setting only `ip dscp` produces a packet that
-            # reaches the client correctly marked and is still classified into
-            # the default class -- the wire was right and the policy was not.
-            #
-            # Cost of learning this: gate check 16b, because check 13 proves IPv4
-            # DSCP with u32 (`match ip dsfield`, which reads the header) while
-            # check 14 proves flower ip_tos with IPv6 only. flower had never been
-            # tested against a header-only modification.
-            "meta", "priority", "set", str(CS_DSCP_VALUES[c]),
             "meta", "mark", "set", str(mark),
+            # Optionally mirror the DSCP into skb->priority. OFF by default.
+            #
+            # The hypothesis was that `tc flower ip_tos` matches skb->priority
+            # rather than iph->tos. It does not explain what is happening:
+            # enabling this was observed in the kernel's own ruleset
+            # ("meta priority set 0:18") and 1:20 still did not grow.
+            #
+            # It is also not free. HTB uses skb->priority as a 0-7 class
+            # priority, and 0x18 is 24 -- outside that range. So mirroring the
+            # DSCP there may actively confuse class selection inside HTB. Left
+            # available for the isolated test in testbed/bridge_isolate.sh, which
+            # can settle whether it helps or hurts, but not enabled blindly.
+            *(("meta", "priority", "set", str(CS_DSCP_VALUES[c]))
+              if set_priority else ()),
             # Per-rule match counter. Without it, a steering failure has two
             # indistinguishable causes -- the nft rule did not match the packet,
             # or it matched and the tc filter did not route it -- and the only
@@ -461,13 +463,6 @@ def generate_steer_filters(dev: str, ns: str | None = None,
                 "flower", "skip_hw",
                 "ip_tos", f"{CS_DSCP_VALUES[c]:#04x}/{DSCP_MASK}",
                 "flowid", _flowid(c),
-                # Per-filter packet counter. `tc -s filter show` prints NO
-                # statistics for a flower filter unless it carries an explicit
-                # stats action, so without this there is no way to tell "flower
-                # never matched the DSCP" from "flower matched and the flowid was
-                # ignored" -- two faults with two different fixes. Cheap, and the
-                # only per-filter visibility into the decision point.
-                "action", "stats",
             ))
     return tuple(cmds)
 

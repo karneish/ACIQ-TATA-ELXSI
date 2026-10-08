@@ -54,11 +54,8 @@ for t in tc ip conntrack nft iperf3 ethtool python3; do command -v $t >/dev/null
 
 # ---------- 2 modules ----------
 MISS=""
-# act_stats: the bridge's steer filters carry `action stats` so per-filter
-# packet counters exist. Without it, "tc filter add ... action stats" fails with
-# "Bad action type stats" -- an iproute2/kernel capability gap, not a syntax error.
 for m in sch_htb sch_netem sch_cake sch_fq_codel sch_prio act_gact act_police \
-         act_stats cls_flower cls_u32 nf_conntrack; do
+         cls_flower cls_u32 nf_conntrack; do
   modprobe -q "$m" 2>/dev/null || MISS="$MISS $m"
 done
 [ -z "$MISS" ] && ok "check 2: modules" || die "check 2: modules missing:$MISS"
@@ -485,10 +482,15 @@ echo "--- PER-FILTER packet counters ---"
 # Decisive and previously unused: if filter pref 12 shows 0 packets, flower did
 # not match the DSCP. If it shows 60 and 1:20 is still flat, the flowid is not
 # being applied -- a different fault with a different fix.
-$R tc -s filter show dev "$EGR_IF" parent 1: > /tmp/g16_filters.txt 2>&1
-echo "  steer filter counters (pref 12 is the adaptive one, ip_tos 24/0xfc):"
-grep -E 'pref (10|11|12|13|14) flower|^  ip_tos|^  Sent|^  bps' /tmp/g16_filters.txt \
-  | sed 's/^/    /' | head -40
+# NOTE: per-filter packet counters are NOT available here. \`action stats\` needs
+# the act_stats module, which this kernel does not provide, and \`tc -s filter
+# show\` prints no statistics for a flower filter without it. A missing module
+# also surfaces as "Bad action type stats", which reads like a syntax error.
+#
+# The isolation is therefore done in testbed/bridge_isolate.sh instead: one
+# filter, one rule, nothing else in the path.
+echo "  (per-filter counters unavailable: no act_stats on this kernel --"
+echo "   see testbed/bridge_isolate.sh for the minimal reproduction)"
 echo "--- steer filters ---"
 $R tc filter show dev "$EGR_IF" parent 1: | grep -E 'pref|ip_tos'
 awk -v p="$PKT" 'BEGIN{exit !(p+0 > 0)}' \
@@ -499,10 +501,12 @@ awk -v a="$A20" -v b="$B20" 'BEGIN{exit !(b+0 > a+0 + 20000)}' \
 The nft WRITER ran (counter is non-zero) and the reader is proven by check 16a,
 so the DSCP written in prerouting is not the DSCP seen on egress.
 
-If the client-side watch above shows DSCP 0x18 arriving, the header rewrite
-succeeded and the cause is that the rule did not also set meta priority:
-'tc flower ip_tos' matches skb->priority, which the kernel fills from TOS on
-ingress and which an 'ip dscp set' in prerouting does NOT update."
+The client-side watch shows DSCP 0x18 arriving, so the header rewrite succeeds
+end to end. The skb->priority explanation was tested and is wrong:
+'meta priority set' is visibly in the rule and 1:20 still does not grow.
+
+Run ./testbed/bridge_isolate.sh, which repeats this with ONE filter and ONE
+rule and nothing else in the path."
 
 # ---------- 17 a flow marked unclassified loses EF priority ----------
 # The evasion path: a flow that claims DSCP EF but is classified as bulk or

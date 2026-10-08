@@ -231,15 +231,12 @@ $NS nft delete chain ip aciq probe 2>/dev/null
 $NS nft delete chain ip aciq probe2 2>/dev/null
 echo
 
-# The steer filters carry `action stats`, which requires the act_stats module.
-# Without it: "Bad action type stats". Probe it here so a missing module is
-# caught as a capability gap rather than looking like a syntax error.
-echo "--- action stats capability ---"
-modprobe -q act_stats 2>/dev/null
-try "action stats (needs act_stats)" $D protocol ip prio 25 flower skip_hw \
-  ip_tos 0x08/0xfc flowid 1:30 action stats
-ip netns exec router tc filter del dev "$DEV" parent 1: prio 25 2>/dev/null
-echo
+# NOTE: `action stats` was tried here for per-filter counters and removed. It
+# needs the act_stats module, which kernel 7.1.5-76070105-generic does not
+# provide, and a missing module surfaces as "Bad action type stats" -- which
+# reads exactly like a syntax error. tc -s filter show prints no statistics for
+# a flower filter without a stats action, so per-filter counters are simply not
+# available here. Isolation is done in testbed/bridge_isolate.sh instead.
 
 # ==========================================================================
 # 3. fallback key shape: can flower match the flow key directly?

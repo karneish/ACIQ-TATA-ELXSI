@@ -951,47 +951,121 @@ class TestNamespaceDefault(unittest.TestCase):
         self.assertEqual(plain, namespaced)
 
 
-class TestPriorityMustTrackDscp(unittest.TestCase):
-    """`tc flower ip_tos` matches skb->priority, not iph->tos.
+class TestPriorityIsOptional(unittest.TestCase):
+    """`meta priority` is opt-in and OFF by default.
 
-    The kernel copies TOS into skb->priority on ingress. Rewriting `ip dscp` in
-    prerouting changes the header but leaves skb->priority stale, so a packet
-    arrives correctly marked on the wire and is still classified into the
-    default class. Found by gate check 16b, where the client watch showed all 60
-    packets arriving with DSCP 0x18 while 1:20 stayed flat and 1:30 grew.
+    The hypothesis it addresses -- that `tc flower ip_tos` matches skb->priority
+    rather than iph->tos -- was tested on a real kernel and is WRONG: with
+    'meta priority set 0:18' visible in the ruleset, 1:20 still did not grow.
+
+    It is also not free. HTB uses skb->priority as a 0-7 class priority, and the
+    DSCP selector codes are 8, 16, 24, 32, 40 -- all outside that range. Mirroring
+    the DSCP there may actively confuse class selection inside HTB.
+
+    Kept available for testbed/bridge_isolate.sh, which can settle whether it
+    helps or hurts. Not enabled blindly in the shipped rules.
     """
 
-    def _rules(self, family="ip"):
-        return generate_rules(family, "veth-wan")
+    def test_off_by_default(self):
+        for family in ("ip", "ip6"):
+            for rule in generate_rules(family, "veth-wan"):
+                self.assertNotIn("priority", rule)
 
-    def test_rule_sets_meta_priority(self):
-        for rule in self._rules():
-            self.assertIn("priority", rule)
-        for rule in self._rules("ip6"):
-            self.assertIn("priority", rule)
+    def test_enabled_when_asked(self):
+        for family in ("ip", "ip6"):
+            for rule in generate_rules(family, "veth-wan", set_priority=True):
+                self.assertIn("priority", rule)
 
-    def test_priority_value_equals_the_dscp_code(self):
+    def test_enabled_value_equals_the_dscp_code(self):
         from aciq.bridge import CS_DSCP_VALUES
-        for rule, c in zip(self._rules(), CLASS_PRECEDENCE):
+        for rule, c in zip(generate_rules("ip", "veth-wan", set_priority=True),
+                           CLASS_PRECEDENCE):
             i = rule.index("priority")
             self.assertEqual(rule[i + 1], "set")
-            self.assertEqual(rule[i + 2], str(CS_DSCP_VALUES[c]),
-                             f"class {c}: skb->priority must equal its DSCP code")
+            self.assertEqual(rule[i + 2], str(CS_DSCP_VALUES[c]))
 
-    def test_priority_precedes_the_filter_can_ever_match(self):
-        """A rule that sets the DSCP but not the priority is the exact bug:
-        correct on the wire, ignored by tc."""
-        for rule, c in zip(self._rules(), CLASS_PRECEDENCE):
-            dscp_at = rule.index("dscp")
-            prio_at = rule.index("priority")
-            self.assertLess(dscp_at, prio_at)
+    def test_dscp_is_written_before_the_priority(self):
+        for rule in generate_rules("ip", "veth-wan", set_priority=True):
+            self.assertLess(rule.index("dscp"), rule.index("priority"))
 
-    def test_steer_filter_and_priority_agree(self):
-        """The filter matches on the value we put in skb->priority."""
+    def test_dscp_and_mark_are_written_in_both_modes(self):
+        """The steering mechanism does not depend on this option."""
+        for kwargs in ({}, {"set_priority": True}):
+            for family in ("ip", "ip6"):
+                for rule in generate_rules(family, "veth-wan", **kwargs):
+                    self.assertIn("dscp", rule)
+                    self.assertIn("mark", rule)
+                    self.assertIn("counter", rule)
+
+    def test_dscp_codes_exceed_the_htb_priority_range(self):
+        """Documents why mirroring the DSCP into skb->priority is risky: HTB
+        treats skb->priority as a 0-7 class priority."""
+        from aciq.bridge import CS_DSCP_VALUES
+        for c, v in CS_DSCP_VALUES.items():
+            self.assertGreater(v, 7, f"class {c} DSCP code fits HTB's range")
+
+    def test_steer_filter_and_priority_agree_when_enabled(self):
         from aciq.bridge import CS_DSCP_VALUES, steer_prio
-        # the filter list spans both protocol blocks (ip 10-14, ipv6 15-19)
-        by_prio = {steer_prio(p, c): c for p in STEER_PRIO_BASE for c in MARKED_CLASSES}
+        by_prio = {steer_prio(p, c): c
+                   for p in STEER_PRIO_BASE for c in MARKED_CLASSES}
         for f in generate_steer_filters("d"):
             prio = int(f[f.index("prio") + 1])
-            self.assertIn(prio, by_prio, f"unexpected priority {prio}")
+            self.assertIn(prio, by_prio)
             self.assertIn(f"{CS_DSCP_VALUES[by_prio[prio]]:#04x}/0xfc", f)
+
+
+class TestFamilyOf(unittest.TestCase):
+    """Module-level so a caller adding one element need not build a Bridge."""
+
+    def test_ipv4_and_ipv6(self):
+        from aciq.bridge import family_of
+        self.assertEqual(family_of("10.0.1.2"), "ip")
+        self.assertEqual(family_of("203.0.113.9"), "ip")
+        self.assertEqual(family_of("2001:db8::2"), "ip6")
+        self.assertEqual(family_of("fd00:1::2"), "ip6")
+
+    def test_zone_id_does_not_raise(self):
+        """A zone id would raise in socket.inet_pton. It must not raise from deep
+        inside a classification tick."""
+        from aciq.bridge import family_of
+        self.assertEqual(family_of("fe80::1%eth0"), "ip6")
+
+    def test_method_delegates_to_the_helper(self):
+        from aciq.bridge import Bridge
+        self.assertEqual(Bridge("d", "e").family_of("2001:db8::1"), "ip6")
+
+
+class TestNamespaceDefault(unittest.TestCase):
+    """`ns` defaults to None, which means "the current namespace".
+
+    Documented rather than changed: making it mandatory would be the safer
+    default, but it is a public keyword on five generators and the unit tests
+    legitimately call them with ns=None.
+
+    This footgun cost a gate run. The gate's `bmark` helper omitted `ns`, so
+    `nft add element` ran in the host namespace where table `aciq` does not
+    exist, and nft answered "No such file or directory" pointing at the SET
+    name -- which reads like a missing set in the bridge rather than a missing
+    namespace in the caller.
+    """
+
+    def test_ns_none_omits_the_prefix(self):
+        self.assertEqual(
+            generate_add_element("ip", V4, CLASS_BULK, ns=None)[:3], ("nft", "add", "element"))
+        self.assertEqual(
+            generate_add_element("ip", V4, CLASS_BULK, ns="router")[:4],
+            ("ip", "netns", "exec", "router"))
+
+    def test_every_generator_defaults_ns_to_none(self):
+        import inspect
+        for fn in (generate_add_element, generate_del_element,
+                   generate_table, generate_sets, generate_rules,
+                   generate_steer_filters, generate_teardown, generate_flush):
+            self.assertIsNone(inspect.signature(fn).parameters["ns"].default, fn)
+
+    def test_passing_a_namespace_changes_only_the_prefix(self):
+        plain = bare(generate_add_element("ip", V4, CLASS_BULK))
+        namespaced = bare(generate_add_element("ip", V4, CLASS_BULK, ns="router"))
+        self.assertEqual(plain, namespaced)
+
+
