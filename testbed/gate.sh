@@ -362,8 +362,17 @@ ip netns exec router nft list table ip aciq >/dev/null 2>&1 \
   || die "check 15: ip table aciq not created"
 ip netns exec router nft list table ip6 aciq >/dev/null 2>&1 \
   || die "check 15: ip6 table aciq not created"
-$R nft list set ip aciq interactive | grep -q "flags timeout" \
-  || die "check 15: interactive set lacks 'flags timeout' (mark expiry)"
+# Print the set definition and match on `timeout` rather than the literal
+# "flags timeout". The previous assertion assumed nft prints that exact phrase in
+# the listing, which is a claim about nftables' output format rather than about
+# the bridge. The semantic requirement is that the set carries a timeout, so
+# that is what is matched -- and the raw definition is echoed, so a failure
+# reports what nft actually printed instead of only what was expected.
+$R nft list set ip aciq interactive | tee /tmp/g15_set.txt
+grep -q "timeout" /tmp/g15_set.txt \
+  || die "check 15: interactive set carries no timeout (see /tmp/g15_set.txt)"
+# Expiry itself is not assumed here -- check 19 proves the kernel ages an element
+# out. This only proves the set was declared with the capability.
 $R tc filter show dev "$EGR_IF" parent 1: | grep -q "flower" \
   || die "check 15: no flower steer filter installed"
 # The steer filters must key on the DSCP selector codes the rules stamp. Checking
