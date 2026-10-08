@@ -35,6 +35,25 @@ ok ()   { PASSED+=("$1");  echo "[PASS] $1"; }
 meas () { MEASURED+=("$1"); echo "[MEASURED] $1"; }
 die ()  { FAILED="$1"; echo "[FAIL] $1"; echo; echo "STOPPED AT FIRST FAILURE"; summary; sleep 1; exit 1; }
 
+# Priorities are READ FROM THE CODE, never restated here.
+#
+# The gate used to hardcode the DSCP-EF filters at prio 1 (ip) and prio 2 (ipv6)
+# while aciq/tc.py installs them at 30/31. The numbers were never reconciled, so
+# check 17 failed: the gate's EF filter sat BELOW the bridge's per-flow filters,
+# EF won, and a flow the classifier had rejected still reached 1:10.
+#
+# That is the gate testing something production does not do -- the worst kind of
+# divergence, because the gate keeps passing on its own terms. One source of
+# truth from here on.
+tcprio () {  # tcprio <ip|ipv6>
+  $VENV/bin/python - "$1" <<'PY'
+import sys
+sys.path.insert(0, "..")
+from aciq.tc import DSCP_FILTER_PRIO
+print(DSCP_FILTER_PRIO[sys.argv[1]])
+PY
+}
+
 # bytes observed on a given dport, first match only
 ctbytes () { ip netns exec "$1" conntrack -L -f "$2" -p udp 2>/dev/null \
   | awk -v p="$3" '$0 ~ ("dport="p" ") { for(i=1;i<=NF;i++) if($i ~ /^bytes=/){split($i,b,"=");print b[2];exit} }'; }
@@ -232,7 +251,9 @@ $R tc qdisc add dev veth-lan parent 1:10 handle 10: fq_codel
 $R tc qdisc add dev veth-lan parent 1:30 handle 30: fq_codel
 $R tc qdisc add dev veth-lan parent 1:20 handle 20: fq_codel
 $R tc qdisc add dev veth-lan parent 1:40 handle 40: fq_codel
-$R tc filter add dev veth-lan parent 1: protocol ip prio 1 u32 \
+# prio comes from aciq.tc.DSCP_FILTER_PRIO so the gate and production cannot
+# disagree about filter order again.
+$R tc filter add dev veth-lan parent 1: protocol ip prio "$(tcprio ip)" u32 \
    match ip dsfield 0xb8 0xfc flowid 1:10
 $R ping -c3 10.0.1.2 | tee /tmp/g12_base.txt | tail -2
 snap > /tmp/g12_before.txt
@@ -269,9 +290,10 @@ echo "7003(1000B)=$A  7004(200B)=$B"
   && ok "check 13: conntrack forwarded per-flow v6" || die "check 13: A=$A B=$B"
 
 # ---------- 14 IPv6 filter match, proven by byte increase on 1:10 ----------
-# prio 2, because a single priority cannot hold both the v4 and v6 filter
+# A single priority cannot hold both the v4 and v6 filter, which is why
+# DSCP_FILTER_PRIO has two entries. The values come from aciq.tc, not from here.
 BEF=$($R tc -s class show dev veth-lan | awk '/class htb 1:10/{f=1} f&&/Sent/{print $2;exit}')
-$R tc filter add dev veth-lan parent 1: protocol ipv6 prio 2 flower \
+$R tc filter add dev veth-lan parent 1: protocol ipv6 prio "$(tcprio ipv6)" flower \
    ip_tos 0xb8/0xfc flowid 1:10 \
   || die "check 14: IPv6 filter syntax rejected"
 ip netns exec wan ping -6 -c20 -i0.05 -Q 0xB8 -s 500 -W3 fd00:1::2 | tail -3
@@ -370,6 +392,23 @@ for _ in range(int(n)):
 s.close()
 PY
 }
+
+# Filter order is a correctness property, not a preference: a per-flow filter
+# must be consulted before the DSCP-EF fallback, or a flow the classifier
+# rejected still gets interactive priority. Asserted here rather than assumed,
+# because the gate and aciq/tc.py disagreed about these numbers for the whole
+# life of check 17 and only the failure revealed it.
+$VENV/bin/python - <<'PY' || die "check 15: per-flow filters do not precede DSCP-EF"
+import sys
+sys.path.insert(0, "..")
+from aciq.bridge import FLOW_FILTER_PRIO
+from aciq.tc import DSCP_FILTER_PRIO
+bad = [(p, FLOW_FILTER_PRIO[p], DSCP_FILTER_PRIO[p])
+       for p in FLOW_FILTER_PRIO
+       if FLOW_FILTER_PRIO[p] >= DSCP_FILTER_PRIO[p]]
+print("per-flow", FLOW_FILTER_PRIO, "dscp-ef", DSCP_FILTER_PRIO)
+sys.exit(f"per-flow filter at prio {bad} does not precede DSCP-EF" if bad else 0)
+PY
 
 # ---------- 15 per-flow filters install ----------
 # Enforcement is a per-flow `tc flower` filter installed by Bridge.mark(). There
