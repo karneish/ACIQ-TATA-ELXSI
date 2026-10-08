@@ -119,6 +119,61 @@ against another.
 
 
 
+## 5c. The first paired comparison (2026-10-08)
+
+`data/enforced/paired42/` -- s3_tv_and_gaming, seed 42, all three systems. Game
+latency, self-reported by the game workload:
+
+| system | p50 | p95 | p99 | jitter | loss |
+|---|---|---|---|---|---|
+| aciq (enforced) | 0.476 | 0.581 | 0.776 | 0.155 | 0.000 |
+| b0_fifo | 0.473 | **33.577** | **33.703** | **6.135** | 0.000 |
+| b1_cake95 | 0.482 | 0.578 | 0.703 | 0.084 | 0.000 |
+
+**Read honestly:**
+
+* ACIQ beats pfifo by ~58x at p95 and p99 and by ~40x on jitter.
+* ACIQ **loses** to cake on all four, by 3-6 microseconds. At that scale these are
+  ties and the report is technically right to call them losses.
+* One run, one seed, no p-value. The report refuses one for good reason.
+
+### pfifo's 33 ms is NOT explained, and this file will not pretend it is
+
+The obvious reading is bufferbloat. The data does not support it:
+
+* `b0_fifo` recorded **0 drops, 0 backlog** on the link for the whole run.
+* The offered load was ~14 Mbps on a 100 Mbps parent -- roughly 14% utilisation.
+  A `pfifo limit 1000` queue under a 100 Mbps shaper has no reason to build at
+  14% utilisation.
+* The artefacts contain **no per-packet RTT trace**; `game.json` stores only
+  percentiles, so the 33 ms cannot be localised to a burst or a moment.
+
+So pfifo's p95 is a real measurement whose cause is unknown. Calling it
+bufferbloat would be the same error as calling a win a loss -- in the other
+direction, and just as unsupported.
+
+### Per-class comparison across systems is not possible yet
+
+`per_class` is populated for `aciq` and **empty for both baselines**, because
+their trees have one class that does not map to the ACIQ class names. So
+`fairness` reads 0.000 for both baselines, meaning *unavailable*, not *zero
+unfairness*. Video is known to sit in bulk for the baselines by construction,
+not by measurement.
+
+### Also note: `link.cls` is mislabelled
+
+Every sample of every system records the parent counter under
+`link.cls = "realtime_interactive"`. The parent is class `1:1` and is not
+`realtime_interactive`. M2 reads only the numbers, so no measurement is
+affected, but the artefact is misleading and should be relabelled.
+
+### This run tested the steady-state tree, not adaptation
+
+`estimator=None`, `policy_changes=0`, no capacity drop. At 100 Mbps with 14 Mbps
+offered, M2 never saw saturation and nothing had to adapt. The enforced
+per-flow path *is* exercised -- video was measured at 13.96 Mbps mean in class
+1:20 -- but nothing about capacity adaptation was.
+
 ## 6. There is no per-user or per-device fairness
 
 `8:4:2` allocates bandwidth **per class**. Fairness within a class is delegated

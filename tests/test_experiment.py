@@ -363,6 +363,39 @@ class TestHonestVerdicts(unittest.TestCase):
         self.assertIn("matches", sec)
         self.assertNotIn("LOSES", sec)
 
+    def _three(self, aciq_p, cake_p, fifo_p):
+        return {"s1": {"aciq": {"call": aciq_p},
+                       "b1_cake95": {"call": cake_p},
+                       "b0_fifo": {"call": fifo_p}}}
+
+    def test_beating_one_rival_and_losing_to_another_reads_as_two_clauses(self):
+        """The real p95 shape: ACIQ beats pfifo on p95 by 58x and loses to cake
+        by 6 microseconds. Rendered as "beats b0_fifo LOSES to b1_cake95" that
+        parses as a garbled run-on and buries the loss inside a sentence about a
+        win -- which is the whole reason the bullet lists losers at all."""
+        from aciq.report import latency_sections
+        sec = "\n".join(latency_sections(self._three(
+            {"p95": 0.581, "p50": 0.476, "p99": 0.776, "jitter_ms": 0.155,
+             "loss_ratio": 0.0},
+            {"p95": 0.578, "p50": 0.482, "p99": 0.703, "jitter_ms": 0.084,
+             "loss_ratio": 0.0},
+            {"p95": 33.577, "p50": 0.473, "p99": 33.703, "jitter_ms": 6.135,
+             "loss_ratio": 0.0})))
+        self.assertIn("p95: ACIQ beats b0_fifo and LOSES to b1_cake95", sec)
+        self.assertNotIn("b0_fifo LOSES to", sec)
+        self.assertNotIn("cake95 LOSES to", sec)
+
+    def test_all_three_rivals_in_one_clause_are_still_and_joined(self):
+        from aciq.report import latency_sections
+        sec = "\n".join(latency_sections(self._three(
+            {"p95": 9.0, "p50": 9.0, "p99": 9.0, "jitter_ms": 9.0,
+             "loss_ratio": 0.0},
+            {"p95": 1.0, "p50": 1.0, "p99": 1.0, "jitter_ms": 1.0,
+             "loss_ratio": 0.0},
+            {"p95": 1.0, "p50": 1.0, "p99": 1.0, "jitter_ms": 1.0,
+             "loss_ratio": 0.0})))
+        self.assertIn("p95: ACIQ LOSES to b1_cake95 and b0_fifo", sec)
+
     def test_a_split_result_is_stated_as_both(self):
         from aciq.report import latency_sections
         sec = "\n".join(latency_sections(self._table(

@@ -191,8 +191,10 @@ def _verdict(present: dict) -> list[str]:
             parts.append(f"matches {' and '.join(tied)}")
         if not parts:
             continue
-        lead = "ACIQ " if not lost else "ACIQ "
-        lines.append(f"- **{key}: {lead}{' '.join(parts)}.**")
+        # " and " between the clauses, not " ". A bullet reading
+        # "beats b1_cake95 LOSES to b0_fifo" parses as a garbled run-on and, worse,
+        # buries the loss in the middle of a sentence about a win.
+        lines.append(f"- **{key}: ACIQ {' and '.join(parts)}.**")
     return lines
 
 
