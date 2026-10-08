@@ -239,11 +239,23 @@ class Harness:
         """
         if self._enforcer is None:
             return None
-        if self._enforcer.capacity_mbps != self._current_capacity:
-            self._enforcer.set_capacity(self._current_capacity)
+        # Capacity comes from M2's *measurement*, never from what was configured
+        # on class 1:1. Using the configured rate would classify every flow
+        # against a link that does not exist: `tc class change ... rate 20mbit`
+        # followed by a run that still measures 92 Mbps is the whole reason M2
+        # exists. `apply_system`/`set_capacity` record what was configured, and
+        # that is a fallback for the window before the first measurement -- not
+        # the input to a decision.
+        measured = self._estimator.current.mbps
+        cap = measured if measured else self._configured_capacity
+        if self._enforcer.capacity_mbps != cap:
+            self._enforcer.set_capacity(cap)
+            self._enforcer.capacity_is_measured = bool(measured)
         return self._enforcer.apply(features, now=now)
 
-    _current_capacity: float = 100.0
+    #: What was last written to class 1:1. A fallback for the window before M2
+    #: has a reading, never the input to a classification.
+    _configured_capacity: float = 100.0
 
     # ---------------- the invariant ----------------
     def set_capacity(self, capacity_mbps: float) -> tuple[str, ...]:
@@ -259,13 +271,14 @@ class Harness:
             "rate", f"{capacity_mbps:.4f}mbit", "ceil", f"{capacity_mbps:.4f}mbit",
         )
         self.runner.run(argv)
-        self._current_capacity = capacity_mbps
+        self._configured_capacity = capacity_mbps
         return argv
 
     # ---------------- system setup ----------------
     def apply_system(self, system: SystemSpec, capacity_mbps: float) -> bool:
         """Build the full tree for a system. Required for every apply because
         HTB's default class cannot be changed on a live qdisc."""
+        self._configured_capacity = capacity_mbps
         if system is SystemSpec.ACIQ:
             plan = self._current_plan or build_plan(capacity_mbps, self._lease)
             self.txn.remember_capacity(capacity_mbps)

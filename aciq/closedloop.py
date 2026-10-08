@@ -119,12 +119,28 @@ class ClosedLoop:
         # inert.
         self.trust = trust if trust is not None else TrustStore()
         self.capacity_mbps = capacity_mbps
+        #: True when capacity_mbps came from M2's measurement rather than from
+        #: what was configured on class 1:1. Recorded so a report can say which
+        #: it was -- classifying against a configured rate is the error M2
+        #: exists to prevent, and it should be visible when it happens anyway.
+        self.capacity_is_measured = False
         #: Verdicts by flow key, so a caller can see what it last decided.
         self.decisions: dict[FlowKey, Verdict] = {}
 
-    def set_capacity(self, capacity_mbps: float) -> None:
-        """Feed the *measured* capacity from M2, never a configured rate."""
+    def set_capacity(self, capacity_mbps: float, measured: bool = False) -> None:
+        """Feed the capacity the classifier should reason against.
+
+        `measured` records which kind this is. Callers should pass M2's
+        measurement; the flag exists so an unavoidable configured-rate fallback
+        is visible in a verdict rather than silent.
+        """
         self.capacity_mbps = capacity_mbps
+        self.capacity_is_measured = measured
+        #: True when capacity_mbps came from M2's measurement rather than from
+        #: what was configured on class 1:1. Recorded so a report can say which
+        #: it was -- classifying against a configured rate is the error M2
+        #: exists to prevent, and it should be visible when it happens anyway.
+        self.capacity_is_measured = False
 
     def apply(self, f: FlowFeatures, now: float | None = None) -> Verdict:
         """Classify one flow and install the verdict.

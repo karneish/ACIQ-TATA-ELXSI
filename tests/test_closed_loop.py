@@ -11,10 +11,11 @@ import time
 import unittest
 
 from aciq.bridge import Bridge, FlowKey
+from aciq.capacity import Measurement
 from aciq.classify import FlowFeatures
 from aciq.corrections import CorrectionStore
 from aciq.closedloop import CLASS_ID_OF, Enforcer, key_of
-from aciq.harness import Harness
+from aciq.harness import Harness, SystemSpec
 from aciq.model import Flow, TrafficClass
 from aciq import tc
 
@@ -256,6 +257,34 @@ class TestCapacityIsMeasured(unittest.TestCase):
         h.set_capacity(37.5)
         h.enforce(mature())
         self.assertEqual(h._enforcer.capacity_mbps, 37.5)
+
+    def test_a_measurement_beats_the_configured_rate(self):
+        """The invariant the whole of M2 exists for. `tc class change ... rate
+        20mbit` followed by a link that still measures 18.6 means classifying
+        against 20 would reason about a link that is not there."""
+        h = Harness()
+        h.enable_enforcement(executor=FakeExec())
+        h.set_capacity(20.0)
+        h.enforce(mature())
+        self.assertEqual(h._enforcer.capacity_mbps, 20.0)
+        self.assertFalse(h._enforcer.capacity_is_measured)
+        for i in range(4):
+            h._estimator.observe(Measurement(
+                t=float(i * 20), goodput_mbps=18.6, link_overlimit_rate_per_s=24000.0))
+        h.enforce(mature())
+        self.assertEqual(h._enforcer.capacity_mbps, 18.6)
+        self.assertTrue(h._enforcer.capacity_is_measured)
+
+    def test_the_configured_rate_is_not_used_when_the_link_is_not_the_default(self):
+        """--link 20 with a 100 Mbps default would have silently classified every
+        flow against 100. Caught by asserting the fallback rather than trusting
+        the default to be the only value ever used."""
+        from aciq.txn import FakeRunner
+        h = Harness(runner=FakeRunner(auto_readback=True), clock=lambda: 0.0)
+        h.apply_system(SystemSpec.ACIQ, 20.0)
+        h.enable_enforcement(executor=FakeExec())
+        h.enforce(mature())
+        self.assertEqual(h._enforcer.capacity_mbps, 20.0)
 
 
 class TestTrustSurvivesAcrossFlows(unittest.TestCase):
