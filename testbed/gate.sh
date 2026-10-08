@@ -482,7 +482,10 @@ echo "--- PER-FILTER packet counters ---"
 # Decisive and previously unused: if filter pref 12 shows 0 packets, flower did
 # not match the DSCP. If it shows 60 and 1:20 is still flat, the flowid is not
 # being applied -- a different fault with a different fix.
-$R tc -s filter show dev "$EGR_IF" parent 1: | grep -E 'pref|ip_tos|packets'
+$R tc -s filter show dev "$EGR_IF" parent 1: > /tmp/g16_filters.txt 2>&1
+echo "  steer filter counters (pref 12 is the adaptive one, ip_tos 24/0xfc):"
+grep -E 'pref (10|11|12|13|14) flower|^  ip_tos|^  Sent|^  bps' /tmp/g16_filters.txt \
+  | sed 's/^/    /' | head -40
 echo "--- steer filters ---"
 $R tc filter show dev "$EGR_IF" parent 1: | grep -E 'pref|ip_tos'
 awk -v p="$PKT" 'BEGIN{exit !(p+0 > 0)}' \

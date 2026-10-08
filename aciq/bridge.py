@@ -461,6 +461,13 @@ def generate_steer_filters(dev: str, ns: str | None = None,
                 "flower", "skip_hw",
                 "ip_tos", f"{CS_DSCP_VALUES[c]:#04x}/{DSCP_MASK}",
                 "flowid", _flowid(c),
+                # Per-filter packet counter. `tc -s filter show` prints NO
+                # statistics for a flower filter unless it carries an explicit
+                # stats action, so without this there is no way to tell "flower
+                # never matched the DSCP" from "flower matched and the flowid was
+                # ignored" -- two faults with two different fixes. Cheap, and the
+                # only per-filter visibility into the decision point.
+                "action", "stats",
             ))
     return tuple(cmds)
 
