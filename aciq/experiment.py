@@ -204,6 +204,31 @@ class ExperimentRunner:
             shutil.rmtree(paths.root, ignore_errors=True)
         paths.root.mkdir(parents=True, exist_ok=True)
 
+        # ---- 1b (decision only). Whether enforcement engages is pure logic, and
+        # ---- it is decided *before* config.json so the config can record it.
+        #      The action -- touching the kernel -- happens after the tree is
+        #      built, in step 1c.
+        #
+        #  Three ways it does not engage, each with its reason recorded:
+        #
+        #  * not requested -- the default, and what keeps runs comparable to the
+        #    v0 baseline.
+        #  * a baseline system -- it has no classifier to apply, and steering a
+        #    baseline's traffic would not make the comparison unfair, it would
+        #    make it meaningless: it would no longer be a baseline.
+        #  * a dry run -- nothing is launched, so conntrack reports no flows and
+        #    the loop would decide nothing. A run that looks wired up while
+        #    measuring nothing is worse than one that plainly is not.
+        enforcement_why = "not requested"
+        will_enforce = False
+        if self.enforce:
+            if system is not SystemSpec.ACIQ:
+                enforcement_why = f"{system.value} is a baseline, not ACIQ"
+            elif isinstance(self.launcher, DryLauncher):
+                enforcement_why = "dry run launches no traffic"
+            else:
+                will_enforce = True
+
         # ---- config, written before anything runs so a crashed run is
         # ---- still reproducible from its artefacts
         ports = sc.seed_workloads(seed)
@@ -216,6 +241,17 @@ class ExperimentRunner:
                           for w in sc.workloads],
             "ports": [{"label": lbl, "port": p, "dscp": d} for lbl, p, d in ports],
             "floor_mbps": floor_mbps(link_mbps),
+            # Written because config.json is the artefact that has to say what a
+            # run actually did. A sample records the verdicts, but without this
+            # an enforced run and a reporting-only run are indistinguishable
+            # until you read every sample line -- and "did this run enforce?" is
+            # the first question anyone asks of a new result.
+            # What was asked for, and why it may not engage. Whether it
+            # *actually* engaged is not knowable yet -- the tree is not built --
+            # so it is recorded in result.json instead, where it is a fact
+            # rather than a prediction.
+            "enforce_requested": bool(self.enforce),
+            "enforcement_note": enforcement_why,
         }
         paths.write_json("config.json", cfg)
 
@@ -233,24 +269,16 @@ class ExperimentRunner:
             self.launcher.stop()
             return res
 
-        # ---- 1b. opt-in per-flow enforcement
-        #
-        # Only for the ACIQ system: a baseline has no classifier to apply, and
-        # steering a baseline's traffic would make the comparison meaningless
-        # rather than merely unfair.
+        # ---- 1c. perform the opt-in decided in 1b
         enforcement_on = False
-        if self.enforce and system is SystemSpec.ACIQ:
-            if isinstance(self.launcher, DryLauncher):
-                # A dry run launches nothing, so conntrack would report no flows
-                # and the loop would decide nothing -- a run that looks wired up
-                # while measuring nothing.
-                pass
-            else:
-                self.harness.enable_enforcement(
-                    capacity_mbps=self.harness._estimator.current.mbps or link_mbps)
-                self._tracker = FlowTracker()
-                self._ct = ConntrackSource(ns=self.harness.ns)
-                enforcement_on = self.harness.enforcement_enabled
+        if will_enforce:
+            self.harness.enable_enforcement(
+                capacity_mbps=self.harness._estimator.current.mbps or link_mbps)
+            self._tracker = FlowTracker()
+            self._ct = ConntrackSource(ns=self.harness.ns)
+            enforcement_on = self.harness.enforcement_enabled
+            if not enforcement_on:
+                enforcement_why = "harness declined to enable enforcement"
 
         # ---- 2. launch workloads: sinks first so nothing races the listener
         for (label, port, dscp), w in zip(ports, _expand(sc)):
@@ -351,12 +379,12 @@ class ExperimentRunner:
         # steers the next run's traffic before it has decided anything -- which
         # is the residue gate check 20 exists to catch, and the reason
         # enforcement cannot be a write-and-forget.
-        enforcement_note = ""
+        enforcement_note = ("per-flow enforcement ON (filters removed on teardown)"
+                            if enforcement_on else
+                            f"per-flow enforcement OFF ({enforcement_why})")
         if enforcement_on:
             self.harness.disable_enforcement()
             self._tracker = self._ct = None
-            enforcement_note = ("per-flow enforcement was on; filters removed on "
-                                "teardown")
 
         paths.write_jsonl("samples.jsonl", samples)
         paths.write_json("workloads.json", workloads)
@@ -371,7 +399,7 @@ class ExperimentRunner:
             samples=samples[-3:],
             policy_changes=self.harness.policy_changes,
             notes=([] if dropped else ["no capacity drop in this run"])
-                  + ([enforcement_note] if enforcement_note else []),
+                  + [enforcement_note],
         )
         paths.write_json("result.json", json.loads(res.to_json()))
         return res

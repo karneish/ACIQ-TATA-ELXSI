@@ -584,3 +584,49 @@ class _Exec:
         if "-j" in argv:
             return 0, "[]", ""
         return 0, "", ""
+
+
+class TestEnforcementIsRecorded(unittest.TestCase):
+    """A run has to say whether it enforced.
+
+    The failure this prevents is specific: samples carry per-tick verdicts, but a
+    reader comparing two result directories would have to read every sample line
+    before telling an enforced run from a reporting-only one. "Did this run
+    enforce?" is the first question asked of any new number.
+    """
+
+    def _run(self, tmp, system, enforce):
+        r = ExperimentRunner(
+            launcher=DryLauncher(),
+            harness=Harness(runner=FakeRunner(auto_readback=True), clock=lambda: 0.0),
+            results_dir=Path(tmp), real_time=False, tick_s=1.0)
+        res = r.run("s3_tv_and_gaming", system, enforce=enforce)
+        p = r.run_paths("s3_tv_and_gaming", system, CapacityMode.ADAPTIVE, 42)
+        return (json.loads((p.root / "config.json").read_text()),
+                json.loads((p.root / "result.json").read_text()), res)
+
+    def test_config_records_the_request_and_the_reason(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg, _res, _ = self._run(d, SystemSpec.B0, enforce=True)
+            self.assertTrue(cfg["enforce_requested"])
+            self.assertIn("baseline", cfg["enforcement_note"])
+
+    def test_result_records_the_outcome_not_a_prediction(self):
+        with tempfile.TemporaryDirectory() as d:
+            _cfg, result, _ = self._run(d, SystemSpec.B0, enforce=True)
+            self.assertIn("enforcement OFF", " ".join(result["notes"]))
+
+    def test_an_unrequested_run_says_so_rather_than_saying_nothing(self):
+        """Silence would read as "no note because nothing interesting happened",
+        which is not the same claim as "this run did not enforce"."""
+        with tempfile.TemporaryDirectory() as d:
+            cfg, result, _ = self._run(d, SystemSpec.ACIQ, enforce=False)
+            self.assertFalse(cfg["enforce_requested"])
+            self.assertIn("not requested", cfg["enforcement_note"])
+            self.assertIn("enforcement OFF", " ".join(result["notes"]))
+
+    def test_config_does_not_claim_an_outcome_it_cannot_know_yet(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg, _r, _ = self._run(d, SystemSpec.ACIQ, enforce=True)
+            self.assertNotIn("enforcement_effective", cfg,
+                             "config.json is written before the tree is built")
