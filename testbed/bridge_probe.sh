@@ -169,29 +169,49 @@ try "fw mask 0xf handle 0x1"        $D protocol ip prio 11 fw mask 0xf handle 0x
 ip netns exec router tc filter del dev "$DEV" parent 1: prio 11 2>/dev/null
 try "flower meta mark"              $D protocol all prio 11 flower skip_hw meta mark 0x1/0xf flowid 1:10
 ip netns exec router tc filter del dev "$DEV" parent 1: prio 11 2>/dev/null
-# first attempt used `basic matchall ematch ...`, which is not the grammar:
-# `basic` takes `match EMATCH_TREE`, so the ematch expression goes in quotes.
-try "basic match \"meta 0x1 0xf\"" $D protocol all prio 11 basic match "meta 0x1 0xf" flowid 1:10
+
+# `basic match "meta 0x1 0xf"` failed with "Usage: EXPR". The ematch grammar is
+# not `meta`; ematch ops are named `skb/<field>`, and mark is one of them. Worth
+# one more round, because if ematch can match skb/mark then the original
+# nftables-sets -> mark -> static-filter design survives intact -- and every part
+# of that half is already built and now proven on a real kernel.
+try "basic match skb/mark"          $D protocol all prio 11 basic match "skb/mark 0x1 0xf" flowid 1:10
 ip netns exec router tc filter del dev "$DEV" parent 1: prio 11 2>/dev/null
-try "basic match \"meta\" only"   $D protocol all prio 11 basic match "meta" flowid 1:10
+try "basic match skb/mark mask"     $D protocol all prio 11 basic match "skb/mark 0x1 0x0f" flowid 1:10
+ip netns exec router tc filter del dev "$DEV" parent 1: prio 11 2>/dev/null
+try "basic ematch skb/mark"         $D protocol all prio 11 basic ematch "skb/mark 0x1 0xf" flowid 1:10
+ip netns exec router tc filter del dev "$DEV" parent 1: prio 11 2>/dev/null
+try "basic match meta skb/mark"     $D protocol all prio 11 basic match "meta skb/mark 0x1 0xf" flowid 1:10
 ip netns exec router tc filter del dev "$DEV" parent 1: prio 11 2>/dev/null
 echo
 
-# If nothing can read a mark, nftables can still steer tc indirectly: rewrite
-# DSCP to a reserved selector code and let a flower filter match on it. Both
-# components are already proven (flower ip_tos above, gate check 14). The first
-# attempt used the symbolic name `af41`, which this nftables rejected with
-# "syntax error, unexpected set"; numeric values are tried here too.
+# If nothing can read a mark, nftables can steer tc indirectly: rewrite DSCP to
+# a reserved selector code and let flower match on it. Both components are
+# proven (flower ip_tos above, and gate check 14).
+#
+# Both previous attempts here were invalid and said nothing:
+#   `dscp set 0x28`    -- "syntax error, unexpected set": `dscp` is not a
+#                          settable keyword in that position. A genuine result.
+#   `meta dsfield set` -- genuinely not a meta key; the error helpfully lists
+#                          the real ones. A genuine result.
+#   `ip dscp set`      -- "No such file or directory" with the caret on the
+#                          CHAIN NAME. That is a missing chain, not a syntax
+#                          error: the rules were added to chains probe/probe2/
+#                          probe3 which were never created. UNTESTED, and the
+#                          correct spelling is the one worth knowing.
 echo "--- steering via DSCP rewrite (if no mark matcher exists) ---"
-try "nft dscp set 0x28"      $NS nft add rule ip aciq probe \
-  ip saddr . ip daddr . meta l4proto . th dport @leased dscp set 0x28
-try "nft meta dsfield set"   $NS nft add rule ip aciq probe2 \
-  ip saddr . ip daddr . meta l4proto . th dport @leased meta dsfield set 0x28
-try "nft ip dscp set"        $NS nft add rule ip aciq probe3 \
+$NS nft add chain ip aciq probe 2>/dev/null
+$NS nft add chain ip aciq probe2 2>/dev/null
+try "nft ip dscp set 0x28"  $NS nft add rule ip aciq probe \
   ip saddr . ip daddr . meta l4proto . th dport @leased ip dscp set 0x28
+try "nft ip dscp set ef"    $NS nft add rule ip aciq probe2 \
+  ip saddr . ip daddr . meta l4proto . th dport @leased ip dscp set af41
+try "nft ip dscp set cs?"   $NS nft add rule ip aciq probe2 \
+  ip saddr . ip daddr . meta l4proto . th dport @interactive ip dscp set cs0
 try "flower reads rewritten dscp" $D protocol ip prio 21 flower skip_hw ip_tos 0x28/0xfc flowid 1:20
 ip netns exec router tc filter del dev "$DEV" parent 1: prio 21 2>/dev/null
-for p in probe probe2 probe3; do $NS nft delete table ip aciq 2>/dev/null; done
+$NS nft delete chain ip aciq probe 2>/dev/null
+$NS nft delete chain ip aciq probe2 2>/dev/null
 echo
 
 # ==========================================================================
