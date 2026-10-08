@@ -301,15 +301,14 @@ EGR_IF=veth-lan
 bmark () {  # bmark <src> <dst> <proto> <dport> <class> [timeout]
   $VENV/bin/python - "$1" "$2" "$3" "$4" "$5" "${6:-120s}" <<'PY'
 import sys
-from aciq.bridge import Bridge, FlowKey
+from aciq.bridge import FlowKey, family_of, generate_add_element
 from aciq.marks import (CLASS_UNCLASSIFIED, CLASS_INTERACTIVE, CLASS_ADAPTIVE,
                         CLASS_BULK, CLASS_LEASED)
 src, dst, proto, dport, cls, timeout = sys.argv[1:7]
 ids = {"unclassified": CLASS_UNCLASSIFIED, "interactive": CLASS_INTERACTIVE,
        "adaptive": CLASS_ADAPTIVE, "bulk": CLASS_BULK, "leased": CLASS_LEASED}
-b = Bridge(dev="veth-lan", in_if="veth-wan", ns="router")
 key = FlowKey(src, dst, proto, int(dport))
-argv = generate_add_element(b.family_of(src), key, ids[cls], timeout=timeout)
+argv = generate_add_element(family_of(src), key, ids[cls], timeout=timeout)
 import subprocess
 p = subprocess.run(list(argv), capture_output=True, text=True)
 if p.returncode:

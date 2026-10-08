@@ -894,3 +894,24 @@ class TestSteeringCodes(unittest.TestCase):
         from aciq.bridge import MAX_STEER_PRIO
         from aciq.tc import DSCP_FILTER_PRIO
         self.assertLess(MAX_STEER_PRIO, min(DSCP_FILTER_PRIO.values()))
+
+
+class TestFamilyOf(unittest.TestCase):
+    """Module-level so a caller adding one element need not build a Bridge."""
+
+    def test_ipv4_and_ipv6(self):
+        from aciq.bridge import family_of
+        self.assertEqual(family_of("10.0.1.2"), "ip")
+        self.assertEqual(family_of("203.0.113.9"), "ip")
+        self.assertEqual(family_of("2001:db8::2"), "ip6")
+        self.assertEqual(family_of("fd00:1::2"), "ip6")
+
+    def test_zone_id_does_not_raise(self):
+        """A zone id would raise in socket.inet_pton. It must not raise from deep
+        inside a classification tick."""
+        from aciq.bridge import family_of
+        self.assertEqual(family_of("fe80::1%eth0"), "ip6")
+
+    def test_method_delegates_to_the_helper(self):
+        from aciq.bridge import Bridge
+        self.assertEqual(Bridge("d", "e").family_of("2001:db8::1"), "ip6")

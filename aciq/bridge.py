@@ -473,6 +473,20 @@ def generate_teardown(family: str, ns: str | None = None) -> tuple[str, ...]:
     return _netns(ns) + ("nft", "delete", "table", family, NFT_TABLE)
 
 
+def family_of(src: str) -> str:
+    """Address family of a literal: "ip" or "ip6".
+
+    Deliberately string inspection rather than `socket.inet_pton`, so a zone id
+    (`fe80::1%eth0`) or a hostname does not raise from deep inside a
+    classification tick.
+
+    Module level so a caller adding one flow element does not have to construct
+    a Bridge -- which is what the gate's `bmark` helper was doing, and it read
+    as though the Bridge instance were needed.
+    """
+    return "ip6" if ":" in src else "ip"
+
+
 def _netns(ns: str | None) -> tuple[str, ...]:
     return ("ip", "netns", "exec", ns) if ns else ()
 
@@ -590,10 +604,9 @@ class Bridge:
         return ran
 
     def family_of(self, src: str) -> str:
-        """Address family from the literal. Deliberately literal rather than
-        `socket.inet_pton`, so a zone id (`fe80::1%eth0`) or a hostname does not
-        raise from deep inside a classification tick."""
-        return "ip6" if ":" in src else "ip"
+        """Address family from the literal. Delegates to the module-level
+        helper; kept as a method so existing callers keep working."""
+        return family_of(src)
 
     def _families_for(self, key: FlowKey) -> tuple[str, ...]:
         f = self.family_of(key.src)
