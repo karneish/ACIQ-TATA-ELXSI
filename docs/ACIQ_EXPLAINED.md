@@ -4,8 +4,19 @@ This document explains the project from the very beginning: what problem we are
 solving, what the solution is, and exactly how it works. Every Linux command and
 every technical term is explained in brackets the first time it appears.
 
-Nothing here is theoretical. Every number quoted was actually measured on the
-project's own testbed, and the file that measured it is named.
+Every **number** quoted was really measured on the project's own testbed, and the
+file that measured it is named. But three parts of the **system** are described
+here that do not yet run, and they are marked `[NOT WIRED]` at every mention:
+
+- the behavioural classifier (M1) — built and unit-tested, but never called
+  during a run, so it does not influence enforcement;
+- `ADAPTIVE` and `LEASED` — the classes exist and are given bandwidth, but
+  nothing routes traffic into them;
+- the correction file — described, never written.
+
+So the measured system is **DSCP-EF filtering + HTB + `fq_codel`**. The evidence
+is `docs/WIRING_AUDIT.md`, which audits every module for whether it is *connected
+to the runtime* as well as whether it exists and has tests.
 
 
 ## Contents
@@ -339,11 +350,23 @@ The solution has five working parts, plus a reporting part.
 - **M5 — Metrics, M6 — experiments, M10 — report:** measure and publish.
 
 
-### 3.1 Step 1 — Classify the traffic (M1)
+### 3.1 Step 1 — Classify the traffic (M1) · `[NOT WIRED]`
 
 Files: `aciq/classify.py`, `aciq/flowtrack.py`
 
-**Goal.** For each connection, decide which of three buckets it belongs to:
+> **This step does not run.** `classify()` is called only from `tests/test_classify.py`.
+> Neither `classify.py` nor `flowtrack.py` appears in the import chain from
+> `run_experiments.py`. The 28 tests pass, so the logic is correct — it is simply
+> never invoked, and therefore never affects what `tc` enforces.
+>
+> What actually decides classes in a real run is the DSCP-EF filter, and nothing
+> else: `aciq/tc.py` emits exactly two filters, both matching DSCP EF, both to
+> class `1:10`. Everything else falls to the HTB default class `1:30` (BULK).
+
+**Goal.** For each connection, decide which of three buckets it belongs to.
+`[NOT WIRED — and as a result ADAPTIVE never receives traffic, because nothing
+routes to class 1:20. Measured: `adaptive_video: goodput 0.0` in every sample.
+LEASED, class 1:40, has the same problem.]`
 
 - `INTERACTIVE` — calls and games. Needs low delay.
 - `ADAPTIVE` — video streaming. Needs steady bandwidth.
@@ -405,8 +428,12 @@ that number would mean absolutely nothing. So the ports are randomised per seed,
 and classification is forced to rest on behaviour and DSCP only. **We make our own
 accuracy number harder to earn on purpose.**
 
-The classifier also keeps a **correction file** at `data/corrections.jsonl`, where a
-user's manual override is recorded and demonstrably changes later decisions.
+The classifier also *would* keep a **correction file** at `data/corrections.jsonl`,
+where a user's manual override is recorded and changes later decisions.
+`[NOT WIRED]` — no code writes that file, and `data/corrections.jsonl` does not
+exist. This is also a requirement in the brief ("classifiers must expose
+confidence and allow correction of misclassification"). Confidence **is**
+implemented and tested; correction is not implemented at all.
 
 
 ### 3.2 Step 2 — Work out how fast the line really is (M2)
@@ -1038,6 +1065,16 @@ previous run is not reproducible.**
 
 
 ## 5. What we actually measured
+
+> **System version: v0.** See `data/baselines/v0/` and the `v0-baseline` tag.
+>
+> These numbers come from the system described at the top of this file:
+> **DSCP-EF filtering + HTB + `fq_codel`**. The behavioural classifier did not
+> run, no lease was exercised, and in scenario 3 the three video streams were
+> classified **BULK** rather than ADAPTIVE.
+>
+> One seed per configuration. Paired Wilcoxon cannot reach p < 0.05 below 6
+> pairs, so no significance claim is made — only ranges and the raw values.
 
 Six runs, seed 42. Full results are in `data/REPORT.md`. Raw per-second data is in
 `data/runs/<run name>/`.
