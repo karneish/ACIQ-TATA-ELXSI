@@ -344,6 +344,55 @@ else
 fi
 echo
 
+# ---------------------------------------------------------------------------
+# J: the replacement mechanism -- a per-flow flower filter, matching the flow
+# key directly. No nftables write at all, so the fault just proved cannot apply.
+#
+# The probe showed this syntax INSTALLS. Installing is not matching, and that
+# distinction is what has cost this whole investigation: the DSCP mechanism was
+# installed perfectly and never matched once. So J is a behavioural test.
+# ---------------------------------------------------------------------------
+echo "--- J: per-flow flower filter, no nftables involved ---"
+$R nft delete table ip isote 2>/dev/null
+$R nft delete table ip isopost 2>/dev/null
+$R tc filter del dev "$DEV" parent 1: protocol ip pref 10 2>/dev/null
+$R tc filter add dev "$DEV" parent 1: protocol ip prio 10 flower skip_hw \
+   src_ip 203.0.113.2 dst_ip 10.0.1.2 ip_proto udp dst_port 7001 flowid 1:20 \
+  || { echo "could not install the per-flow filter"; exit 1; }
+$R tc filter show dev "$DEV" parent 1: | grep -E 'pref|src_ip|dst_ip|ip_proto|dst_port' \
+  | sed 's/^/  /'
+J0=$(b 1:20); J3=$(b 1:30)
+send 7001 00 60           # matches on the key; DSCP irrelevant, sender sets 0
+sleep 1
+J1=$(b 1:20); J3n=$(b 1:30)
+echo "  1:20 $J0 -> $J1    1:30 $J3 -> $J3n"
+if [ "${J1:-0}" -gt "${J0:-0}" ]; then
+  res "J: a per-flow flower filter ROUTES it -- this is the working mechanism" 0
+else
+  res "J: a per-flow flower filter does not route it either -- something is wrong
+      with tc on this device and the whole approach is in question" 1
+fi
+echo
+
+# K: does it match the RIGHT packet, or would it match anything?
+# Without this, J could pass for the wrong reason -- e.g. if 1:20 grew because
+# something else routed there.
+echo "--- K: control -- the same filter must NOT match a different port ---"
+$R tc filter del dev "$DEV" parent 1: protocol ip pref 10 2>/dev/null
+$R tc filter add dev "$DEV" parent 1: protocol ip prio 10 flower skip_hw \
+   src_ip 203.0.113.2 dst_ip 10.0.1.2 ip_proto udp dst_port 7009 flowid 1:20
+K0=$(b 1:20)
+send 7001 00 60
+sleep 1
+K1=$(b 1:20)
+echo "  filter targets dport 7009, traffic goes to 7001: 1:20 $K0 -> $K1"
+if [ "${K1:-0}" -le "${K0:-0}" ]; then
+  res "K: the filter does not over-match (1:20 stayed flat for dport 7001)" 0
+else
+  res "K: the filter matched a packet on the WRONG port -- J would be a false pass" 1
+fi
+echo
+
 echo "=== SUMMARY ==="
 echo "PASS $PASS  FAIL $FAIL"
 echo
@@ -372,3 +421,9 @@ echo "                    tc, a sender-written one is. The fix is a different"
 echo "                    signalling channel, not a different classifier."
 echo "  H pass, I fail  -> the port: 7001 specifically defeats both classifiers."
 echo "  H fail, I pass  -> the mechanism, confirmed with the port held constant."
+echo
+echo "  H fail + I pass -> PROVENANCE: a DSCP written by nftables is not matched by"
+echo "                    tc egress classifiers; one written by the sender is."
+echo "  J pass + K pass -> a per-flow flower filter is the working mechanism. It"
+echo "                    matches the flow key directly, needs no packet mutation,"
+echo "                    and costs one netlink transaction per reclassification."
