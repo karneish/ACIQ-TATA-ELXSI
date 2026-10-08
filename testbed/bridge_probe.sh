@@ -127,32 +127,75 @@ echo
 #
 # Two candidate syntaxes; which one the kernel accepts is not something the
 # unit tests can answer, because it is a property of iproute2.
-echo "--- tc fw mask syntax ---"
+# ==========================================================================
+# 2. HOW DOES A PACKET MARK REACH A CLASS?
+#
+# This is the load-bearing question and the probe settled it: iproute2 6.1.0's
+# `fw` classifier accepts ONLY classid / indev / action. No `handle`, no `mask`.
+# So "nftables sets -> mark -> static tc fw filters", which is the whole design
+# in aciq/bridge.py, cannot be built on this toolchain.
+#
+# Every candidate below is probed, because which one works is a property of the
+# kernel and iproute2, not something the unit suite can answer. First to pass
+# becomes the design; the rest are recorded as dead ends.
+# ==========================================================================
+echo "--- mark -> class candidates ---"
+D="ip netns exec router tc filter add dev $DEV parent 1:"
 
-FWDEV="ip netns exec router tc filter add dev $DEV parent 1: protocol ip prio 11 fw"
-try "A: fw handle 0x01/0x0f"        $FWDEV handle 0x01/0x0f flowid 1:10
-ip netns exec router tc filter del dev "$DEV" parent 1: protocol ip prio 11 2>/dev/null
-try "B: fw mask 0xf handle 0x1"      $FWDEV mask 0xf handle 0x1 flowid 1:10
-ip netns exec router tc filter del dev "$DEV" parent 1: protocol ip prio 11 2>/dev/null
-try "C: fw classid (no handle)"      $FWDEV classid 1:10
-ip netns exec router tc filter del dev "$DEV" parent 1: protocol ip prio 11 2>/dev/null
+try "fw handle 0x01/0x0f (primary)"   $D protocol ip prio 11 fw handle 0x01/0x0f flowid 1:10
+ip netns exec router tc filter del dev "$DEV" parent 1: prio 11 2>/dev/null
+try "fw mask 0xf handle 0x1 (fallback)" $D protocol ip prio 11 fw mask 0xf handle 0x1 flowid 1:10
+ip netns exec router tc filter del dev "$DEV" parent 1: prio 11 2>/dev/null
+try "flower meta mark"                 $D protocol all prio 11 flower skip_hw meta mark 0x1/0xf flowid 1:10
+ip netns exec router tc filter del dev "$DEV" parent 1: prio 11 2>/dev/null
+try "basic ematch meta"                $D protocol all prio 11 basic matchall ematch meta 0x1 0xf action pass
+ip netns exec router tc filter del dev "$DEV" parent 1: prio 11 2>/dev/null
+
+# If no mark matcher exists, nftables can still steer tc indirectly: rewrite
+# DSCP to a reserved selector code, and let a flower filter -- already proven to
+# work in gate check 14 -- match on it. Costs a header rewrite on the wire.
+try "nft dscp set (steer via DSCP)"    ip netns exec router nft add rule ip aciq probe   ip saddr . ip daddr . meta l4proto . th dport @leased dscp set af41
+try "flower ip_tos 0x28 (reads DSCP)"  $D protocol ip prio 11 flower skip_hw ip_tos 0x28/0xfc flowid 1:20
+ip netns exec router tc filter del dev "$DEV" parent 1: prio 11 2>/dev/null
+ip netns exec router nft delete rule ip aciq probe 2>/dev/null
 echo
 
 # ==========================================================================
-# 3. the element/key shape, which is the other place we could be wrong
+# 3. fallback key shape: can flower match the flow key directly?
+# If no mark matcher exists, per-class flower filters are the remaining option.
+# They are proven in gate check 14 (ip_tos), but matching addresses and ports
+# has never been tried here.
 # ==========================================================================
-# The set is keyed (addr, addr, inet_proto, inet_service) and matched with
-# `meta l4proto th dport @set`. If that concatenation is not supported, the
-# fix is a different key shape, not a typo -- so it is probed explicitly.
-echo "--- nft set key / lookup shape ---"
+echo "--- flower flow-key matching ---"
+try "flower proto+dst_port"  $D protocol ip prio 12 flower skip_hw ip_proto udp dst_port 7001 flowid 1:20
+ip netns exec router tc filter del dev "$DEV" parent 1: prio 12 2>/dev/null
+try "flower src+dst+proto+port" $D protocol ip prio 12 flower skip_hw \
+  src_ip 203.0.113.2 dst_ip 10.0.1.2 ip_proto udp dst_port 7001 flowid 1:20
+ip netns exec router tc filter del dev "$DEV" parent 1: prio 12 2>/dev/null
+try "flower ipv6 flow key"  $D protocol ipv6 prio 12 flower skip_hw \
+  src_ip 2001:db8::2 dst_ip fd00:1::2 ip_proto udp dst_port 7003 flowid 1:20
+ip netns exec router tc filter del dev "$DEV" parent 1: prio 12 2>/dev/null
+echo
 
+# ==========================================================================
+# 4. nftables set + key lookup shape, on a table that actually exists this time
+# ==========================================================================
+# The first version of this section probed table `aciqprobe`, which was never
+# created, so all three commands failed with "No such file or directory" and
+# said nothing about the key shape. Created properly now.
+echo "--- nft set key / lookup shape ---"
 NS="ip netns exec router"
+$NS nft delete table ip aciqprobe 2>/dev/null
+$NS nft add table ip aciqprobe
 try "set with flags timeout"  $NS nft add set ip aciqprobe s1 \
   '{ type ipv4_addr . ipv4_addr . inet_proto . inet_service ; flags timeout ; timeout 120s ; }'
-try "rule: l4proto th dport"  $NS nft add rule ip aciqprobe inetprobe \
-  ip saddr ip daddr meta l4proto th dport @s1 meta mark set 16
+try "chain for lookup"        $NS nft add chain ip aciqprobe c1 \
+  '{ type filter hook prerouting priority mangle; policy accept; }'
+try "rule: dotted concat lookup" $NS nft add rule ip aciqprobe c1 \
+  iifname veth-wan ip saddr . ip daddr . meta l4proto . th dport @s1 meta mark set 16
 try "element with timeout"    $NS nft add element ip aciqprobe s1 \
   '{ 203.0.113.2 . 10.0.1.2 . udp . 7001 timeout 120s }'
+try "set list shows the element" $NS nft list set ip aciqprobe s1
 $NS nft delete table ip aciqprobe 2>/dev/null
 echo
 

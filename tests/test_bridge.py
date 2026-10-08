@@ -687,3 +687,87 @@ class TestMissingObjectTolerance(unittest.TestCase):
         b = Bridge("d", "eth1", "router", executor=r, dry_run=True)
         self.assertEqual(b.setup(), b.plan())
         self.assertEqual(r.calls, [])
+
+
+class TestConcatenationDots(unittest.TestCase):
+    """nftables concatenates with a literal `.` token.
+
+    Found by bridge_probe.sh on a real kernel: the rule was emitted as
+
+        ip saddr ip daddr meta l4proto th dport @leased meta mark set 20
+
+    and nft answered "syntax error, unexpected meta". Without the dots those are
+    five separate expressions and nft binds @leased to only the last one, so the
+    set lookup would never match the 4-field key even if it parsed.
+    """
+
+    def _rule(self, family="ip", cls=CLASS_LEASED):
+        rules = generate_rules(family, "veth-wan")
+        return rules[CLASS_PRECEDENCE.index(cls)]
+
+    def test_dots_separate_the_four_key_expressions(self):
+        rule = self._rule()
+        self.assertEqual(rule.count("."), 3,
+                         f"expected 3 concatenation dots, got {rule}")
+
+    def test_dot_precedes_each_key_expression(self):
+        """Each concatenation dot sits before the START of an expression.
+
+        The key expressions are multi-token (`ip daddr` is two tokens), so the
+        dot precedes the expression's first token, not the token carrying its
+        name. saddr is the first expression and has no preceding dot.
+        """
+        rule = self._rule()
+        exprs = [("ip", "saddr"), ("ip", "daddr"),
+                 ("meta", "l4proto"), ("th", "dport")]
+        # locate each expression as a contiguous run
+        starts = []
+        for e in exprs:
+            for i in range(len(rule) - len(e) + 1):
+                if tuple(rule[i:i + len(e)]) == e:
+                    starts.append(i)
+                    break
+            else:
+                self.fail(f"expression {e} not found in {rule}")
+        starts.sort()
+        self.assertEqual(starts, sorted(starts), f"expressions out of order: {rule}")
+        # everything after the first must be introduced by a dot
+        self.assertEqual(rule[starts[0] - 1], "veth-wan")
+        for i in starts[1:]:
+            self.assertEqual(rule[i - 1], ".",
+                             f"no dot before expression at token {i}: {rule}")
+
+    def test_dots_appear_in_both_families(self):
+        for family in ("ip", "ip6"):
+            self.assertEqual(self._rule(family).count("."), 3)
+
+    def test_dots_appear_for_every_class(self):
+        for c in CLASS_PRECEDENCE:
+            self.assertEqual(self._rule(cls=c).count("."), 3, f"class {c}")
+
+    def test_set_reference_comes_after_the_key(self):
+        rule = self._rule()
+        self.assertLess(rule.index("dport"), rule.index("@leased"))
+        self.assertLess(rule.index("@leased"), rule.index("mark"))
+
+    def test_element_text_already_had_dots(self):
+        """The set element is a single token and always had its dots. Asserted
+        so the two representations cannot drift apart."""
+        self.assertEqual(V4.element(),
+                         "{ 10.0.1.2 . 203.0.113.2 . tcp . 443 timeout 120s }")
+
+    def test_dot_count_matches_the_set_element_field_count(self):
+        """3 dots join 4 expressions; the element has 4 fields joined by 3
+        separators. Same shape on both sides of the lookup.
+
+        Counting "." in the element text is meaningless -- the addresses
+        contain dots themselves, so a naive count gives 9, not 3. Split on the
+        separator instead.
+        """
+        body = V4.element().strip("{}").strip()
+        # the timeout rides on the last field, so strip it before counting
+        body = body.rsplit(" timeout ", 1)[0]
+        fields = body.split(" . ")
+        self.assertEqual(fields, ["10.0.1.2", "203.0.113.2", "tcp", "443"])
+        # 4 fields => 3 separators
+        self.assertEqual(self._rule().count("."), len(fields) - 1)

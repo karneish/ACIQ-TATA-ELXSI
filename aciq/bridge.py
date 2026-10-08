@@ -251,8 +251,16 @@ def generate_rules(family: str, in_if: str,
         cmds.append(pre + (
             "nft", "add", "rule", family, NFT_TABLE, NFT_CHAIN,
             "iifname", in_if,
-            *src_toks, *dst_toks,
-            "meta", "l4proto", "th", "dport",
+            # "." is nftables' concatenation operator and is REQUIRED between the
+            # expressions that make up the set key. Emitting
+            #   ip saddr ip daddr meta l4proto th dport @set
+            # instead of
+            #   ip saddr . ip daddr . meta l4proto . th dport @set
+            # parses as five separate expressions, and nft binds @set to only
+            # the last one. Caught by bridge_probe.sh on a real kernel:
+            # "syntax error, unexpected meta".
+            *src_toks, ".", *dst_toks, ".",
+            "meta", "l4proto", ".", "th", "dport",
             "@" + SET_NAMES[c],
             "meta", "mark", "set", str(mark),
         ))
