@@ -14,7 +14,7 @@ asks for them and because two behaviours turned out to be version-sensitive.
 | `nftables` | 1.0.9 | |
 | `ethtool` | 6.7 | |
 | `iperf3` | 3.16 | |
-| Python | 3.12.3 (venv) | standard library only |
+| Python | 3.13.15 (venv) | standard library only |
 
 ### Kernel modules
 
@@ -48,15 +48,26 @@ See `docs/licenses.md` — the ACIQ runtime itself has **no** pip dependencies.
 ```bash
 chmod +x testbed/*.sh
 bash -n testbed/*.sh                        # syntax
-python3 -m unittest discover -s tests       # 260 tests, no root needed
+python3 -m unittest discover -s tests       # 388 tests, no root needed
+
+# bridge syntax probe — seconds, not minutes. Run this FIRST when the gate
+# fails on a bridge check: the gate stops at the first failure, so one wrong
+# command otherwise costs one full run and tells you nothing about the rest.
+sudo env ACIQ_VENV=/home/mekarz/aciq-venv ./testbed/bridge_probe.sh
 
 # full gate — needs root, ~2 minutes
-sudo env ACIQ_VENV=/home/YOU/aciq-venv ./testbed/gate.sh
+sudo env ACIQ_VENV=/home/mekarz/aciq-venv ./testbed/gate.sh
 sudo ./testbed/cleanup.sh
 ```
 
 The gate writes `testbed/logs/gate-<timestamp>.log` and stops at the first
 failure, naming the check.
+
+`bridge_probe.sh` runs every command `aciq.bridge` would emit, one at a time,
+and reports `PASS`/`FAIL` per line. It proves **syntax only** — that the kernel
+accepts the commands. It proves nothing about behaviour: whether a mark actually
+routes traffic to a class, whether an unclassified flow loses EF priority, and
+whether a mark expires are gate checks 16–19.
 
 ## 4. Running the experiments
 

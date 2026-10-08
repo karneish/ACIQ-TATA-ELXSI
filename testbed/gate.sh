@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# testbed/gate.sh — run:  sudo env ACIQ_VENV=/home/YOU/aciq-venv ./testbed/gate.sh
+# testbed/gate.sh — run:  sudo env ACIQ_VENV=/home/mekarz/aciq-venv ./testbed/gate.sh
 # Stops at the first failed check. Check 12 is measurement only and never fails.
 set -uo pipefail
 cd "$(dirname "$0")"

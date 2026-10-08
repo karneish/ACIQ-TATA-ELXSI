@@ -591,3 +591,99 @@ class TestEndToEndPlan(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestMissingObjectTolerance(unittest.TestCase):
+    """`nft delete` returning nonzero for an absent object is the expected
+    state, not an error.
+
+    Found by gate check 15 on a real kernel: `nft delete table ip aciq` returns
+    rc=1 "No such file or directory" on a first run, and setup() raised on it, so
+    check 15 died on its first command and the set/rule/tc syntax below it went
+    entirely untested.
+    """
+
+    def test_setup_succeeds_when_no_table_exists(self):
+        """The first-run case: everything nft touches is absent."""
+        r = Recorder(fail_on="delete table", rc=1)
+        b = Bridge("d", "eth1", "router", executor=r)
+        b.setup()                       # must not raise
+        self.assertIn("add table", " ".join(" ".join(c) for c in r.calls))
+
+    def test_setup_succeeds_on_a_completely_fresh_netns(self):
+        """Every delete fails with ENOENT, as in a freshly created namespace."""
+        def fresh(argv):
+            if "delete" in argv:
+                return (1, "", "Error: Could not process rule: No such file or directory")
+            return (0, "", "")
+        Bridge("d", "eth1", "router", executor=fresh).setup()
+
+    def test_real_problem_still_surfaces(self):
+        """missing_ok must not become a blanket ignore.
+
+        If the table exists and genuinely cannot be removed, `delete` fails and
+        the following `add table` fails with EEXIST -- which does raise. That is
+        the guarantee which makes tolerating the delete safe.
+        """
+        def delete_fails_add_fails(argv):
+            if "delete" in argv:
+                return (1, "", "Error: permission denied")
+            if "add" in argv and "table" in argv:
+                return (1, "", "Error: File exists")
+            return (0, "", "")
+        b = Bridge("d", "eth1", "router", executor=delete_fails_add_fails)
+        with self.assertRaises(BridgeError):
+            b.setup()
+
+    def test_teardown_tolerates_absent_table(self):
+        """check 20 calls teardown, and the table may already be gone."""
+        r = Recorder(fail_on="delete table", rc=1)
+        Bridge("d", "eth1", "router", executor=r).teardown()
+        self.assertEqual(len(r.calls), 2)
+
+    def test_expired_element_delete_is_tolerated(self):
+        """A 120s kernel set timeout can remove an element before we do.
+
+        Expiry is designed to happen, so reclassifying a flow whose mark has
+        aged out is a guaranteed race in normal operation, not an edge case.
+        """
+        r = Recorder(fail_on="delete element", rc=1)
+        b = Bridge("d", "eth1", "router", executor=r)
+        b.mark(V4, CLASS_BULK)
+        b.mark(V4, CLASS_INTERACTIVE)    # must not raise
+        self.assertIn("interactive", " ".join(" ".join(c) for c in r.calls))
+
+    def test_forget_tolerates_an_already_expired_element(self):
+        r = Recorder(fail_on="delete element", rc=1)
+        b = Bridge("d", "eth1", "router", executor=r)
+        b.mark(V4, CLASS_LEASED, lease_id=1)
+        b.forget(V4)                     # must not raise
+        self.assertEqual(b.state.membership, {})
+
+    def test_add_element_failures_are_never_tolerated(self):
+        """Only `delete` is missing_ok. A failed `add element` means the mark was
+        NOT set, and continuing silently would ship traffic to a class the
+        classifier never chose."""
+        r = Recorder(fail_on="add element", rc=1)
+        b = Bridge("d", "eth1", "router", executor=r)
+        with self.assertRaises(BridgeError):
+            b.mark(V4, CLASS_INTERACTIVE)
+
+    def test_set_add_failures_are_never_tolerated(self):
+        r = Recorder(fail_on="add set", rc=1)
+        b = Bridge("d", "eth1", "router", executor=r)
+        with self.assertRaises(BridgeError):
+            b.setup()
+
+    def test_plan_is_still_identical_to_setup(self):
+        """missing_ok changes error handling only, never the command list."""
+        r = Recorder()
+        b = Bridge("d", "eth1", "router", executor=r)
+        planned = b.plan()
+        b.setup()
+        self.assertEqual(planned, r.calls)
+
+    def test_dry_run_plan_unaffected_by_missing_ok(self):
+        r = Recorder()
+        b = Bridge("d", "eth1", "router", executor=r, dry_run=True)
+        self.assertEqual(b.setup(), b.plan())
+        self.assertEqual(r.calls, [])

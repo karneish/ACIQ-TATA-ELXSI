@@ -394,7 +394,7 @@ class Bridge:
         # it -- so the window where rules and code disagree is wider than
         # necessary.
         for family in self.families:
-            ran += self._do(generate_teardown(family, self.ns))
+            ran += self._do(generate_teardown(family, self.ns), missing_ok=True)
         for family in self.families:
             ran += self._do(generate_table(family, self.ns))
             ran += self._do(generate_sets(family, self.ns))
@@ -405,7 +405,7 @@ class Bridge:
     def teardown(self) -> list[tuple[str, ...]]:
         ran = []
         for family in self.families:
-            ran += self._do(generate_teardown(family, self.ns))
+            ran += self._do(generate_teardown(family, self.ns), missing_ok=True)
         self.state.membership.clear()
         return ran
 
@@ -427,7 +427,9 @@ class Bridge:
         ran = []
         for family in families:
             if prev is not None:
-                ran += self._do(generate_del_element(family, key, prev, self.ns))
+                # missing_ok: a 120s kernel timeout may already have removed it
+                ran += self._do(generate_del_element(family, key, prev, self.ns),
+                                missing_ok=True)
             ran += self._do(generate_add_element(
                 family, key, class_id, confidence=confidence, reason=reason,
                 lease_id=lease_id, ns=self.ns))
@@ -443,7 +445,8 @@ class Bridge:
             return []
         ran = []
         for family in families:
-            ran += self._do(generate_del_element(family, key, prev, self.ns))
+            ran += self._do(generate_del_element(family, key, prev, self.ns),
+                            missing_ok=True)
         self.state.membership.pop((families[0], key.signature), None)
         return ran
 
@@ -458,7 +461,7 @@ class Bridge:
         return (f,) if f in self.families else ()
 
     # -- plumbing ----------------------------------------------------------
-    def _do(self, cmds) -> list[tuple[str, ...]]:
+    def _do(self, cmds, missing_ok: bool = False) -> list[tuple[str, ...]]:
         """Run one command, or a sequence of them.
 
         Normalises the two shapes the generators return naturally: a single
@@ -466,6 +469,24 @@ class Bridge:
         Without this, passing a single command to a sequence loop iterates its
         *tokens*, so "nft" and "add element" were each executed as if they were
         whole command lines.
+
+        `missing_ok` tolerates a nonzero exit. It is used only for `nft delete`,
+        and it is safe there because a delete that fails for a real reason cannot
+        hide it: if the object exists and genuinely cannot be removed, the very
+        next command (`nft add`) fails and raises. So "it was not there" and
+        "something is wrong" both surface -- just at the command where they
+        actually matter.
+
+        Two cases make this necessary, and neither is hypothetical:
+
+        * `setup()` deletes before creating, to stay idempotent. On a first run
+          there is no table, so `nft delete table` returns
+          ENOENT -- "No such file or directory" -- which is the expected state,
+          not an error. Raising here made check 15 fail on its first command.
+        * `delete element` returns ENOENT whenever a mark has already expired
+          through its 120s set timeout and the flow is reclassified afterwards.
+          Expiry is designed to happen, so this race is guaranteed in normal
+          operation, and it would abort a classification tick.
         """
         if isinstance(cmds, tuple) and cmds and isinstance(cmds[0], str):
             cmds = (cmds,)
@@ -476,7 +497,7 @@ class Bridge:
                 ran.append(argv)
                 continue
             rc, _out, err = _run(self.executor, argv)
-            if rc != 0:
+            if rc != 0 and not missing_ok:
                 raise BridgeError(f"{' '.join(argv)} -> rc={rc}: {err.strip()}")
             self.commands.append(argv)
             ran.append(argv)
