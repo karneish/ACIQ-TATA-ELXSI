@@ -221,8 +221,17 @@ $R tc qdisc  add dev veth-lan root handle 1: htb default 30
 $R tc class add dev veth-lan parent 1:  classid 1:1  htb rate 20mbit ceil 20mbit
 $R tc class add dev veth-lan parent 1:1 classid 1:10 htb rate 8mbit  ceil 20mbit
 $R tc class add dev veth-lan parent 1:1 classid 1:30 htb rate 8mbit  ceil 20mbit
+# 1:20 and 1:40 are needed for checks 15-20. The steer filters reference them by
+# flowid, and `tc filter add ... flowid 1:20` against a class that does not exist
+# fails with "Parent Qdisc doesn't exists" -- the same error that produced two
+# rounds of false negatives in bridge_probe.sh, so it was worth fixing before it
+# produced a third here and pointed the wrong way.
+$R tc class add dev veth-lan parent 1:1 classid 1:20 htb rate 8mbit  ceil 20mbit
+$R tc class add dev veth-lan parent 1:1 classid 1:40 htb rate 8mbit  ceil 20mbit
 $R tc qdisc add dev veth-lan parent 1:10 handle 10: fq_codel
 $R tc qdisc add dev veth-lan parent 1:30 handle 30: fq_codel
+$R tc qdisc add dev veth-lan parent 1:20 handle 20: fq_codel
+$R tc qdisc add dev veth-lan parent 1:40 handle 40: fq_codel
 $R tc filter add dev veth-lan parent 1: protocol ip prio 1 u32 \
    match ip dsfield 0xb8 0xfc flowid 1:10
 $R ping -c3 10.0.1.2 | tee /tmp/g12_base.txt | tail -2
@@ -355,14 +364,19 @@ ip netns exec router nft list table ip6 aciq >/dev/null 2>&1 \
   || die "check 15: ip6 table aciq not created"
 $R nft list set ip aciq interactive | grep -q "flags timeout" \
   || die "check 15: interactive set lacks 'flags timeout' (mark expiry)"
-$R tc filter show dev "$EGR_IF" parent 1: | grep -q "fw" \
-  || die "check 15: no fw filter installed"
+$R tc filter show dev "$EGR_IF" parent 1: | grep -q "flower" \
+  || die "check 15: no flower steer filter installed"
+# The steer filters must key on the DSCP selector codes the rules stamp. Checking
+# for `fw` here would have passed on the old design and fails now, which is the
+# point: `tc fw` cannot read a packet mark on this toolchain.
+$R tc filter show dev "$EGR_IF" parent 1: | grep -q "ip_tos" \
+  || die "check 15: steer filters do not match on ip_tos"
 $R tc filter show dev "$EGR_IF" parent 1: | sed -n '1,20p'
-ok "check 15: bridge installs (nft tables, timeout sets, tc fw filters)"
+ok "check 15: bridge installs (nft tables, timeout sets, flower steer filters)"
 
 # ---------- 16 IPv4 mark routes to the marked class ----------
 A20=$(cbytes 1:20); A10=$(cbytes 1:10)
-bmark 203.0.113.2 10.0.1.2 udp 7001 adaptive || die "check 16: marking failed"
+bmark 203.0.113.2 10.0.1.2 udp 7001 adaptive || die "check 16: steering failed"
 send 10.0.1.2 7001 1000 0 60
 B20=$(cbytes 1:20); B10=$(cbytes 1:10)
 echo "1:20 $A20 -> $B20   1:10 $A10 -> $B10"
@@ -371,11 +385,15 @@ awk -v a="$A20" -v b="$B20" 'BEGIN{exit !(b+0 > a+0 + 20000)}' \
   || die "check 16: 1:20 did not grow ($A20 -> $B20)"
 
 # ---------- 17 a flow marked unclassified loses EF priority ----------
-# The evasion path: a flow that claims DSCP EF but was classified as bulk or
-# unclassified must NOT reach 1:10. Without the 'seen' bit it would fall through
-# to the DSCP-EF filter at prio 30 and get interactive priority anyway.
+# The evasion path: a flow that claims DSCP EF but is classified as bulk or
+# unclassified must NOT reach 1:10.
+#
+# nftables prerouting rewrites the DSCP to the class selector code BEFORE tc sees
+# the packet on egress, so by filter time the claim is gone and the steer filter
+# for `unclassified` (CS1) routes it to 1:30. That holds regardless of prio
+# ordering, because the rewrite has already happened.
 C10=$(cbytes 1:10)
-bmark 203.0.113.2 10.0.1.2 udp 7002 unclassified || die "check 17: marking failed"
+bmark 203.0.113.2 10.0.1.2 udp 7002 unclassified || die "check 17: steering failed"
 send 10.0.1.2 7002 1000 1 60     # DSCP EF set
 sleep 1
 D10=$(cbytes 1:10)
@@ -386,7 +404,7 @@ awk -v a="$C10" -v b="$D10" 'BEGIN{exit !(b+0 <= a+0 + 2000)}' \
 
 # ---------- 18 IPv6 mark routes to the marked class ----------
 A20=$(cbytes 1:20)
-bmark 2001:db8::2 fd00:1::2 udp 7003 adaptive || die "check 18: marking failed"
+bmark 2001:db8::2 fd00:1::2 udp 7003 adaptive || die "check 18: steering failed"
 send6 fd00:1::2 7003 1000 60
 sleep 1
 B20=$(cbytes 1:20)
