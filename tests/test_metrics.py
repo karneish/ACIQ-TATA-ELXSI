@@ -58,7 +58,73 @@ class TestPureFunctions(unittest.TestCase):
         self.assertAlmostEqual(jain_fairness([10, 10, 10]), 1.0, places=9)
         # a single hog is bounded below by 1/n, not zero
         self.assertAlmostEqual(jain_fairness([100, 1, 1]), 0.3467, places=3)
-        self.assertEqual(jain_fairness([]), 0.0)
+        # Empty is None, not 0.0. Both baselines have a single class, so there is
+        # no allocation to be fair or unfair about; 0.0 claimed they were maximally
+        # unfair, which is backwards, and put a number in the artefact that looked
+        # like a measurement.
+        self.assertIsNone(jain_fairness([]))
+        # a single flow cannot be unfair to anything either
+        self.assertEqual(jain_fairness([5.0]), 1.0)
+
+
+class TestTheParentIsNotLabelledInteractive(unittest.TestCase):
+    """Every sample of every system recorded the parent counter as
+    link.cls="realtime_interactive", because it was built with that class and a
+    comment claiming the value was never used. It was used -- by `vars()` in
+    every sample written."""
+
+    def test_the_parent_carries_no_traffic_class(self):
+        from aciq.metrics import CounterSnapshot, ClassCounters
+        snap = CounterSnapshot(t=0.0, link=ClassCounters(cls=None, handle="1:1",
+                                                          rx_bytes=99))
+        self.assertIsNone(snap.link.cls)
+
+    def test_the_parent_names_its_real_classid(self):
+        self.assertEqual(CounterSnapshot(
+            t=0.0, link=ClassCounters(cls=None, handle="1:1")).link.handle, "1:1")
+
+
+class TestUnmappedClassesAreVisible(unittest.TestCase):
+    """Both baselines have one class at 1:50, which is not an ACIQ class.
+
+    It was dropped, so per_class came back {} and "we have no name for the
+    baselines' traffic" looked exactly like "the baselines moved no traffic".
+    """
+
+    # Shaped like the real `tc -s class show` output. Two attempts were needed: the
+    # first invented a format, and the second omitted `rate` from the leaf line --
+    # and _CLASS_RE requires rate, so the parser dropped the class silently. Real
+    # leaves do carry a rate (the tree sets one on every class), so the fixture was
+    # wrong rather than the parser. Recorded as a known sharp edge below.
+    TEXT = ("class htb 1:1 root prio 0 rate 100Mbit ceil 100Mbit burst 15Kb\n"
+            "  Sent 4000000 bytes 4000 pkt (dropped 0, overlimits 3 requeues 0)\n"
+            "class htb 1:50 parent 1:1 leaf pfifo prio 0 rate 100Mbit ceil 100Mbit\n"
+            "  Sent 4000000 bytes 4000 pkt (dropped 0, overlimits 0 requeues 0)")
+
+    def test_an_unnamed_class_is_kept_under_its_classid(self):
+        from aciq.metrics import TextClassSource
+        src = TextClassSource(runner=lambda *a, **k: type(
+            "R", (), {"returncode": 0, "stdout": self.TEXT})())
+        snap = src.snapshot()
+        self.assertIn("1:50", snap.unmapped)
+        self.assertEqual(snap.unmapped["1:50"].rx_bytes, 4000000)
+
+    def test_it_is_not_silently_folded_into_an_aciq_class(self):
+        """Mapping 1:50 onto BULK would have been wrong: BULK means "the class
+        that deliberately gets the leftovers", and a baseline's single class is
+        not that."""
+        from aciq.metrics import TextClassSource
+        src = TextClassSource(runner=lambda *a, **k: type(
+            "R", (), {"returncode": 0, "stdout": self.TEXT})())
+        self.assertEqual(src.snapshot().by_class, {})
+
+    def test_the_parent_is_not_in_unmapped_either(self):
+        from aciq.metrics import TextClassSource
+        src = TextClassSource(runner=lambda *a, **k: type(
+            "R", (), {"returncode": 0, "stdout": self.TEXT})())
+        snap = src.snapshot()
+        self.assertNotIn("1:1", snap.unmapped)
+        self.assertIsNotNone(snap.link)
 
 
 class TestTcJsonParsing(unittest.TestCase):

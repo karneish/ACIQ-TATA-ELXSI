@@ -34,7 +34,13 @@ MIN_CPU_WINDOW_S = 0.05
 class ClassCounters:
     """One instant of `tc -s` counters for one class. Cumulative, not rates."""
 
-    cls: TrafficClass
+    #: None for the parent class and for any class the reader cannot name. Never
+    #: a placeholder: a placeholder TrafficClass would be indistinguishable from a
+    #: real measurement in the artefact.
+    cls: TrafficClass | None = None
+    #: The tc classid this was read from, e.g. "1:20". Always set -- it is the
+    #: only identity the parent and unnamed classes have.
+    handle: str = ""
     rx_bytes: int = 0
     tx_bytes: int = 0
     drops: int = 0
@@ -56,6 +62,11 @@ LINK_HANDLE = "1:1"
 class CounterSnapshot:
     t: float
     by_class: dict[TrafficClass, ClassCounters] = field(default_factory=dict)
+    #: Classes present on the device that this reader has no TrafficClass name
+    #: for, keyed by classid. Both baselines are entirely here: they have one
+    #: class, at 1:50, which is not an ACIQ class. Kept rather than dropped so
+    #: "no name for it" is distinguishable from "no traffic through it".
+    unmapped: dict[str, ClassCounters] = field(default_factory=dict)
     #: Counters for the parent class, i.e. the emulated link.
     #:
     #: Kept apart from `by_class` because conflating the two is a measured bug:
@@ -118,14 +129,21 @@ def percentiles(xs: list[float], ps: tuple[float, ...] = (50, 95, 99)) -> dict[s
     return out
 
 
-def jain_fairness(values: list[float]) -> float:
+def jain_fairness(values: list[float]) -> float | None:
     """(sum x)^2 / (n * sum x^2). 1.0 = perfectly fair.
 
     Bounded below by 1/n for n flows, so a single hog scores ~1/n, not ~0.
+
+    **None, not 0.0, when there is nothing to score.** 0.0 is the score of a
+    single hog against nothing, so returning it for an empty list claimed the
+    baselines were maximally *unfair* -- which is backwards: both baselines have
+    one class, so there is no allocation to be fair or unfair about. It also
+    meant 0.0 appeared in the artefact beside a real measurement, inviting the
+    reader to compare them.
     """
     n = len(values)
     if n == 0:
-        return 0.0
+        return None
     s = sum(values)
     sq = sum(v * v for v in values)
     if sq == 0:
@@ -252,23 +270,43 @@ class TextClassSource:
             return CounterSnapshot(t=time.monotonic(), by_class={})
         parsed = self._parse(r.stdout)
         by_class: dict = {}
+        unmapped: dict = {}
         link = None
         for cid, cs in parsed.items():
             if cid == LINK_HANDLE:
+                # cls=None on purpose. It was TrafficClass.INTERACTIVE with a
+                # comment saying "never used as a class" -- and then every sample
+                # serialised it, so the parent counter was reported as
+                # link.cls="realtime_interactive" in all three systems. M2 reads
+                # only the numbers so no measurement was wrong, but the artefact
+                # named the wrong class on every line. `handle` says which class
+                # it actually is.
                 link = ClassCounters(
-                    cls=TrafficClass.INTERACTIVE,  # sentinel; never used as a class
+                    cls=None, handle=cid,
                     rx_bytes=cs.rx_bytes, tx_bytes=cs.rx_bytes,
                     drops=cs.drops, overlimits=cs.overlimits,
                     backlog_bytes=cs.backlog_bytes)
                 continue
             cls = self.handle_map.get(cid)
             if cls is None:
+                # A class the reader has no name for. Both baselines have exactly
+                # this: one class at 1:50, which is not any ACIQ class, so it was
+                # dropped and per_class came back {} -- making "we could not see
+                # the baselines' traffic" look identical to "the baselines moved
+                # no traffic". Recorded under its real classid instead.
+                unmapped[cid] = ClassCounters(
+                    cls=None, handle=cid,
+                    rx_bytes=cs.rx_bytes, tx_bytes=cs.rx_bytes,
+                    drops=cs.drops, overlimits=cs.overlimits,
+                    backlog_bytes=cs.backlog_bytes)
                 continue
             by_class[cls] = ClassCounters(
-                cls=cls, rx_bytes=cs.rx_bytes, tx_bytes=cs.rx_bytes,
+                cls=cls, handle=cid,
+                rx_bytes=cs.rx_bytes, tx_bytes=cs.rx_bytes,
                 drops=cs.drops, overlimits=cs.overlimits,
                 backlog_bytes=cs.backlog_bytes)
-        return CounterSnapshot(t=time.monotonic(), by_class=by_class, link=link)
+        return CounterSnapshot(t=time.monotonic(), by_class=by_class,
+                               link=link, unmapped=unmapped)
 
 
 class TcJsonSource:

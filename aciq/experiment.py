@@ -355,6 +355,9 @@ class ExperimentRunner:
                 # The link (parent class) counters, which are the ONLY thing
                 # M2 treats as saturation. Recorded explicitly so a wrong
                 # estimate can be diagnosed from the artefact alone.
+                # cls is None and handle carries the classid: the parent is 1:1,
+                # and labelling it "realtime_interactive" put a wrong class name
+                # on every sample of every system.
                 "link": vars(lk) if lk is not None else None,
                 "estimator_saturated": self.harness._estimator.current.saturated,
                 "fairness": frame.fairness,

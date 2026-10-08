@@ -24,6 +24,12 @@ import subprocess
 from dataclasses import dataclass, field
 
 #: `class htb 1:10 root prio 0 rate 40Mbit ceil 100Mbit burst 15Kb ...`
+#: Requires `rate` on the class line. That is how a class is recognised at all,
+#: and it has a sharp edge: a leaf whose class line omits `rate` is dropped without
+#: complaint, which is the same failure mode as the JSON reader that "silently
+#: returned empty" -- a missing class looks identical to an idle class. Every class
+#: this project creates carries a rate, so it does not bite today; a leaf added
+#: without one would disappear rather than error.
 _CLASS_RE = re.compile(
     r"^class\s+\S+\s+(?P<classid>[\da-fx:]+)\s+.*?\brate\s+(?P<rate>[\d.]+\w*)"
     r"(?:.*?\bceil\s+(?P<ceil>[\d.]+\w*))?"
