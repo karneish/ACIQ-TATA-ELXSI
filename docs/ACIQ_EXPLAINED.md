@@ -364,9 +364,10 @@ Files: `aciq/classify.py`, `aciq/flowtrack.py`
 > class `1:10`. Everything else falls to the HTB default class `1:30` (BULK).
 
 **Goal.** For each connection, decide which of three buckets it belongs to.
-`[NOT WIRED — and as a result ADAPTIVE never receives traffic, because nothing
-routes to class 1:20. Measured: `adaptive_video: goodput 0.0` in every sample.
-LEASED, class 1:40, has the same problem.]`
+`[WIRED as of 2026-10-08, behind --enforce. First measured run: all three video
+streams steered to class 1:20 at 13.96 Mbps mean, which the generators' own
+byte counts confirm at 14.29 Mbps. LEASED, class 1:40, is still unrouted — no
+intent API exists to request a lease. See docs/limitations.md section 5b.]`
 
 - `INTERACTIVE` — calls and games. Needs low delay.
 - `ADAPTIVE` — video streaming. Needs steady bandwidth.

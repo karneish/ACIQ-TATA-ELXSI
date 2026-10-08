@@ -130,7 +130,7 @@ and a fourth (2, 3, 4 — documentation set) is missing in file form.
 
 | Finding | Evidence | Meaning |
 |---|---|---|
-| **ADAPTIVE is unreachable** | `TrafficClass.ADAPTIVE` appears **0 times** in `classify.py`; `tc.py:143-144` emit filters only to `1:10`; default class is `"30"` = BULK | The weight-4 class receives zero traffic. Measured: `adaptive_video: goodput 0.0` in every s3 sample |
+| **ADAPTIVE is unreachable** | `TrafficClass.ADAPTIVE` appears **0 times** in `classify.py`; `tc.py:143-144` emit filters only to `1:10`; default class is `"30"` = BULK | The weight-4 class receives zero traffic. Measured: `adaptive_video: goodput 0.0` in **s1** — *not* "every s3 sample" as originally written; the s3 aciq run has no `samples.jsonl`, so no s3 measurement ever existed. **Now superseded:** reachable at 13.96 Mbps mean via per-flow flower filters. |
 | **LEASED is unroutable** | No filter targets `1:40` | The lease allocates bandwidth to an empty queue |
 | **No identity layer** | `grep -rniE 'device\|subnet\|macaddr\|principal\|tenant\|udev'` → 3 hits, all prose | No user/device concept exists |
 | **Policy has no per-flow input** | `build_plan(capacity, lease)` | Fairness within a class is delegated entirely to `fq_codel` |
@@ -400,8 +400,11 @@ What this document's evidence sections still prove, unchanged:
 
 * The v0 baseline results remain DSCP-EF + HTB + fq_codel. They predate the join
   and are labelled that way in `data/baselines/v0/README.md`. **No post-wiring
-  run has been measured yet**, so `adaptive_video: goodput 0.0` is still the last
-  observed value and "the classifier is inert" is still true *of those results*.
+  run has been measured yet**. That is now out of date too: the first
+  post-wiring run (`data/enforced/seed42/`) steered all three video streams to
+  1:20. But it remains true *of the v0 results*, which is what the sentence is
+  about — and the comparison is still missing, because that run has no baseline
+  beside it. See `docs/limitations.md` section 5b.
 * "ADAPTIVE is unreachable" was a claim about `tc.py` emitting filters only to
   `1:10`. ADAPTIVE is now reachable by a different mechanism -- a per-flow `tc
   flower` filter at priority 5/6 -- proven by gate checks 16, 18, 19 and 20.

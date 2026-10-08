@@ -65,11 +65,59 @@ Only `INTERACTIVE` receives traffic. Nothing routes to `ADAPTIVE` or `LEASED`:
 
 - **ADAPTIVE** — the classifier never emits it, and no filter targets `1:20`.
   Non-EF traffic falls to the HTB default `1:30` (BULK). Measured:
-  `adaptive_video: goodput 0.0` in every sample.
+  `adaptive_video: goodput 0.0`.
+  **Correcting the original wording:** the earlier version of this file said
+  "in every sample", and specifically "in every s3 sample". That was not
+  measured. `s3_tv_and_gaming__aciq__adaptive__seed42` has **no
+  `samples.jsonl` at all** -- the run died before artefact collection, which
+  `data/baselines/v0/README.md` already documented. The 0.0 is real, but it
+  comes from **s1** (`s1_iso_during_call__aciq__adaptive__seed42`, where
+  `adaptive_video: 0.0` and `bulk_transfer: 99.926`), and s1 has no video
+  workload, so the 0.0 there is trivially expected.
 - **LEASED** — class `1:40` is created and given bandwidth, but no filter routes
   to it. The lease allocates to an empty queue.
 
 See `docs/WIRING_AUDIT.md` for the per-module evidence.
+
+## 5b. Superseded 2026-10-08: ADAPTIVE now receives traffic
+
+The first measured run with per-flow enforcement enabled,
+`data/enforced/seed42/s3_tv_and_gaming__aciq__adaptive__seed42`:
+
+| tick | interactive | adaptive | bulk | verdict |
+|---|---|---|---|---|
+| 0.0 | 0.000 | 0.000 | 0.000 | all UNCLASSIFIED, too young |
+| 1.02 | 0.042 | 0.000 | **24.245** | still unclassified -- video in BULK |
+| 2.03 | 0.040 | 0.000 | 24.419 | classifier fires: game->interactive, tv1-3->adaptive |
+| 3.06 | 0.041 | **23.907** | 0.726 | all three video streams moved to 1:20 |
+| 4.08 | 0.042 | **24.288** | 0.000 | steady |
+
+( Mbps, from `samples.jsonl`.)
+
+Two independent measurements agree: the adaptive class carried **13.96 Mbps**
+mean over 37 ticks, and the three generators sent 3 x 23,808,750 B over 40 s =
+**14.29 Mbps**. Every sink received exactly what its sender sent, so nothing was
+dropped in moving between classes. The game reported p50 0.467 ms, p95 0.562,
+p99 0.669, 0% loss, and 30/30 pps achieved.
+
+Ticks 0-2 are a within-run control: before the classifier fires, the video is in
+BULK, which is the v0 behaviour, observed in the same run rather than compared
+against another.
+
+**Caveats, and they are not small.**
+
+* **One run, one seed, no baseline in the same run.** This shows the mechanism
+  works. It does not show it helps. The report correctly refuses a p-value.
+* **`estimator=None`, `capacity_mbps = 0.0`.** M2 never measured: ~14 Mbps on a
+  100 Mbps link is not saturated, so no reading was emitted. The classifier ran
+  the whole run on the **configured 100 Mbps fallback**, not a measurement. The
+  two agree here by luck -- at 14.3 Mbps against 100 Mbps the capacity-relative
+  thresholds land in the same place either way. A run that saturates the link
+  would exercise the measured path instead.
+* This is a *mechanism* result. Whether steering video to 1:20 improves anything
+  needs paired runs against `b0_fifo` and `b1_cake95`.
+
+
 
 ## 6. There is no per-user or per-device fairness
 
