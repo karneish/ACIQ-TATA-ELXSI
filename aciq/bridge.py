@@ -91,6 +91,7 @@ classified.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import zlib
 from dataclasses import dataclass, field
@@ -606,6 +607,71 @@ def generate_teardown(family: str, ns: str | None = None) -> tuple[str, ...]:
     return _netns(ns) + ("nft", "delete", "table", family, NFT_TABLE)
 
 
+@dataclass(frozen=True)
+class InstalledFilter:
+    """One per-flow filter found on the device by enumeration."""
+
+    pref: int
+    protocol: str
+    handle: int
+
+
+def enumerate_flow_filters(dev: str, ns: str | None = None,
+                           executor=None) -> list[InstalledFilter]:
+    """Find every per-flow filter currently on `dev`.
+
+    Needed because a fresh process has empty state, so `teardown()` cannot know
+    what a previous run left behind. Filters left after a restart keep routing
+    their flows to classes that may no longer be configured, and nothing else
+    removes them.
+
+    Reads `tc -j` (JSON) rather than the human-readable listing: this gate has
+    already been bitten by parsing tool output -- an assertion matching the
+    literal "flags timeout" when nft prints "timeout 2m", and awk keyed on a
+    chain name without resetting between chains. A structured output format is
+    the fix for that class of bug, not a more careful text parser.
+
+    Returns an empty list if the listing cannot be read or parsed. Failing to
+    enumerate must not prevent teardown from removing what it *does* know about.
+    """
+    run = executor or _subprocess_executor
+    argv = _netns(ns) + ("tc", "-j", "filter", "show", "dev", dev, "parent", "1:")
+    try:
+        rc, out, _err = run(argv)
+        if rc != 0:
+            return []
+        entries = json.loads(out)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return []
+    if not isinstance(entries, list):
+        return []
+
+    found: list[InstalledFilter] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        pref = entry.get("pref")
+        kind = entry.get("kind")
+        proto = entry.get("protocol")
+        opts = entry.get("options")
+        if pref is None or kind != "flower" or not isinstance(opts, dict):
+            continue
+        if pref not in FLOW_FILTER_PRIO.values():
+            continue
+        handle = opts.get("handle")
+        if handle is None:
+            continue
+        if isinstance(handle, str):
+            try:
+                handle = int(handle, 16) if handle.startswith("0x") else int(handle)
+            except ValueError:
+                continue
+        if not isinstance(handle, int) or handle <= 0:
+            continue
+        found.append(InstalledFilter(int(pref), proto or "ip", handle))
+    return found
+
+
 def _netns(ns: str | None) -> tuple[str, ...]:
     return ("ip", "netns", "exec", ns) if ns else ()
 
@@ -676,17 +742,23 @@ class Bridge:
 
         Per-flow filters are installed by `mark()` as flows are classified, so
         there is no static filter block to create. What setup must do is clear
-        residue: a filter left by a crashed run keeps routing its flow to a
-        class that may no longer be configured, and nothing else would remove it.
+        residue, and it cannot use in-process state for that: after a restart the
+        state is empty while the device still carries the previous run's filters,
+        which keep routing their flows to classes that may no longer exist. So it
+        enumerates the tc tree instead.
 
         The nftables tables are removed too when `install_sets` was requested.
         They are no longer part of enforcement -- see `generate_flow_filter` for
         why DSCP steering was abandoned -- so they are off by default.
         """
         ran = []
-        for slot in list(self.state.slots.values()):
+        # Everything on the device at our priorities, not just what this instance
+        # installed -- a crashed predecessor's filters are the ones that matter.
+        # Skipped under dry_run: a dry run must not read or touch the device.
+        for f in ([] if self.dry_run
+                  else enumerate_flow_filters(self.dev, self.ns, self.executor)):
             ran += self._do(generate_del_flow_filter(
-                self.dev, slot.handle, slot.protocol, self.ns), missing_ok=True)
+                self.dev, f.handle, f.protocol, self.ns), missing_ok=True)
         self.state.slots.clear()
         if self.install_sets:
             for family in self.families:
@@ -700,10 +772,17 @@ class Bridge:
         leaves them behind routing traffic to stale classes.
         """
         ran = []
+        # Known filters first, then anything found on the device. The second
+        # pass is what makes a restart clean: this process may be the first to
+        # have any idea a previous run left filters behind.
         for slot in list(self.state.slots.values()):
             ran += self._do(generate_del_flow_filter(
                 self.dev, slot.handle, slot.protocol, self.ns), missing_ok=True)
         self.state.slots.clear()
+        for f in ([] if self.dry_run
+                  else enumerate_flow_filters(self.dev, self.ns, self.executor)):
+            ran += self._do(generate_del_flow_filter(
+                self.dev, f.handle, f.protocol, self.ns), missing_ok=True)
         for family in self.families:
             ran += self._do(generate_teardown(family, self.ns), missing_ok=True)
         return ran

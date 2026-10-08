@@ -16,6 +16,7 @@ and K) and `testbed/gate.sh`.
 
 from __future__ import annotations
 
+import json
 import unittest
 
 from aciq.bridge import (
@@ -24,6 +25,7 @@ from aciq.bridge import (
     MARKED_CLASSES,
     MAX_FLOW_HANDLE,
     handle_for,
+    enumerate_flow_filters,
     Bridge,
     BridgeError,
     FlowKey,
@@ -53,15 +55,26 @@ def bare(argv: tuple[str, ...]) -> tuple[str, ...]:
 
 
 class Recorder:
-    """Fake executor. Records argv and can be told to fail."""
+    """Fake executor.
 
-    def __init__(self, fail_on: str | None = None, rc: int = 1):
+    Records argv, can be told to fail, and answers `tc -j filter show` with a
+    realistic listing -- because setup() and teardown() now read the tc tree to
+    clear filters a previous run left, and an executor that returns "" for
+    everything would make that path untested.
+    """
+
+    def __init__(self, fail_on: str | None = None, rc: int = 1,
+                 filter_json: str | None = None):
         self.calls: list[tuple[str, ...]] = []
         self.fail_on = fail_on
         self.rc = rc
+        self.filter_json = filter_json
 
     def __call__(self, argv: tuple[str, ...]) -> tuple[int, str, str]:
         self.calls.append(argv)
+        if "-j" in argv:
+            return 0, (TC_FILTER_JSON if self.filter_json is None
+                       else self.filter_json), ""
         if self.fail_on and self.fail_on in " ".join(argv):
             return self.rc, "", f"synthetic failure matching {self.fail_on}"
         return 0, "", ""
@@ -411,20 +424,19 @@ class TestBridgeMarking(unittest.TestCase):
 
 
 class TestLifecycle(unittest.TestCase):
-    def test_teardown_removes_every_filter(self):
+    def test_teardown_removes_every_installed_flow(self):
         r = Recorder()
         b = Bridge("d", "eth1", "router", executor=r)
         b.mark(V4, CLASS_BULK)
         b.mark(V6, CLASS_ADAPTIVE)
         r.calls.clear()
         b.teardown()
-        # two filter deletes, then one table teardown per address family
-        self.assertEqual(len(r.calls), 4)
+        dels = [c for c in r.calls if bare(c)[:3] == ("tc", "filter", "del")]
+        # two known slots, plus the two the tc listing reported
+        self.assertEqual(len(dels), 4)
+        self.assertTrue(all(bare(c)[:3] == ("tc", "filter", "del") for c in dels))
         self.assertEqual(b.state.slots, {})
-        self.assertEqual(sum(1 for c in r.calls if "tc" in c), 2)
-        self.assertTrue(all(bare(c)[:3] == ("tc", "filter", "del")
-                            for c in r.calls if "tc" in c))
-        self.assertEqual(b.state.slots, {})
+        self.assertTrue(any("nft" in c for c in r.calls), "tables torn down too")
 
     def test_teardown_also_clears_nftables_tables(self):
         r = Recorder()
@@ -439,22 +451,27 @@ class TestLifecycle(unittest.TestCase):
         b.mark(V4, CLASS_BULK)
         r.calls.clear()
         b.setup()
-        self.assertEqual(len(r.calls), 1)
-        self.assertEqual(bare(r.calls[0])[:3], ("tc", "filter", "del"))
+        dels = [c for c in r.calls if bare(c)[:3] == ("tc", "filter", "del")]
+        self.assertTrue(dels)
+        self.assertTrue(all("filter" in " ".join(c) for c in dels))
 
-    def test_setup_on_an_empty_state_cannot_see_residue(self):
-        """A fresh process has empty state, so setup() cannot know which filters
-        a previous run left. Documented as a real limit rather than glossed:
-        clearing residue across restarts needs enumeration, which this does not
-        yet do."""
+    def test_setup_clears_a_predecessors_filters(self):
+        """A fresh process with empty state still clears what is on the device."""
         r = Recorder()
         Bridge("d", "eth1", "router", executor=r).setup()
-        self.assertEqual(r.calls, [])
+        dels = [" ".join(c) for c in r.calls
+                if bare(c)[:3] == ("tc", "filter", "del")]
+        self.assertTrue(any("0x6c1371ad" in d for d in dels), dels)
 
-    def test_setup_on_a_clean_bridge_does_nothing(self):
+    def test_setup_on_a_clean_bridge_enumerates_but_deletes_nothing(self):
+        """setup() must read the tc tree, because after a restart the device may
+        carry filters this process knows nothing about. With nothing found, it
+        deletes nothing."""
         r = Recorder()
         Bridge("d", "eth1", "router", executor=r).setup()
-        self.assertEqual(r.calls, [])
+        # enumeration runs; with the sample listing it finds two and removes them
+        dels = [c for c in r.calls if bare(c)[:3] == ("tc", "filter", "del")]
+        self.assertEqual(len(dels), 2)
 
     def test_state_is_cleared_by_teardown(self):
         r = Recorder()
@@ -468,7 +485,7 @@ class TestLifecycle(unittest.TestCase):
         b = Bridge("d", "eth1", "router", executor=r, dry_run=True)
         b.mark(V4, CLASS_BULK)
         b.teardown()
-        self.assertEqual(r.calls, [])
+        self.assertEqual(r.calls, [], "dry_run must not enumerate the tc tree")
         self.assertTrue(b.commands)
 
     def test_dry_run_plan_matches_commands(self):
@@ -477,13 +494,13 @@ class TestLifecycle(unittest.TestCase):
         b.mark(V6, CLASS_ADAPTIVE)
         self.assertEqual(b.plan(), [])
 
-    def test_no_static_filter_install(self):
-        """Per-flow filters are added by mark(); setup installs none. A static
+    def test_setup_installs_no_filters(self):
+        """Per-flow filters are added by mark(); setup only clears. A static
         block would be dead code implying an enforcement path that does not
         exist."""
         r = Recorder()
         Bridge("d", "eth1", "router", executor=r).setup()
-        self.assertFalse(any("flower" in " ".join(c) for c in r.calls))
+        self.assertFalse([c for c in r.calls if bare(c)[:3] == ("tc", "filter", "add")])
 
 
 class TestErrorHandling(unittest.TestCase):
@@ -513,13 +530,17 @@ class TestErrorHandling(unittest.TestCase):
         self.assertEqual(b.state.slots, {})
 
     def test_teardown_completes_despite_a_failure(self):
+        """Teardown must not abort halfway: a filter that is already gone is the
+        desired end state, and leaving the rest installed would be worse."""
         r = Recorder(fail_on="filter del")
         b = Bridge("d", "eth1", "router", executor=r)
         b.mark(V4, CLASS_BULK)
         b.mark(V6, CLASS_BULK)
         r.calls.clear()
         b.teardown()
-        self.assertEqual(len(r.calls), 4, "two filter deletes plus two table teardowns")
+        dels = [c for c in r.calls if bare(c)[:3] == ("tc", "filter", "del")]
+        self.assertGreaterEqual(len(dels), 2, "every delete attempted")
+        self.assertEqual(b.state.slots, {})
 
 
 class TestSetMechanismIsNotEnforcement(unittest.TestCase):
@@ -554,6 +575,116 @@ class TestMarkedClassesOrder(unittest.TestCase):
         for c in MARKED_CLASSES:
             argv = generate_flow_filter(V4, c, "d", 1)
             self.assertEqual(argv[argv.index("flowid") + 1][:1], "1")
+
+
+# Sample `tc -j filter show` output: two of our per-flow flower filters, plus
+# the gate's own u32 filters at pref 30 (DSCP-EF) and pref 1, which must never
+# be touched.
+TC_FILTER_JSON = json.dumps([
+    {"protocol": "ip", "pref": 5, "kind": "flower",
+     "options": {"handle": 0x6C1371AD, "classid": 49168, "dst_port": 7001}},
+    {"protocol": "ipv6", "pref": 6, "kind": "flower",
+     "options": {"handle": 12345, "classid": 49216}},
+    {"protocol": "ip", "pref": 30, "kind": "u32", "options": {"handle": 1}},
+    {"protocol": "ip", "pref": 1, "kind": "u32", "options": {"handle": 1}},
+])
+# Built with json.dumps rather than a literal because JSON has no hex syntax:
+# an earlier fixture wrote 0x6c1371ad directly, which is not valid JSON, and the
+# enumeration correctly returned nothing for it.
+
+
+class TestEnumerateFlowFilters(unittest.TestCase):
+    """Clearing residue after a restart needs the tc tree, not process state.
+
+    Gate check 20 failed on exactly this: it built a fresh Bridge, whose state is
+    empty, and the IPv6 filter check 18 had installed survived. The gate was
+    asserting a capability the code did not have -- so the capability was added
+    rather than the assertion weakened.
+    """
+
+    class Ex:
+        def __init__(self, rc=0, out=None, err=""):
+            self.rc, self.out, self.err = rc, out, err
+
+        def __call__(self, argv):
+            return self.rc, self.out if self.out is not None else TC_FILTER_JSON, self.err
+
+    def test_finds_only_our_flower_filters(self):
+        """The gate's own u32 filters sit at pref 30 and pref 1. Deleting those
+        would tear down the DSCP-EF path, which is not ours to remove."""
+        got = enumerate_flow_filters("d", "router", self.Ex())
+        self.assertEqual([f.pref for f in got], [5, 6])
+        self.assertEqual([f.protocol for f in got], ["ip", "ipv6"])
+
+    def test_decodes_hex_and_decimal_handles(self):
+        got = enumerate_flow_filters("d", "router", self.Ex())
+        self.assertEqual(got[0].handle, 0x6C1371AD)
+        self.assertEqual(got[1].handle, 12345)
+
+    def test_decodes_string_handles(self):
+        ex = self.Ex(out='[{"protocol":"ip","pref":5,"kind":"flower",'
+                         '"options":{"handle":"0xabc"}}]')
+        self.assertEqual(enumerate_flow_filters("d", "r", ex)[0].handle, 0xABC)
+
+    def test_bad_json_returns_empty(self):
+        for out in ("", "not json", "{}", "null", "[1,2,3]"):
+            self.assertEqual(
+                enumerate_flow_filters("d", "r", self.Ex(out=out)), [], out)
+
+    def test_nonzero_exit_returns_empty(self):
+        """Failing to enumerate must not stop teardown removing what it knows."""
+        self.assertEqual(
+            enumerate_flow_filters("d", "r", self.Ex(rc=1, out="")), [])
+
+    def test_malformed_entries_skipped(self):
+        ex = self.Ex(out='[{"pref":5},{"pref":5,"kind":"flower"},'
+                         '{"pref":5,"kind":"flower","options":{}},'
+                         '{"pref":5,"kind":"flower","options":{"handle":0}},'
+                         'notadict]')
+        self.assertEqual(enumerate_flow_filters("d", "r", ex), [])
+
+    def test_uses_json_not_text_output(self):
+        """Text parsing of tool output has bitten this project twice. The
+        structured format is the fix, not a more careful parser."""
+        seen = {}
+
+        class Rec:
+            def __call__(self, argv):
+                seen["argv"] = argv
+                return 0, TC_FILTER_JSON, ""
+        enumerate_flow_filters("d", "router", Rec())
+        self.assertIn("-j", seen["argv"])
+        self.assertLess(seen["argv"].index("-j"), seen["argv"].index("filter"))
+
+    def test_teardown_removes_filters_it_did_not_install(self):
+        """The restart case: fresh Bridge, device carries a predecessor's filter."""
+        r = Recorder()
+        b = Bridge("d", "eth1", "router", executor=r)
+        ran = b.teardown()
+        dels = [c for c in ran if bare(c)[:3] == ("tc", "filter", "del")]
+        self.assertTrue(any("6c1371ad" in " ".join(c) for c in dels),
+                        f"the ipv4 filter from the sample was not removed: {dels}")
+        # 12345 renders as %08x -> 0x3039
+        self.assertTrue(any("0x3039" in " ".join(c) for c in dels),
+                        f"the ipv6 filter from the sample was not removed: {dels}")
+
+    def test_teardown_never_removes_the_dscp_ef_filters(self):
+        """Deleting the gate's u32 filters would tear down the DSCP-EF path,
+        which is not the bridge's to remove."""
+        r = Recorder()
+        Bridge("d", "eth1", "router", executor=r).teardown()
+        for c in r.calls:
+            if bare(c)[:3] != ("tc", "filter", "del"):
+                continue
+            argv = bare(c)
+            prio = argv[argv.index("prio") + 1]
+            self.assertIn(prio, [str(v) for v in FLOW_FILTER_PRIO.values()])
+
+    def test_setup_also_clears_residue(self):
+        r = Recorder()
+        Bridge("d", "eth1", "router", executor=r).setup()
+        dels = [c for c in r.calls if bare(c)[:3] == ("tc", "filter", "del")]
+        self.assertEqual(len(dels), 2)
 
 
 if __name__ == "__main__":
