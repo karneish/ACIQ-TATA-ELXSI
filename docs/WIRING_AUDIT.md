@@ -18,23 +18,38 @@ A module is **CONNECTED** only if something in that chain imports it.
 
 ## The audit table
 
-| Module | Exists | Tests | **Connected** | Measured | Documented as working |
-|---|---|---|---|---|---|
-| **M1 classify** `classify.py` | yes (157) | 28 | **NO** | no | **YES — overstated** |
-| **M1b flowtrack** `flowtrack.py` | yes (172) | 28 | **NO** | no | **YES — overstated** |
-| **M2 capacity** `capacity.py` | yes (263) | 38 | yes (harness) | yes — 100.49 / 99.9 Mbps | yes |
-| **M3 policy** `policy.py` | yes (123) | 24 | yes (3 files) | indirectly | yes |
-| **M4 tc** `tc.py` | yes (244) | 54 | yes (3 files) | yes — gate 6, 9, 10, 14 | yes |
-| **M5 metrics** `metrics.py` | yes (409) | 32 | yes (3 files) | yes — samples.jsonl | yes |
-| **M6 harness/experiment** | yes (685) | 77 | yes (entry point) | yes — 6 runs | yes |
-| **M7 intent API** | **NO FILE** | 0 | n/a | no | **in PLAN.md as a module** |
-| **M8 dashboard** | **NO FILE** | 0 | n/a | no | **in PLAN.md as a module** |
-| **M9 shield/txn** | yes (550) | 54 | yes (2 files) | fault-injection tests | yes |
-| **M10 report** `report.py` | yes (271) | 40 | yes | yes — REPORT.md | yes |
-| **correction file** | **NO FILE** | 0 | **NO** | no | **YES — overstated** |
-| **IPv6** | in `tc.py` | — | yes (1:10 filter) | yes — gate 13/14 | yes |
+Test counts are per **test file**, not per module. Several modules share a file.
 
-**Total tests: 260 passing.** Test count is not the problem — connectivity is.
+| Module | Test file | Tests | Exists | **Connected** | Measured | Documented as working |
+|---|---|---|---|---|---|---|
+| **M1 classify** | `test_classify.py` | 28 | yes (157) | **NO** | no | **YES — overstated** |
+| **M1b flowtrack** | (same file as M1) | *0 extra* | yes (172) | **NO** | no | **YES — overstated** |
+| **M2 capacity** | `test_capacity.py` | 38 | yes (263) | yes (harness) | yes — 100.49 / 99.9 Mbps | yes |
+| **M3 policy** | `test_policy.py` | 24 | yes (123) | yes (3 files) | indirectly | yes |
+| **M4 tc** | `test_enforce.py` | 54 | yes (244) | yes (3 files) | yes — gates 6, 9, 10, 14 | yes |
+| **M5 metrics** | `test_metrics.py` | 32 | yes (409) | yes (3 files) | yes — samples.jsonl | yes |
+| **M6 harness** | `test_harness.py` | 37 | yes (306) | yes (entry point) | yes — 6 runs | yes |
+| **M6 experiment** | `test_experiment.py` | 40 | yes (379) | yes | yes | yes |
+| **M7 intent API** | — | 0 | **NO FILE** | n/a | no | **in PLAN.md** |
+| **M8 dashboard** | — | 0 | **NO FILE** | n/a | no | **in PLAN.md** |
+| **M9 shield/txn** | (same file as M4) | *0 extra* | yes (550) | yes (2 files) | fault-injection | yes |
+| **M10 report** | (same file as M6) | *0 extra* | yes (271) | yes | yes — REPORT.md | yes |
+| **workload contracts** | `test_workload_reports.py` | 7 | yes | yes | yes | yes |
+| **correction file** | — | 0 | **NO FILE** | **NO** | no | **YES — overstated** |
+| **IPv6** | `test_enforce.py` | — | in `tc.py` | yes (1:10 filter) | yes — gates 13/14 | yes |
+
+**Total: 38 + 28 + 54 + 32 + 37 + 40 + 24 + 7 = 260.** Verified two ways:
+`unittest discover` reports `Ran 260 tests`, and grepping `def test_` in each file
+gives the same eight numbers.
+
+> **Correction to the first draft of this table:** its rows summed to 375. That
+> was my error — I listed `flowtrack` 28 (the same `test_classify.py` as M1),
+> `M9` 54 (same `test_enforce.py` as M4) and `M10` 40 (same `test_experiment.py`
+> as M6), counting three files twice.
+>
+> Also: `test_policy.py` was 20 tests and is now 24. That is not a miscount — four
+> tests were **added** after the measured finding that a 20 Mbps parent with
+> `ceil 99/97` children delivered 28.5 Mbps. Legitimate growth.
 
 ---
 
@@ -88,6 +103,29 @@ mechanism to request it. `Lease` is a dataclass used only in tests and in
 
 ---
 
+## Tata deliverables — required outputs
+
+| # | Deliverable | Status | Evidence / gap |
+|---|---|---|---|
+| 1 | Architecture diagram | **partial** | `docs/architecture.md` has an ASCII diagram; **device, edge, network, data, analytics, UI** named. Not a rendered diagram |
+| 2 | Setup guide, exact versions | **partial** | versions recorded in `data/baselines/v0/README.md`; **no `docs/setup.md` exists** |
+| 3 | Known limitations | **partial** | present in `PLAN.md` and `README.md`; **no dedicated `docs/limitations.md`** |
+| 4 | Third-party licences | **MISSING** | **no `docs/licenses.md`**. Only dependency is `pyroute2` (BSD-3-Clause) |
+| 5 | Scripted demo: reset, inject, collect, report | **yes** | `sudo ./run_experiments.py` does exactly this; ends with `data/REPORT.md` |
+| 6 | Dashboard (latency, jitter, loss, throughput, queue depth, fairness) | **MISSING** | M8 has no file |
+| 7 | Intent API for temporary requests | **MISSING** | M7 has no file; the lease cannot be requested |
+| 8 | IPv4 **and** IPv6 | **partial** | `tc.py` emits an IPv6 `flower` filter; gates 13/14 passed. **No IPv6 run in the matrix**, and M1 has no IPv6 classification path |
+| 9 | Classifier confidence exposed | **yes (code only)** | `Classification.confidence`, 28 tests. Not exposed in any output artefact |
+| 10 | Classifier correction of misclassification | **MISSING** | Tata requirement. `data/corrections.jsonl` never written |
+| 11 | Reproducible data + impairment settings | **yes** | seeded; `config.json` per run; committed netem settings |
+| 12 | Emulation labelled as emulation | **yes** | `PLAN.md` limitations; v0 README |
+| 13 | No secrets in source control | **yes** | `.env.example` holds only fictitious values |
+
+**Three of Tata's thirteen required outputs are entirely missing** (6, 7, 10),
+and a fourth (2, 3, 4 — documentation set) is missing in file form.
+
+---
+
 ## Additional structural findings (not overstatements, but gaps)
 
 | Finding | Evidence | Meaning |
@@ -138,17 +176,69 @@ That was wrong on two counts:
 
 Revised, verified against the nftables documentation:
 
+### Status: BUILT, NOT WIRED, NOT EXECUTED
+
+`aciq/marks.py` and `aciq/bridge.py` now exist and implement the mechanism
+described below (commit `dc49ed5d`). What is true and what is not:
+
+| Claim | Status |
+|---|---|
+| Mark layout defined and unit-tested | **done** — `aciq/marks.py`, 32 tests |
+| nftables set-per-class, `flags timeout` | **done, command generation only** |
+| Static `tc fw` filters masked to the class nibble | **done, command generation only** |
+| Kernel accepts the generated commands | **NOT VERIFIED** — gate checks 15–20 written, never run |
+| Marks actually influence enforcement | **NO** — `harness.py` does not import `bridge` |
+| `classify()` is called at runtime | **NO** — still tests only |
+
+The two design points below were settled by measurement, not by argument, and
+both differ from what this audit originally proposed. See "Corrections" at the
+end of this file.
+
+### Mechanism chosen: conntrack marks, keyed on the 5-tuple
+
+Per-host nft sets are **rejected**: a device running Teams *and* Steam would put
+both flows in one class, which is requirement 1 violated by construction.
+Concatenated sets are also rejected — the 5-tuple is not a contiguous key, so
+concatenation degenerates to a scan.
+
+Instead, `tc` matches the **5-tuple directly against one nft set of 5-tuple
+elements**, and nftables owns the expiry:
+
 ```
-nftables (router ns)  — dynamic, kernel garbage-collected
-  set interactive_v4 { type ipv4_addr; flags timeout; }
-  set adaptive_v4  / bulk_v4 / leased_v4
-  update @set_xxx { ip saddr timeout Ns }     <- refreshed from the packet path
+nftables (router ns)
+  set interactive_v4 { type inet_service ; flags timeout ; }   # dport
+  set flow_interactive_v4 { type ipv4_addr ; flags timeout ; } # src, matched
+                                                               # in tc via u32/flower
+                                                               # on the full tuple
+  #   -> both src and dport must match: two lookups, one rule each
+  #   -> lease: add the device's dst-address set, expire = ttl_s
 
 tc — STATIC, built once, never rebuilt
-  filter add … fw mark 10 flowid 1:10
-  filter add … fw mark 20 flowid 1:20
-  filter add … fw mark 30 flowid 1:30
+  filter add … protocol ip prio 10 flower ip_tos 0xb8/0xfc mark 10 flowid 1:10
+  filter add … protocol ip prio 20 flower ip_tos 0xb8/0xfc mark 10 flowid 1:10
+  filter add … protocol ip prio 30 u32   <5-tuple match> mark 20 flowid 1:20
+  filter add … protocol ip prio 40 u32   <5-tuple match> mark 30 flowid 1:30
 ```
+
+**Shaping is toward the client, so the household device is the DESTINATION.**
+Every device and lease rule keys on `daddr`, never `saddr`.
+
+**The priority conflict is in `tc`, not nft.** Two options:
+
+| Option | Change | Risk |
+|---|---|---|
+| **A** | Give mark filters `prio 10` and the EF filter `prio 20` | If EF matches first, marks never apply to marked traffic. Ordering must be proven |
+| **B** | Delete the `u32` DSCP filter; match DSCP in nft as one more set | Removes the conflict entirely; larger change to `tc.py` |
+
+Neither has been tested. **Gate check 15 must prove mark-filtered traffic reaches
+its class; check 16 must prove an expired mark reverts to the default class.**
+Both on IPv4 **and** IPv6.
+
+**`cake … besteffort`** is required so the leaf does not re-decide priority by
+DSCP inside the qdisc — otherwise priority is decided twice.
+
+**`cake dual-dsthost`** is tested as an *addition*, not a substitution;
+`fq_codel` stays for the main matrix so results stay comparable.
 
 nftables `set` timeouts with `flags timeout` and packet-path `update` are core,
 documented nftables features. Expiry is the kernel's job, so the lease TTL needs
@@ -183,6 +273,52 @@ a model against a baseline if there is no ground truth and no correction path.
 
 **M7 intent API** — required for the lease to be demonstrable at all.
 **M8 dashboard** — listed by Tata as expected output.
+
+---
+
+## Corrections to the bridge design, after measurement
+
+The audit's original Step 3 and the plan's "separate ADAPTIVE from BULK by
+on/off pattern" were both wrong, and both were caught by measuring first.
+
+**Duty cycle separates nothing.** Sampling the generators at the same 200 ms
+tick `FlowTracker` uses:
+
+| generator | Mbps | duty | burstiness |
+|---|---|---|---|
+| call  |  0.09 | 1.00 | 0.16 |
+| video |  4.69 | 1.00 | 0.47 |
+| bulk  | 88.14 | 1.00 | 0.17 |
+
+Duty cycle is 1.00 for all three, because every generator emits continuously at
+a target rate. ADAPTIVE is therefore separated from BULK on **rate**, and
+`duty_cycle`/`burstiness` are recorded but never used to decide. Video's 0.47
+burstiness is an artifact of the 6-second ABR ladder stepping, not a property
+of real streaming, so it is not relied on either. **Any accuracy figure measured
+on this traffic will be optimistic**, because `video.py` models a stepped
+ladder where real streaming drifts smoothly.
+
+**EF conflict is two-sided, not a floor.** The first rule flagged "EF claimed
+but rate below 2% of capacity", and the measured call at 0.09 Mbps is 0.09% of a
+100 Mbps link — so every legitimate voice call was a "conflict". Too slow to be
+media is now an **absolute** floor (10 kbps, below G.711 silence suppression),
+because a call's rate does not scale with link speed. Too fast to be believable
+is **relative** (claiming EF while consuming half the link), because that is the
+actual evasion: one DSCP byte on a torrent.
+
+**ADAPTIVE is absolute, BULK is relative.** An ADAPTIVE threshold of 2% of
+capacity classified the 4.69 Mbps stream as UNCLASSIFIED at 1 Gbps, where it is
+0.5% — a 1080p stream on a fast line would have received no class at all. So
+`ADAPTIVE_MIN_MBPS` is fixed at 0.5 Mbps while `BULK_MIN_CAPACITY_FRAC` stays
+relative: "bulk" is a claim about the link, "adaptive" is not. Both properties
+are asserted in `tests/test_classify.py`, including that bulk *does* drift with
+capacity, since that asymmetry is deliberate.
+
+**DSCP priority in the tc tree remains unshielded.** Mark filters are installed
+at prio 10-14 and DSCP-EF moved to prio 30-31 so marks cannot be pre-empted, but
+class `1:10` still has `prio 8` over every other class. 32 Mbps of EF still
+beats 100 Mbps of bulk. Capping EF at `ceil(1.2 * r_a)` is the fix and needs an
+A/B measurement, because it will also worsen video p99.
 
 ---
 
