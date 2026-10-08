@@ -396,14 +396,23 @@ grep -q "timeout" /tmp/g15_set.txt \
   || die "check 15: interactive set carries no timeout (see /tmp/g15_set.txt)"
 # Expiry itself is not assumed here -- check 19 proves the kernel ages an element
 # out. This only proves the set was declared with the capability.
-$R tc filter show dev "$EGR_IF" parent 1: | grep -q "flower" \
-  || die "check 15: no flower steer filter installed"
-# The steer filters must key on the DSCP selector codes the rules stamp. Checking
-# for `fw` here would have passed on the old design and fails now, which is the
-# point: `tc fw` cannot read a packet mark on this toolchain.
-$R tc filter show dev "$EGR_IF" parent 1: | grep -q "ip_tos" \
-  || die "check 15: steer filters do not match on ip_tos"
-$R tc filter show dev "$EGR_IF" parent 1: | sed -n '1,20p'
+# Capture the filter list ONCE, report its exit status, and show it whatever
+# the outcome. `cmd | grep -q` throws away both the exit status and the output,
+# so "no flower filter installed" cannot be distinguished from "tc filter show
+# errored" -- and this check has already failed for three unrelated reasons.
+$R tc filter show dev "$EGR_IF" parent 1: > /tmp/g15_filters.txt 2>/tmp/g15_filters.err
+F_RC=$?
+echo "--- tc filter show rc=$F_RC, $(wc -l < /tmp/g15_filters.txt) lines ---"
+cat /tmp/g15_filters.txt
+[ -s /tmp/g15_filters.err ] && { echo "--- stderr ---"; cat /tmp/g15_filters.err; }
+# The steer filters must key on the DSCP selector codes the rules stamp.
+# Checking for `fw` here would have passed on the old design and fails now,
+# which is the point: `tc fw` cannot read a packet mark on this toolchain.
+[ "$F_RC" -eq 0 ] || die "check 15: 'tc filter show' failed rc=$F_RC (see /tmp/g15_filters.err)"
+grep -q "flower" /tmp/g15_filters.txt \
+  || die "check 15: no flower steer filter among $(wc -l < /tmp/g15_filters.txt) lines (see /tmp/g15_filters.txt)"
+grep -q "ip_tos" /tmp/g15_filters.txt \
+  || die "check 15: steer filters do not match on ip_tos (see /tmp/g15_filters.txt)"
 ok "check 15: bridge installs (nft tables, timeout sets, flower steer filters)"
 
 # Counter for one steering rule, read from the nft ruleset.
