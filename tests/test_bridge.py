@@ -19,7 +19,9 @@ from aciq.bridge import (
     CLASS_PRECEDENCE,
     DSCP_FILTER_PRIO,
     MARKED_CLASSES,
-    MARK_FILTER_PRIO,
+    MAX_STEER_PRIO,
+    STEER_PRIO_BASE,
+    steer_prio,
     NFT_ELEMENT_TIMEOUT,
     NFT_TABLE,
     SET_NAMES,
@@ -292,31 +294,54 @@ class TestMarkFilters(unittest.TestCase):
         of these numbers is two chances to get the order wrong silently."""
         from aciq import tc
         self.assertIs(B.DSCP_FILTER_PRIO, tc.DSCP_FILTER_PRIO)
-        self.assertLess(max(MARK_FILTER_PRIO.values()),
-                        min(B.DSCP_FILTER_PRIO.values()))
+        self.assertLess(MAX_STEER_PRIO, min(B.DSCP_FILTER_PRIO.values()))
 
 
 class TestFilterPriority(unittest.TestCase):
     def test_bridge_precedes_dscp_filters(self):
-        """tc evaluates ascending, so a bridge filter at a higher number would
+        """tc evaluates ascending, so a steer filter at a higher number would
         never be consulted and its verdicts would be silently ignored."""
-        highest_mark = max(MARK_FILTER_PRIO.values())
-        lowest_dscp = min(DSCP_FILTER_PRIO.values())
-        self.assertLess(highest_mark, lowest_dscp,
-                        "bridge filters must be evaluated before DSCP-EF")
+        self.assertLess(MAX_STEER_PRIO, min(DSCP_FILTER_PRIO.values()))
 
     def test_prios_are_unique_per_class(self):
-        self.assertEqual(len(set(MARK_FILTER_PRIO.values())),
-                         len(MARK_FILTER_PRIO))
+        for proto in STEER_PRIO_BASE:
+            prios = [steer_prio(proto, c) for c in MARKED_CLASSES]
+            self.assertEqual(len(set(prios)), len(prios))
 
     def test_prio_values_in_order(self):
-        ordered = [MARK_FILTER_PRIO[c] for c in sorted(MARK_FILTER_PRIO,
-                                                       key=MARK_FILTER_PRIO.get)]
-        self.assertEqual(ordered, sorted(ordered))
+        for proto in STEER_PRIO_BASE:
+            prios = [steer_prio(proto, c) for c in MARKED_CLASSES]
+            self.assertEqual(prios, sorted(prios))
+
+    def test_protocols_never_share_a_priority(self):
+        """REGRESSION. `tc` requires every filter at one priority to share a
+        protocol and rejects a mismatch with "Protocol mismatch for filter with
+        specified priority". Emitting both families at prios 10-14 installed the
+        five IPv4 filters and failed on all five IPv6 ones."""
+        seen = {}
+        for proto in STEER_PRIO_BASE:
+            for c in MARKED_CLASSES:
+                p = steer_prio(proto, c)
+                self.assertNotIn(p, seen,
+                                 f"prio {p} claimed by both {seen.get(p)} and {proto}")
+                seen[p] = proto
+
+    def test_generated_filters_have_no_priority_collisions(self):
+        """The same invariant, checked on the actual argv rather than the
+        helper -- a generator bug could bypass the helper entirely."""
+        seen = {}
+        for f in generate_steer_filters("d"):
+            proto = f[f.index("protocol") + 1]
+            prio = f[f.index("prio") + 1]
+            self.assertNotIn(prio, seen,
+                             f"prio {prio} used by {seen.get(prio)} and {proto}")
+            seen[prio] = proto
+
+    def test_unknown_protocol_rejected(self):
+        with self.assertRaises(BridgeError):
+            steer_prio("sctp", CLASS_INTERACTIVE)
 
     def test_one_prio_per_class_per_protocol(self):
-        """Distinct prios per class make evaluation order explicit instead of
-        relying on same-prio chaining rules."""
         combos = [(f[f.index("prio") + 1], f[f.index("protocol") + 1])
                   for f in generate_steer_filters("d")]
         self.assertEqual(len(combos), len(set(combos)))
@@ -596,7 +621,7 @@ class TestEndToEndPlan(unittest.TestCase):
                     if "element" in c and SET_NAMES[CLASS_BULK] in c]
         self.assertEqual(len(bulk_set), 1)
         dscp_prio = min(DSCP_FILTER_PRIO.values())
-        self.assertLess(max(MARK_FILTER_PRIO.values()), dscp_prio)
+        self.assertLess(MAX_STEER_PRIO, dscp_prio)
 
     def test_unclassified_flow_does_not_reach_the_ef_filter(self):
         b = Bridge("veth-lan", "veth-lan", "router", dry_run=True)
@@ -866,7 +891,6 @@ class TestSteeringCodes(unittest.TestCase):
     def test_dscp_steering_precedes_ef_filters(self):
         """A steered flow must not be able to fall through to the EF filter,
         which is exactly the evasion the seen-bit design was built to close."""
-        from aciq.bridge import MARK_FILTER_PRIO
+        from aciq.bridge import MAX_STEER_PRIO
         from aciq.tc import DSCP_FILTER_PRIO
-        self.assertLess(max(MARK_FILTER_PRIO.values()),
-                        min(DSCP_FILTER_PRIO.values()))
+        self.assertLess(MAX_STEER_PRIO, min(DSCP_FILTER_PRIO.values()))

@@ -208,13 +208,22 @@ try "nft ip dscp set ef"    $NS nft add rule ip aciq probe2 \
   ip saddr . ip daddr . meta l4proto . th dport @leased ip dscp set af41
 try "nft ip dscp set cs5"   $NS nft add rule ip aciq probe2 \
   ip saddr . ip daddr . meta l4proto . th dport @interactive ip dscp set cs5
-# The IPv6 spelling is `ip6 dscp set`, which the probe has never exercised. The
-# generator emits it, so it must be verified rather than assumed.
-$NS nft add table ip6 aciqprobe 2>/dev/null
-$NS nft add set ip6 aciqprobe s6 \
-  '{ type ipv6_addr . ipv6_addr . inet_proto . inet_service ; flags timeout ; timeout 120s ; }' 2>/dev/null
-try "nft ip6 dscp set cs5"  $NS nft add rule ip6 aciqprobe ip6 saddr . ip6 daddr . \
+# The IPv6 spelling is `ip6 dscp set`, which the generator emits and the probe
+# had never exercised. The previous attempt reported "syntax error, unexpected
+# ip6, expecting string or last" -- which was MY bug: the rule was written
+# `add rule ip6 aciqprobe ip6 saddr ...` with no chain argument, so nft parsed
+# `ip6` as the chain name and then wanted another chain or `last`. Not a verdict
+# on `ip6 dscp set` at all.
+$NS nft delete table ip6 aciqprobe 2>/dev/null
+try "v6 table"    $NS nft add table ip6 aciqprobe
+try "v6 set"      $NS nft add set ip6 aciqprobe s6 \
+  '{ type ipv6_addr . ipv6_addr . inet_proto . inet_service ; flags timeout ; timeout 120s ; }'
+try "v6 chain"    $NS nft add chain ip6 aciqprobe c1 \
+  '{ type filter hook prerouting priority mangle; policy accept; }'
+try "nft ip6 dscp set cs5"  $NS nft add rule ip6 aciqprobe c1 ip6 saddr . ip6 daddr . \
   meta l4proto . th dport @s6 ip6 dscp set cs5
+try "nft ip6 dscp set 0x28" $NS nft add rule ip6 aciqprobe c1 \
+  ip6 saddr . ip6 daddr . meta l4proto . th dport @s6 ip6 dscp set 0x28
 $NS nft delete table ip6 aciqprobe 2>/dev/null
 try "flower reads rewritten dscp" $D protocol ip prio 21 flower skip_hw ip_tos 0x28/0xfc flowid 1:20
 ip netns exec router tc filter del dev "$DEV" parent 1: prio 21 2>/dev/null

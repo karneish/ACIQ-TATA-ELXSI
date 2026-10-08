@@ -118,26 +118,51 @@ NFT_HOOK_PRIORITY = "mangle"
 #: whole of mark expiry: a flow that stops being classified stops being marked.
 NFT_ELEMENT_TIMEOUT = "120s"
 
-#: Steer-filter priorities, per class. `tc` evaluates ascending, so these
-#: precede the DSCP-EF fallback at prio 30-31. Distinct per class so evaluation
-#: order is explicit rather than relying on same-prio chaining rules.
-MARK_FILTER_PRIO = {
-    CLASS_UNCLASSIFIED: 10,
-    CLASS_INTERACTIVE: 11,
-    CLASS_ADAPTIVE: 12,
-    CLASS_BULK: 13,
-    CLASS_LEASED: 14,
-}
+#: Classes that get a steering filter, in priority order. This tuple IS the
+#: ordering, so it must be declared before steer_prio() uses .index().
+MARKED_CLASSES = (CLASS_UNCLASSIFIED, CLASS_INTERACTIVE, CLASS_ADAPTIVE,
+                  CLASS_BULK, CLASS_LEASED)
+
+#: Steer-filter priority blocks. `tc` evaluates ascending, so these precede the
+#: DSCP-EF fallback at prio 30-31.
+#:
+#: **The IPv4 and IPv6 sets need disjoint priority blocks.** `tc` requires every
+#: filter sharing a priority to also share a protocol, and rejects a mismatch
+#: with "Protocol mismatch for filter with specified priority". Emitting both
+#: families at prios 10-14 installed the five IPv4 filters and then failed on all
+#: five IPv6 ones -- caught by bridge_probe.sh as rc=2 on exactly the
+#: `protocol ipv6` commands.
+#:
+#: `aciq.tc` already learned this lesson: its DSCP-EF filters sit at prio 1 (ip)
+#: and prio 2 (ipv6) rather than both at prio 1, with a comment saying so. The
+#: same lesson was not applied here, which is why it is written down now.
+#: "all" is a third block, used only when protocol_filter=False collapses the
+#: two families into one filter set. It still needs its own priorities for the
+#: same reason, and 20-24 still precedes the EF fallback at 30.
+STEER_PRIO_BASE = {"ip": 10, "ipv6": 15, "all": 20}
+
+
+def steer_prio(protocol: str, class_id: int) -> int:
+    """Priority for one steer filter. Disjoint per protocol by construction."""
+    try:
+        base = STEER_PRIO_BASE[protocol]
+    except KeyError as e:
+        raise BridgeError(
+            f"unknown protocol {protocol!r}; expected one of "
+            f"{sorted(STEER_PRIO_BASE)}") from e
+    return base + MARKED_CLASSES.index(class_id)
+
+
+#: Highest steer priority in use, i.e. the last of the IPv6 block. Kept for the
+#: ordering assertion against DSCP_FILTER_PRIO.
+MAX_STEER_PRIO = max(STEER_PRIO_BASE.values()) + len(MARKED_CLASSES) - 1
 
 #: DSCP-EF fallback lives here so it can never pre-empt the bridge. Imported
-#: from `tc` rather than redeclared: the bridge installs mark filters and `tc`
-#: installs the EF filters into the same parent, so two copies of these numbers
-#: would be two chances to get the ordering wrong in exactly the way that fails
-#: silently.
+#: from `tc` rather than redeclared: the bridge installs steering filters and
+#: `tc` installs the EF filters into the same parent, so two copies of these
+#: numbers would be two chances to get the ordering wrong in exactly the way
+#: that fails silently.
 DSCP_FILTER_PRIO = tc.DSCP_FILTER_PRIO
-
-#: Classes that get a mark-driven filter, in priority order.
-MARKED_CLASSES = tuple(sorted(MARK_FILTER_PRIO, key=MARK_FILTER_PRIO.get))
 
 #: Set name per class id. The unclassified set is what blocks EF promotion.
 SET_NAMES = {
@@ -413,7 +438,7 @@ def generate_steer_filters(dev: str, ns: str | None = None,
             cmds.append(pre + (
                 "tc", "filter", "add", "dev", dev, "parent", "1:",
                 "protocol", protocol,
-                "prio", str(MARK_FILTER_PRIO[c]),
+                "prio", str(steer_prio(protocol, c)),
                 "flower", "skip_hw",
                 "ip_tos", f"{CS_DSCP_VALUES[c]:#04x}/{DSCP_MASK}",
                 "flowid", _flowid(c),
