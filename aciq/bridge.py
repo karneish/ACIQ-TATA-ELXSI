@@ -366,6 +366,18 @@ def generate_rules(family: str, in_if: str,
             # richer per-flow facts survive even though no tc classifier on this
             # toolchain can read them yet.
             dscp_expr[0], dscp_expr[1], "set", CS_DSCP_NAMES[c],
+            # ALSO set meta priority (skb->priority). `tc flower ip_tos` matches
+            # skb->priority, NOT iph->tos: the kernel copies TOS into
+            # skb->priority on ingress, and rewriting the header in prerouting
+            # does not update it. Setting only `ip dscp` produces a packet that
+            # reaches the client correctly marked and is still classified into
+            # the default class -- the wire was right and the policy was not.
+            #
+            # Cost of learning this: gate check 16b, because check 13 proves IPv4
+            # DSCP with u32 (`match ip dsfield`, which reads the header) while
+            # check 14 proves flower ip_tos with IPv6 only. flower had never been
+            # tested against a header-only modification.
+            "meta", "priority", "set", str(CS_DSCP_VALUES[c]),
             "meta", "mark", "set", str(mark),
             # Per-rule match counter. Without it, a steering failure has two
             # indistinguishable causes -- the nft rule did not match the packet,

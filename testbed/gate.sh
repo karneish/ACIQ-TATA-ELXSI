@@ -475,7 +475,12 @@ awk -v a="$A20" -v b="$B20" 'BEGIN{exit !(b+0 > a+0 + 20000)}' \
   && ok "check 16b: steered IPv4 flow routed to 1:20 (rule matched $PKT pkt)" \
   || die "check 16b: rule matched $PKT pkt and set DSCP cs3, but 1:20 did not grow ($A20 -> $B20).
 The nft WRITER ran (counter is non-zero) and the reader is proven by check 16a,
-so the DSCP written in prerouting is not the DSCP seen on egress."
+so the DSCP written in prerouting is not the DSCP seen on egress.
+
+If the client-side watch above shows DSCP 0x18 arriving, the header rewrite
+succeeded and the cause is that the rule did not also set meta priority:
+'tc flower ip_tos' matches skb->priority, which the kernel fills from TOS on
+ingress and which an 'ip dscp set' in prerouting does NOT update."
 
 # ---------- 17 a flow marked unclassified loses EF priority ----------
 # The evasion path: a flow that claims DSCP EF but is classified as bulk or

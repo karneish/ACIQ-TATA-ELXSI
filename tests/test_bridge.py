@@ -949,3 +949,49 @@ class TestNamespaceDefault(unittest.TestCase):
         plain = bare(generate_add_element("ip", V4, CLASS_BULK))
         namespaced = bare(generate_add_element("ip", V4, CLASS_BULK, ns="router"))
         self.assertEqual(plain, namespaced)
+
+
+class TestPriorityMustTrackDscp(unittest.TestCase):
+    """`tc flower ip_tos` matches skb->priority, not iph->tos.
+
+    The kernel copies TOS into skb->priority on ingress. Rewriting `ip dscp` in
+    prerouting changes the header but leaves skb->priority stale, so a packet
+    arrives correctly marked on the wire and is still classified into the
+    default class. Found by gate check 16b, where the client watch showed all 60
+    packets arriving with DSCP 0x18 while 1:20 stayed flat and 1:30 grew.
+    """
+
+    def _rules(self, family="ip"):
+        return generate_rules(family, "veth-wan")
+
+    def test_rule_sets_meta_priority(self):
+        for rule in self._rules():
+            self.assertIn("priority", rule)
+        for rule in self._rules("ip6"):
+            self.assertIn("priority", rule)
+
+    def test_priority_value_equals_the_dscp_code(self):
+        from aciq.bridge import CS_DSCP_VALUES
+        for rule, c in zip(self._rules(), CLASS_PRECEDENCE):
+            i = rule.index("priority")
+            self.assertEqual(rule[i + 1], "set")
+            self.assertEqual(rule[i + 2], str(CS_DSCP_VALUES[c]),
+                             f"class {c}: skb->priority must equal its DSCP code")
+
+    def test_priority_precedes_the_filter_can_ever_match(self):
+        """A rule that sets the DSCP but not the priority is the exact bug:
+        correct on the wire, ignored by tc."""
+        for rule, c in zip(self._rules(), CLASS_PRECEDENCE):
+            dscp_at = rule.index("dscp")
+            prio_at = rule.index("priority")
+            self.assertLess(dscp_at, prio_at)
+
+    def test_steer_filter_and_priority_agree(self):
+        """The filter matches on the value we put in skb->priority."""
+        from aciq.bridge import CS_DSCP_VALUES, steer_prio
+        # the filter list spans both protocol blocks (ip 10-14, ipv6 15-19)
+        by_prio = {steer_prio(p, c): c for p in STEER_PRIO_BASE for c in MARKED_CLASSES}
+        for f in generate_steer_filters("d"):
+            prio = int(f[f.index("prio") + 1])
+            self.assertIn(prio, by_prio, f"unexpected priority {prio}")
+            self.assertIn(f"{CS_DSCP_VALUES[by_prio[prio]]:#04x}/0xfc", f)
