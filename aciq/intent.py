@@ -35,9 +35,9 @@ from __future__ import annotations
 import json
 import threading
 import time
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Callable
 
 #: Where `aciqctl lease` and `aciqctl leases` share state.
 #:

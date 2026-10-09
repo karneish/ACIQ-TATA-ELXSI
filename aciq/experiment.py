@@ -24,10 +24,12 @@ import shutil
 import signal
 import subprocess
 import time
+from typing import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .flowtrack import ConntrackSource, FlowTracker
+from .intent import IntentError, LeaseBook
 from .harness import SCENARIOS, CapacityMode, Harness, RunResult, SystemSpec
 from .metrics import EvaluationData, MetricsCollector, TextClassSource
 from .model import TrafficClass
@@ -206,8 +208,18 @@ class ExperimentRunner:
         drop_at_s: float | None = None,
         settle_s: float | None = None,
         enforce: bool = False,
+        lease_ips: Sequence[str] = (),
+        lease_weight: float = 0.5,
+        lease_ttl_s: float | None = None,
     ) -> RunResult:
         self.enforce = enforce
+        self._lease_ips = list(lease_ips)
+        self._lease_weight = lease_weight
+        #: None means "one whole run", which is the useful default for measuring
+        #: a lease: a TTL shorter than the run would demonstrate expiry and
+        #: nothing else. It still expires on its own -- `expires_at` is recorded
+        #: -- it simply expires after the measurement rather than during it.
+        self._lease_ttl_s = lease_ttl_s
         sc = SCENARIOS[scenario_name]
         # A settle period lets the link reach steady state before anything is
         # measured. Without it the first packets of the run race a flooding bulk
@@ -251,6 +263,7 @@ class ExperimentRunner:
         #: describes the end of the run or a moment before it changed.
         self._est_t: float | None = None
         self._cap_t: float | None = None
+        self._lease_book = LeaseBook()
         enforcement_why = "not requested"
         will_enforce = False
         if self.enforce:
@@ -260,6 +273,9 @@ class ExperimentRunner:
                 enforcement_why = "dry run launches no traffic"
             else:
                 will_enforce = True
+        if self._lease_ips and system is not SystemSpec.ACIQ:
+            enforcement_why = (f"leases requested for {', '.join(self._lease_ips)} "
+                               f"but {system.value} is a baseline")
 
         # ---- config, written before anything runs so a crashed run is
         # ---- still reproducible from its artefacts
@@ -284,6 +300,11 @@ class ExperimentRunner:
             # rather than a prediction.
             "enforce_requested": bool(self.enforce),
             "enforcement_note": enforcement_why,
+            # Recorded because a lease that was requested and silently refused is
+            # indistinguishable from one never asked for.
+            "lease_ips": list(self._lease_ips),
+            "lease_weight": self._lease_weight if self._lease_ips else None,
+            "lease_ttl_s": self._lease_ttl_s,
         }
         paths.write_json("config.json", cfg)
 
@@ -312,6 +333,22 @@ class ExperimentRunner:
             enforcement_on = self.harness.enforcement_enabled
             if not enforcement_on:
                 enforcement_why = "harness declined to enable enforcement"
+            else:
+                # Leases go in before the workloads start, so the very first
+                # verdict can already see them. Requesting one mid-run would
+                # measure the transition instead of the effect.
+                self.harness.enable_leases(self._lease_book)
+                ttl = self._lease_ttl_s if self._lease_ttl_s is not None \
+                    else sc.duration_s + settle + 1.0
+                for ip in self._lease_ips:
+                    try:
+                        self._lease_book.request(target="device", ip=ip,
+                                                 weight=self._lease_weight,
+                                                 ttl_s=ttl)
+                    except IntentError as e:
+                        enforcement_why = f"lease rejected: {e}"
+                self.harness.sync_lease(self._lease_book.to_policy_lease(),
+                                        link_mbps)
 
         # ---- 2. launch workloads: sinks first so nothing races the listener
         for (label, port, dscp), w in zip(ports, _expand(sc)):
@@ -389,6 +426,9 @@ class ExperimentRunner:
                 # on. Recorded per sample so the artefact shows the decision and
                 # its timing, rather than asking the reader to trust the code.
                 "verdicts": verdicts,
+                # Whether a lease covered any flow this tick. Sampled, not
+                # assumed, so a lease that never matched anything is visible.
+                "lease_active": bool(self._lease_book.active()) if self._lease_book else False,
             })
 
             # the drop: the link changes, and only the link changes
@@ -424,6 +464,7 @@ class ExperimentRunner:
         # is the residue gate check 20 exists to catch, and the reason
         # enforcement cannot be a write-and-forget.
         enforcement_note = self._enforcement_note(enforcement_on, enforcement_why)
+        lease_note = bool(self._lease_ips) and enforcement_on
         if enforcement_on:
             self.harness.disable_enforcement()
             self._tracker = self._ct = None

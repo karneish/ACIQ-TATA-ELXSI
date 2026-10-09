@@ -118,7 +118,12 @@ Each contract states **inputs / outputs / failure handling / success condition**
 | **Failure handling** | `set_capacity(C)` touches **only** class 1:1. Never rescales children — that is M3's job after M2 detects the drop |
 | **Success** | A run is reproducible from its seed and leaves the testbed in its initial state |
 
-### M7 — Intent API
+### M7 — Intent API — ✅ built
+
+**Delivered:** `aciq/intent.py` (lifecycle), `aciq/api.py` (HTTP), `--lease` on the driver.
+**Deviation:** stdlib `http.server`, not FastAPI — see `PLAN.md`.
+**Not yet measured:** the success condition below needs a live run. `--lease IP`
+now makes that possible; `docs/limitations.md` §5e records the gap.
 
 | | |
 |---|---|
@@ -127,9 +132,15 @@ Each contract states **inputs / outputs / failure handling / success condition**
 | **Failure handling** | Leases expire automatically — a forgotten request cannot permanently harm the household. Most recent lease per target wins |
 | **Success** | A device lease visibly raises that flow's throughput and the effect **reverts on expiry**, verified by the shield |
 
-### M8 — Dashboard
+### M8 — Dashboard — ✅ built
 
-| | |
+**Delivered:** `aciq/dashboard.py`, `aciqctl dashboard` and `aciqctl serve`.
+**Read-only is structural:** the module imports only `html`, `pathlib`,
+`dataclasses` and `typing`, so it holds no reference that could reach `tc`. Two
+tests enforce it. **Deviation:** no JavaScript and no CDN, so the page is one
+self-contained file and updates by `<meta>` refresh rather than a websocket.
+
+| |
 |---|---|
 | **Inputs** | M5 frames |
 | **Outputs** | Static page with inline SVG charts: latency, jitter, loss, throughput, queue depth, fairness |

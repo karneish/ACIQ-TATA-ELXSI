@@ -250,11 +250,21 @@ The intent API is built and the lease path is unit-tested end to end: a lease
 steers its flow to class `1:40`, `build_plan` reserves 39.1 Mbps for it at 100
 Mbps capacity, and expiry reverts both. The shield accepts the resulting plan.
 
-**None of that is a measurement.** A lease has never been exercised against real
-traffic, so there is no evidence here that a lease *visibly raises throughput* --
-which is the success condition `docs/architecture.md` sets for M7. Running it
-against the testbed needs a live client whose lease outlives a sample interval,
-and `--enforce` currently has no `--lease` option.
+**Still not a measurement.** There was no way to run a lease against the
+testbed: `--enforce` had no `--lease`. That is now built --
+
+    sudo python3 run_experiments.py --scenario s3_tv_and_gaming --system aciq \
+      --enforce --lease 10.0.1.2 --seed 42 \
+      --results-dir data/leased --report data/leased/REPORT.md
+
+-- and the lease path is unit-tested end to end, but **the experiment has not been
+run**, so there is still no evidence that a lease visibly raises throughput. That
+is the success condition in `docs/architecture.md`, and it remains open until the
+command above has been run and its output read.
+
+The default TTL is the whole run, so the measurement is of the effect rather than
+of the expiry; `--lease-ttl-s` makes a shorter lease if the expiry is what you
+want to watch.
 
 Device-scope leases match on IP and ignore the source port, because a reconnect
 changes the source port and a port-sensitive request would silently stop applying.

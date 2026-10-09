@@ -6,18 +6,21 @@ the same server must be unable to write anything.
 """
 
 import json
+import os
+import tempfile
 import threading
+import time
+from pathlib import Path
 import urllib.error
 import urllib.request
 import unittest
 
-from aciq.api import IntentService, make_handler, serve
+from aciq.api import IntentService, serve
 from aciq.bridge import Bridge
 from aciq.classify import FlowFeatures
 from aciq.closedloop import ClosedLoop
 from aciq.dashboard import PANELS, build_from_samples, panels_from_samples
 from aciq.intent import (
-    DEFAULT_TTL_S,
     MAX_TTL_S,
     MAX_WEIGHT,
     IntentError,
@@ -25,11 +28,47 @@ from aciq.intent import (
     LeaseStore,
     lease_to_dict,
     load,
-    save,
 )
 from aciq.model import Flow, Lease, TrafficClass
 from aciq.policy import build_plan
 from aciq.shield import Shield
+
+
+from aciq.experiment import ExperimentRunner
+from aciq.harness import CapacityMode, Harness, SystemSpec
+from aciq.metrics import CounterSnapshot
+from aciq.txn import FakeRunner
+
+
+class _Exec:
+    """Answers tc's -j listing with an empty device, and succeeds at everything
+    else, so the lease path can be exercised without root."""
+
+    def __call__(self, argv):
+        if "-j" in argv:
+            return 0, "[]", ""
+        return 0, "", ""
+
+
+class _LiveishLauncher:
+    """Not a DryLauncher, so `will_enforce` is True and run() reaches the lease
+    code -- but launches nothing, so no traffic and no root."""
+
+    def spawn_sink(self, kind, port, log_path):
+        return None
+
+    def spawn_source(self, kind, dst, port, duration, dscp, json_out, log_path):
+        return None
+
+    def collect(self):
+        return []
+
+    def stop(self):
+        pass
+
+#: Readable in the test names below; the enum members are verbose.
+ACIQ = SystemSpec.ACIQ
+B0 = SystemSpec.B0
 
 
 class Clock:
@@ -194,8 +233,6 @@ class TestLeasePersistence(unittest.TestCase):
     def test_two_books_on_one_file_see_each_other(self):
         """The bug this exists for: `aciqctl lease` printed an id and
         `aciqctl leases` then said none, because nothing was written."""
-        import tempfile
-        import os
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "leases.json")
             a = LeaseBook(path=p)
@@ -203,8 +240,6 @@ class TestLeasePersistence(unittest.TestCase):
             self.assertEqual(len(load(p).active()), 1)
 
     def test_a_book_loaded_from_a_file_can_still_write_to_it(self):
-        import tempfile
-        import os
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "leases.json")
             LeaseBook(path=p).request(target="device", ip="10.0.1.2", ttl_s=60)
@@ -217,8 +252,6 @@ class TestLeasePersistence(unittest.TestCase):
         """The missing-file branch originally returned a pathless book, so the
         very first lease lived only in memory -- it appeared only on a clean
         slate, which made it look intermittent."""
-        import tempfile
-        import os
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "leases.json")
             book = load(p)
@@ -227,17 +260,12 @@ class TestLeasePersistence(unittest.TestCase):
             self.assertEqual(len(load(p).active()), 1)
 
     def test_a_corrupt_file_yields_no_leases_rather_than_an_exception(self):
-        import tempfile
-        import os
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "leases.json")
             open(p, "w").write("{not json")
             self.assertEqual(load(p).active(), ())
 
     def test_expired_leases_are_not_written_back(self):
-        import tempfile
-        import os
-        from pathlib import Path
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "leases.json")
             c = Clock()
@@ -252,9 +280,6 @@ class TestLeasePersistence(unittest.TestCase):
     def test_the_file_is_written_atomically(self):
         """A crash mid-write must not leave a truncated file that reads as zero
         leases -- which would silently drop every live lease."""
-        import tempfile
-        import os
-        from pathlib import Path
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "leases.json")
             b = LeaseBook(path=p)
@@ -267,8 +292,6 @@ class TestLeaseThreadSafety(unittest.TestCase):
     def test_concurrent_requests_do_not_lose_any(self):
         """Read-modify-write on a shared store. The lock is what makes it
         atomic; the test is what proves the lock is actually held."""
-        import tempfile
-        import os
         with tempfile.TemporaryDirectory() as d:
             book = LeaseBook(path=os.path.join(d, "leases.json"))
             errors = []
@@ -292,8 +315,6 @@ class TestLeaseThreadSafety(unittest.TestCase):
     def test_requesting_persists_while_holding_the_lock(self):
         """save() re-enters the book. With a plain Lock that self-deadlocks and
         the process hangs with no traceback -- so this asserts it returns."""
-        import tempfile
-        import os
         with tempfile.TemporaryDirectory() as d:
             book = LeaseBook(path=os.path.join(d, "leases.json"))
             done = []
@@ -371,8 +392,6 @@ class TestLeaseReachesTheKernel(unittest.TestCase):
         specific, more recent statement wins -- and the correction is still there
         underneath once the lease lapses."""
         from aciq.corrections import CorrectionStore
-        import tempfile
-        import os
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "c.jsonl")
             cs = CorrectionStore(path=p)
@@ -628,7 +647,7 @@ class TestDashboardIsReadOnly(unittest.TestCase):
     def test_dashboard_imports_nothing_that_can_touch_the_kernel(self):
         import aciq.dashboard as d
         import ast
-        tree = ast.parse(Path_of(d.__file__).read_text())
+        tree = ast.parse(Path(d.__file__).read_text())
         imported = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -645,7 +664,7 @@ class TestDashboardIsReadOnly(unittest.TestCase):
 
     def test_the_dashboard_never_calls_tc(self):
         import aciq.dashboard as d
-        src = Path_of(d.__file__).read_text()
+        src = Path(d.__file__).read_text()
         for token in ("tc ", "tc\"", "nft ", "subprocess", "os.system",
                       "set_capacity", "txn.apply"):
             self.assertNotIn(token, src, f"dashboard contains {token!r}")
@@ -666,11 +685,6 @@ class TestDashboardIsReadOnly(unittest.TestCase):
         svc = IntentService(LeaseBook())
         for method in ("PUT", "PATCH", "OPTIONS"):
             self.assertIn(svc.handle(method, "/intent")[0], (404, 405))
-
-
-def Path_of(p):
-    from pathlib import Path
-    return Path(p)
 
 
 SAMPLES = [
@@ -795,3 +809,84 @@ class TestRealArtefactsRender(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestLeasesInARun(unittest.TestCase):
+    """`--lease` on the driver, so M7 can finally be measured rather than only
+    unit-tested.
+
+    The success condition in docs/architecture.md is that a lease *visibly
+    raises the flow's throughput*. Until this existed there was no way to run
+    that experiment at all -- the flag was documented as a gap.
+    """
+
+    def _runner(self, tmp, launcher=None):
+        class Empty:
+            def snapshot(self):
+                return CounterSnapshot(t=time.monotonic(), by_class={})
+
+        return ExperimentRunner(
+            launcher=launcher or _LiveishLauncher(),
+            harness=Harness(runner=FakeRunner(auto_readback=True), clock=lambda: 0.0),
+            results_dir=Path(tmp), real_time=False, tick_s=1.0,
+            source=Empty(), bridge_executor=_Exec())
+
+    def test_a_lease_for_the_run_is_held_for_the_run(self):
+        """Default TTL is the whole run. A shorter one would demonstrate expiry
+        and nothing else."""
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r.run("s3_tv_and_gaming", ACIQ, enforce=True,
+                  lease_ips=["10.0.1.2"])
+            cfg = json.loads(
+                (Path(d) / "s3_tv_and_gaming__aciq__adaptive__seed42"
+                 / "config.json").read_text())
+            self.assertEqual(cfg["lease_ips"], ["10.0.1.2"])
+            self.assertEqual(cfg["lease_weight"], 0.5)
+
+    def test_the_lease_is_recorded_in_every_sample(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r.run("s3_tv_and_gaming", ACIQ, enforce=True,
+                  lease_ips=["10.0.1.2"])
+            rows = [json.loads(l) for l in
+                    (Path(d) / "s3_tv_and_gaming__aciq__adaptive__seed42"
+                     / "samples.jsonl").read_text().splitlines()]
+            self.assertIn("lease_active", rows[0])
+            self.assertTrue(any(r["lease_active"] for r in rows))
+
+    def test_a_baseline_is_never_leased(self):
+        """A lease handed to a baseline has no classifier to honour it, and
+        steering a baseline would make it not a baseline."""
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            # static, as the driver passes for a baseline -- the directory name
+            # carries the mode, so asking for the default here would look for the
+            # wrong path and then "fix" it by hardcoding the wrong one.
+            r.run("s3_tv_and_gaming", B0, CapacityMode.STATIC, enforce=True,
+                  lease_ips=["10.0.1.2"])
+            res = json.loads(
+                (Path(d) / "s3_tv_and_gaming__b0_fifo__static__seed42"
+                 / "result.json").read_text())
+            notes = " ".join(res["notes"])
+            self.assertIn("enforcement OFF", notes)
+            self.assertIn("baseline", notes)
+
+    def test_an_explicit_ttl_is_honoured(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r.run("s3_tv_and_gaming", ACIQ, enforce=True,
+                  lease_ips=["10.0.1.2"], lease_ttl_s=5.0)
+            cfg = json.loads(
+                (Path(d) / "s3_tv_and_gaming__aciq__adaptive__seed42"
+                 / "config.json").read_text())
+            self.assertEqual(cfg["lease_ttl_s"], 5.0)
+
+    def test_a_run_without_leases_records_none(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r.run("s3_tv_and_gaming", ACIQ, enforce=True)
+            cfg = json.loads(
+                (Path(d) / "s3_tv_and_gaming__aciq__adaptive__seed42"
+                 / "config.json").read_text())
+            self.assertEqual(cfg["lease_ips"], [])
+            self.assertIsNone(cfg["lease_weight"])

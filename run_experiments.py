@@ -74,6 +74,14 @@ def main() -> int:
                     help="apply per-flow classifications as tc flower filters "
                          "(ACIQ only; off by default so runs stay comparable "
                          "to the v0 baseline)")
+    ap.add_argument("--lease", action="append", default=[], metavar="IP",
+                    help="give this device an M7 lease for the whole run; "
+                         "repeatable. Requires --enforce, since a baseline has "
+                         "no classifier to honour a lease.")
+    ap.add_argument("--lease-weight", type=float, default=0.5)
+    ap.add_argument("--lease-ttl-s", type=float, default=None,
+                    help="defaults to the whole run, so the measurement is of "
+                         "the effect and not of the expiry")
     ap.add_argument("--results-dir", default=str(RESULTS_DIR))
     ap.add_argument("--report", default=None, help="write the Markdown report here")
     ap.add_argument("--report-only", action="store_true",
@@ -155,7 +163,9 @@ def main() -> int:
                     print(f"\n=== {sc} / {sysspec.value} / {m.value} / seed {seed} ===")
                     res = runner.run(
                         sc, sysspec, m, seed, args.link, args.drop, args.drop_at,
-                        settle_s=args.settle, enforce=args.enforce)
+                        settle_s=args.settle, enforce=args.enforce,
+                        lease_ips=args.lease, lease_weight=args.lease_weight,
+                        lease_ttl_s=args.lease_ttl_s)
                     for n in res.notes:
                         # only real problems get a warning marker; a note like
                         # "no capacity drop" is informational and alarming it
