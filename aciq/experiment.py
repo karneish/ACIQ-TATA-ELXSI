@@ -236,6 +236,21 @@ class ExperimentRunner:
         #  * a dry run -- nothing is launched, so conntrack reports no flows and
         #    the loop would decide nothing. A run that looks wired up while
         #    measuring nothing is worse than one that plainly is not.
+        # Reset per run, not per process. These were only ever initialised in
+        # __init__, so a runner that executed several runs accumulated them:
+        # `1/31`, `2/62`, `3/93` ... `18/678` across one 18-run matrix. Two
+        # consequences, the second serious -- the note described the whole
+        # process rather than the run, and because _enf_steered never returned to
+        # zero, the "STEERED NOTHING" guard could not fire after the first
+        # successful run. The net built to catch a silent no-op was blind from
+        # run 2 onwards.
+        self._enf_ticks = 0
+        self._enf_steered = 0
+        #: When M2 last produced a *new* reading, and when the link was last
+        #: reconfigured. Their comparison decides whether the final estimate
+        #: describes the end of the run or a moment before it changed.
+        self._est_t: float | None = None
+        self._cap_t: float | None = None
         enforcement_why = "not requested"
         will_enforce = False
         if self.enforce:
@@ -327,6 +342,7 @@ class ExperimentRunner:
         collector = MetricsCollector(
             self.source or TextClassSource(dev=self.harness.dev, ns=self.harness.ns))
         samples: list[dict] = []
+        _prev_est = self.harness._estimator.current.mbps
         t0 = time.monotonic()
         ticks = int(sc.duration_s / self.tick_s) + 1
         dropped = False
@@ -347,6 +363,12 @@ class ExperimentRunner:
                 self._closed_loop_step(collector, self.tick_s, t0 + elapsed)
             verdicts = (self._enforcement_step(ports, t0 + elapsed)
                         if enforcement_on else {})
+            # Note when M2 last moved. A run whose only reading predates the drop
+            # reports that pre-drop number as "the estimator" alongside
+            # link_end=20 -- the matrix showed 102.77 Mbps for a 20 Mbps link.
+            if self.harness._estimator.current.mbps != _prev_est:
+                _prev_est = self.harness._estimator.current.mbps
+                self._est_t = elapsed
 
             lk = collector.last_link_counters()
             samples.append({
@@ -372,6 +394,7 @@ class ExperimentRunner:
             # the drop: the link changes, and only the link changes
             if drop_at_s is not None and not dropped and elapsed >= drop_at_s:
                 dropped = True
+                self._cap_t = elapsed
                 # Only the link changes. Baselines are not told; ACIQ must
                 # notice from counters alone.
                 self.harness.set_capacity(drop_mbps)
@@ -410,6 +433,14 @@ class ExperimentRunner:
 
         # ---- 5. the loop has already run on every tick
         est = self.harness._estimator.current.mbps or None
+        # M2 can only measure a link that is oversubscribed. When the link drops
+        # and the workload's own rate falls with it, the link stops being
+        # oversubscribed, so there is no longer any information in the counters
+        # about capacity -- and the last reading, taken before the drop, is
+        # carried to the end of the run as if it described it. Saying so is the
+        # difference between a stale estimate and a wrong one presented as
+        # current.
+        stale_note = self._stale_note(est)
         res = RunResult(
             scenario=sc.name, system=system.value, capacity_mode=mode.value,
             seed=seed, link_start_mbps=link_mbps,
@@ -417,8 +448,9 @@ class ExperimentRunner:
             estimator_mbps=round(est, 2) if est else None,
             samples=samples[-3:],
             policy_changes=self.harness.policy_changes,
-            notes=([] if dropped else ["no capacity drop in this run"])
-                  + [enforcement_note],
+            notes=(([] if dropped else ["no capacity drop in this run"])
+                   + ([stale_note] if stale_note else [])
+                   + [enforcement_note]),
         )
         paths.write_json("result.json", json.loads(res.to_json()))
         return res
@@ -466,6 +498,29 @@ class ExperimentRunner:
         if any(v["changed"] for v in out.values()):
             self._enf_steered += 1
         return out
+
+    def _stale_note(self, est: float | None) -> str:
+        """Say when the final estimate predates the last capacity change.
+
+        M2 can only measure a link that is oversubscribed. When the link drops
+        and the workload's own rate falls with it, the link stops being
+        oversubscribed, so there is no longer any information in the counters
+        about capacity -- and the last reading, taken before the drop, is carried
+        to the end of the run as if it described it. The matrix reported
+        estimator=102.77 Mbps beside link_end=20.0 for twelve runs.
+
+        Naming it stale is the difference between an old number and a wrong number
+        presented as current.
+        """
+        if not est or self._cap_t is None or self._est_t is None:
+            return ""
+        if self._est_t >= self._cap_t:
+            return ""
+        return (f"estimator {est:.1f} Mbps is STALE: last measured at "
+                f"t={self._est_t:.1f}s, before the link changed at "
+                f"t={self._cap_t:.1f}s. M2 only measures an oversubscribed link, "
+                f"and this one stopped being oversubscribed once the workload's "
+                f"rate fell with it, so no post-drop reading was possible")
 
     def _enforcement_note(self, enforcement_on: bool, why: str) -> str:
         """One line, in result.json, saying what enforcement actually did.

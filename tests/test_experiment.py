@@ -11,6 +11,7 @@ from aciq.experiment import DryLauncher, ExperimentRunner, RunPaths
 from aciq.harness import CapacityMode, Harness, SystemSpec
 from aciq.report import (
     MIN_PAIRS_FOR_PVALUE,
+    build_report,
     Metric,
     build_report,
     can_report_pvalue,
@@ -329,10 +330,27 @@ class TestStatisticsGate(unittest.TestCase):
 class TestHonestVerdicts(unittest.TestCase):
     """The report must state losses as plainly as wins."""
 
+    def _seeds(self, metrics, n=6, jitter=0.0):
+        """Expand a flat metric dict into the per-seed shape latency_table now
+        returns: {metric: [(seed, value), ...]}.
+
+        `jitter` varies later seeds slightly so tests exercise real aggregation
+        rather than six identical values collapsing to one cell.
+        """
+        out = {}
+        for i in range(n):
+            for k, v in metrics.items():
+                if v is None:
+                    continue
+                val = v if not jitter else v * (1.0 + (i - n / 2) * jitter)
+                out.setdefault(k, []).append((40 + i, val))
+        return out
+
     def _table(self, aciq_p, rival_p=None):
         """Two systems with *different* numbers; a tie is spelled out."""
         rival_p = rival_p or dict(aciq_p)
-        return {"s1": {"aciq": {"call": aciq_p}, "b1_cake95": {"call": rival_p}}}
+        return {"s1": {"aciq": {"call": self._seeds(aciq_p)},
+                       "b1_cake95": {"call": self._seeds(rival_p)}}}
 
     def test_a_loss_is_stated(self):
         from aciq.report import latency_sections
@@ -364,9 +382,9 @@ class TestHonestVerdicts(unittest.TestCase):
         self.assertNotIn("LOSES", sec)
 
     def _three(self, aciq_p, cake_p, fifo_p):
-        return {"s1": {"aciq": {"call": aciq_p},
-                       "b1_cake95": {"call": cake_p},
-                       "b0_fifo": {"call": fifo_p}}}
+        return {"s1": {"aciq": {"call": self._seeds(aciq_p)},
+                       "b1_cake95": {"call": self._seeds(cake_p)},
+                       "b0_fifo": {"call": self._seeds(fifo_p)}}}
 
     def test_beating_one_rival_and_losing_to_another_reads_as_two_clauses(self):
         """The real p95 shape: ACIQ beats pfifo on p95 by 58x and loses to cake
@@ -815,3 +833,209 @@ class TestEnforcementIsRecorded(unittest.TestCase):
             cfg, _r, _ = self._run(d, SystemSpec.ACIQ, enforce=True)
             self.assertNotIn("enforcement_effective", cfg,
                              "config.json is written before the tree is built")
+
+
+class TestEverySeedSurvives(unittest.TestCase):
+    """The report printed one seed's numbers under a "54 runs" header.
+
+    latency_table did `entry[label] = {...}` once per run directory, so with six
+    seeds the last one overwrote the other five. s1's ACIQ row read p99=18.461 --
+    seed 47 alone; the six were 2.665, 1.443, 2.147, 20.104, 2.538, 18.461. Two
+    of six hit ~20 ms and the reported number was one of them.
+    """
+
+    def _matrix(self, tmp, seeds):
+        for seed in seeds:
+            d = Path(tmp) / f"r__aciq__adaptive__seed{seed}"
+            d.mkdir(parents=True)
+            (d / "result.json").write_text(json.dumps(
+                {"scenario": "s1", "system": "aciq", "capacity_mode": "adaptive",
+                 "seed": seed, "estimator_mbps": 100.0, "policy_changes": 1,
+                 "link_start_mbps": 100.0, "link_end_mbps": 20.0}))
+            (d / "workloads.json").write_text(json.dumps(
+                {"call": {"p50": 0.2 + seed / 1000.0, "p95": 1.0,
+                          "p99": 2.0, "jitter_ms": 0.3, "loss_ratio": 0.0}}))
+
+    def test_all_seeds_are_kept(self):
+        with tempfile.TemporaryDirectory() as d:
+            self._matrix(d, range(42, 48))
+            from aciq.report import latency_table
+            t = latency_table(Path(d))
+            got = t["s1"]["aciq"]["call"]["p50"]
+            self.assertEqual(len(got), 6, "a seed was overwritten")
+
+    def test_the_table_shows_the_spread_not_one_seed(self):
+        with tempfile.TemporaryDirectory() as d:
+            self._matrix(d, range(42, 48))
+            from aciq.report import build_report
+            sec = build_report(Path(d))
+            self.assertIn("(0.242-0.247)", sec, "only one seed's value is shown")
+
+    def test_a_seed_is_carried_so_pairs_can_be_formed(self):
+        with tempfile.TemporaryDirectory() as d:
+            self._matrix(d, [42, 43])
+            from aciq.report import latency_table
+            got = latency_table(Path(d))["s1"]["aciq"]["call"]["p50"]
+            self.assertEqual(sorted(s for s, _v in got), [42, 43])
+
+
+class TestSignificanceIsActuallyComputed(unittest.TestCase):
+    """6 runs used to switch the caveat OFF and print no p-value at all.
+
+    Silence reads as significance, which is worse than either reporting a number
+    or reporting a refusal.
+    """
+
+    def _two_systems(self, tmp, aciq, rival, seeds=range(42, 48),
+                     spreads=None):
+        """`spreads` jitters each system's value per seed.
+
+        Two earlier versions of this fixture were wrong in instructive ways.
+        Constant values are not "no difference": ACIQ 0.2 vs rival 0.21 on every
+        seed is a consistent win and returns the floor p=0.0312. Giving *both*
+        systems the same jitter is worse -- every paired difference is exactly 0,
+        which is a perfect tie, and the test correctly returns None. Interleaving
+        needs the two systems to jitter differently, so the sign of each paired
+        difference alternates.
+        """
+        for i, seed in enumerate(seeds):
+            for system, p99, sp in (("aciq", aciq, (spreads or {}).get("aciq")),
+                                    ("b0_fifo", rival, (spreads or {}).get("b0_fifo"))):
+                v = p99 + (sp[i] if sp else 0.0)
+                d = Path(tmp) / f"r__{system}__x__seed{seed}"
+                d.mkdir(parents=True)
+                (d / "result.json").write_text(json.dumps(
+                    {"scenario": "s1", "system": system,
+                     "capacity_mode": "adaptive", "seed": seed}))
+                (d / "workloads.json").write_text(json.dumps(
+                    {"call": {"p50": v, "p95": v, "p99": v,
+                              "jitter_ms": v, "loss_ratio": 0.0}}))
+
+    def test_a_real_difference_produces_a_p_value(self):
+        with tempfile.TemporaryDirectory() as d:
+            self._two_systems(d, 0.2, 120.0)
+            self.assertIn("p < 0.05", build_report(Path(d)))
+
+    def test_no_difference_produces_no_significance_claim(self):
+        """ACIQ and cake overlapping is the honest outcome in the real matrix,
+        and the report must say so rather than letting a missing number imply
+        support. The two systems' per-seed values interleave, so neither wins
+        consistently."""
+        with tempfile.TemporaryDirectory() as d:
+            # Different jitter per system, so the signs of the paired differences
+            # alternate instead of all pointing the same way.
+            self._two_systems(d, 0.2, 0.2, spreads={
+                "aciq": [0.00, 0.04, -0.03, 0.05, -0.04, 0.02],
+                "b0_fifo": [0.02, -0.01, 0.05, -0.02, 0.06, -0.01]})
+            sec = build_report(Path(d))
+            self.assertIn("of 4 comparisons reach p < 0.05", sec)
+            self.assertIn("0 of", sec)
+
+    def test_exact_wilcoxon_rejects_all_ties(self):
+        from aciq.report import exact_wilcoxon
+        self.assertIsNone(exact_wilcoxon([(1.0, 1.0)] * 8))
+
+    def test_exact_wilcoxon_floor_at_n6(self):
+        """2/64 = 0.03125 is the smallest attainable p at n=6, so 'p < 0.05'
+        barely clears and cannot go lower without more seeds."""
+        from aciq.report import exact_wilcoxon
+        r = exact_wilcoxon([(0.2, 120.0)] * 6)
+        self.assertAlmostEqual(r["p"], 2 / 64)
+
+    def test_exact_wilcoxon_reports_dropped_zero_pairs(self):
+        from aciq.report import exact_wilcoxon
+        r = exact_wilcoxon([(1.0, 2.0), (2.0, 1.0), (5.0, 5.0), (6.0, 6.0)])
+        self.assertEqual((r["n"], r["zeros"]), (2, 2))
+
+    def test_exact_wilcoxon_uses_average_ranks_for_ties(self):
+        from aciq.report import exact_wilcoxon
+        a = exact_wilcoxon([(1.0, 2.0), (2.0, 1.0)])
+        b = exact_wilcoxon([(1.0, 2.0), (1.0, 3.0)])
+        self.assertIsNotNone(a)
+        self.assertIsNotNone(b)
+
+
+class TestEnforcementCountersArePerRun(unittest.TestCase):
+    """Counters accumulated across runs, which disabled the safety net.
+
+    A matrix printed `1/31`, `2/62`, `3/93` ... `18/678`: the note described the
+    process, not the run. Worse, `_enf_steered` never returned to zero, so the
+    "STEERED NOTHING" guard could not fire after the first run that steered
+    anything -- the net built to catch a silent no-op was blind from run 2 on.
+    """
+
+    def _two_runs(self, tmp):
+        r = ExperimentRunner(
+            launcher=_LiveishLauncher(),
+            harness=Harness(runner=FakeRunner(auto_readback=True), clock=lambda: 0.0),
+            results_dir=Path(tmp), real_time=False, tick_s=1.0,
+            bridge_executor=_Exec())
+        first = r.run("s3_tv_and_gaming", SystemSpec.ACIQ, enforce=True)
+        # simulate run 2 having steered nothing at all
+        r._enf_ticks, r._enf_steered = 40, 0
+        second = r.run("s3_tv_and_gaming", SystemSpec.ACIQ, enforce=True)
+        return first, second
+
+    def test_a_run_that_steered_nothing_still_says_so(self):
+        """The guard must work on run 2, not just run 1."""
+        with tempfile.TemporaryDirectory() as d:
+            _first, second = self._two_runs(d)
+            self.assertIn("STEERED NOTHING", " ".join(second.notes))
+
+    def test_counters_do_not_accumulate_across_runs(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = ExperimentRunner(
+                launcher=_LiveishLauncher(),
+                harness=Harness(runner=FakeRunner(auto_readback=True),
+                                clock=lambda: 0.0),
+                results_dir=Path(d), real_time=False, tick_s=1.0,
+                bridge_executor=_Exec())
+            r.run("s3_tv_and_gaming", SystemSpec.ACIQ, enforce=True)
+            first_ticks = r._enf_ticks
+            r.run("s3_tv_and_gaming", SystemSpec.ACIQ, enforce=True)
+            self.assertLessEqual(r._enf_ticks, first_ticks * 1.5,
+                                 "the second run inherited the first's ticks")
+
+
+class TestAStaleEstimateSaysSo(unittest.TestCase):
+    """The matrix reported estimator=102.77 Mbps beside link_end=20.0.
+
+    M2 measures a link only while it is oversubscribed. After the drop, the
+    workload's own rate fell to just under the new capacity, the link stopped
+    being oversubscribed, and the last reading -- taken at t=2 s, before the
+    drop at t=20 s -- was carried to the end of the run as the estimate. Twelve
+    runs did this.
+    """
+
+    def _runner(self, tmp):
+        return ExperimentRunner(
+            launcher=DryLauncher(),
+            harness=Harness(runner=FakeRunner(auto_readback=True), clock=lambda: 0.0),
+            results_dir=Path(tmp), real_time=False, tick_s=1.0)
+
+    def test_an_estimate_from_before_the_drop_is_flagged_stale(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r._est_t, r._cap_t = 2.0, 20.0
+            note = r._stale_note(102.77)
+            self.assertIn("STALE", note)
+            self.assertIn("102.8", note)
+            self.assertIn("t=2.0s", note)
+
+    def test_an_estimate_taken_after_the_drop_is_not_flagged(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r._est_t, r._cap_t = 21.0, 20.0
+            self.assertEqual(r._stale_note(19.4), "")
+
+    def test_no_estimate_is_not_stale(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r._est_t, r._cap_t = 2.0, 20.0
+            self.assertEqual(r._stale_note(None), "")
+
+    def test_no_capacity_change_means_nothing_to_be_stale_against(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r._est_t, r._cap_t = 2.0, None
+            self.assertEqual(r._stale_note(102.0), "")
