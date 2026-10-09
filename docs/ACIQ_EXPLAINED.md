@@ -5,18 +5,28 @@ solving, what the solution is, and exactly how it works. Every Linux command and
 every technical term is explained in brackets the first time it appears.
 
 Every **number** quoted was really measured on the project's own testbed, and the
-file that measured it is named. But three parts of the **system** are described
-here that do not yet run, and they are marked `[NOT WIRED]` at every mention:
+file that measured it is named.
 
-- the behavioural classifier (M1) — built and unit-tested, but never called
-  during a run, so it does not influence enforcement;
-- `ADAPTIVE` and `LEASED` — the classes exist and are given bandwidth, but
-  nothing routes traffic into them;
-- the correction file — described, never written.
+**Status update, 2026-10-08.** This document described three parts of the system
+as `[NOT WIRED]`. All three are now connected, and the marks are being retired as
+they are checked rather than all at once:
 
-So the measured system is **DSCP-EF filtering + HTB + `fq_codel`**. The evidence
-is `docs/WIRING_AUDIT.md`, which audits every module for whether it is *connected
-to the runtime* as well as whether it exists and has tests.
+- the behavioural classifier (M1) — called from the run via `aciq/closedloop.py`.
+  Pass `--enforce`; it is opt-in so that runs stay comparable to the v0 baseline.
+- `ADAPTIVE` — receives traffic. Measured in `data/matrix6/`: 13.96 Mbps mean in
+  class 1:20, which the generators' own byte counts confirm at 14.29 Mbps.
+- `LEASED` — reachable via an M7 lease. **Not yet measured against real traffic**;
+  the path is unit-tested and `--lease` makes the experiment runnable, but no run
+  has been done. See `docs/limitations.md` §5e.
+- the correction file — written by `aciqctl correct`, read by the classifier.
+
+Two measurements still say something *against* this system, and neither is a
+wiring problem: against `b1_cake95` no comparison reaches significance
+(p50 0.5625, p95 0.0625, p99 0.4375), and M2 cannot see a capacity drop that the
+workload adapts to.
+
+The evidence is `docs/WIRING_AUDIT.md`, which audits every module for whether it
+is *connected to the runtime* as well as whether it exists and has tests.
 
 
 ## Contents
@@ -350,7 +360,7 @@ The solution has five working parts, plus a reporting part.
 - **M5 — Metrics, M6 — experiments, M10 — report:** measure and publish.
 
 
-### 3.1 Step 1 — Classify the traffic (M1) · `[NOT WIRED]`
+### 3.1 Step 1 — Classify the traffic (M1) · now wired, opt-in
 
 Files: `aciq/classify.py`, `aciq/flowtrack.py`
 
@@ -429,12 +439,13 @@ that number would mean absolutely nothing. So the ports are randomised per seed,
 and classification is forced to rest on behaviour and DSCP only. **We make our own
 accuracy number harder to earn on purpose.**
 
-The classifier also *would* keep a **correction file** at `data/corrections.jsonl`,
-where a user's manual override is recorded and changes later decisions.
-`[NOT WIRED]` — no code writes that file, and `data/corrections.jsonl` does not
-exist. This is also a requirement in the brief ("classifiers must expose
-confidence and allow correction of misclassification"). Confidence **is**
-implemented and tested; correction is not implemented at all.
+The classifier also keeps a **correction file** at `data/corrections.jsonl`, where
+a user's manual override is recorded and changes later decisions. This is a
+requirement in the brief ("classifiers must expose confidence and allow correction
+of misclassification"), and both halves now exist: `aciq/corrections.py` and
+`aciqctl correct --flow ... --as ...`. A correction overrides inference at every
+layer — the verdict, the installed filter, and the rate plan — and expires on a
+TTL so a correction cannot outlive the reason it was made.
 
 
 ### 3.2 Step 2 — Work out how fast the line really is (M2)
