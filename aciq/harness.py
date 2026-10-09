@@ -190,6 +190,9 @@ class Harness:
         #: None until enable_enforcement() is called. See aciq/enforce.py for why
         #: this is opt-in rather than always-on.
         self._enforcer: ClosedLoop | None = None
+        #: M7's lease book. None until enable_leases(), so a run that never
+        #: opens the intent API behaves exactly as it did before M7 existed.
+        self._lease_book = None
 
     # ---------------- enforcement: opt-in, see aciq/enforce.py ----------------
     @property
@@ -219,6 +222,25 @@ class Harness:
         self._enforcer.bridge.setup()
         return self._enforcer
 
+    def enable_leases(self, book) -> None:
+        """Let M7 leases influence both classification and the rate plan.
+
+        Order matters and is not obvious. The *plan* reserves capacity for the
+        leased class (build_plan creates it and takes the share from the others),
+        and the *classifier* routes the leased flow into it. Doing only the first
+        reserves an empty queue -- which is the state v0 shipped, where class
+        1:40 was given bandwidth and nothing ever arrived. Doing only the second
+        steers traffic to a class with no guaranteed rate, which is worse:
+        the flow would compete in fq_codel with everything else.
+        """
+        self._lease_book = book
+        if self._enforcer is not None:
+            self._enforcer.leases = book
+
+    @property
+    def leases(self):
+        return self._lease_book
+
     def disable_enforcement(self) -> None:
         """Remove every filter and go back to reporting-only.
 
@@ -246,6 +268,12 @@ class Harness:
         # exists. `apply_system`/`set_capacity` record what was configured, and
         # that is a fallback for the window before the first measurement -- not
         # the input to a decision.
+        if self._lease_book is not None:
+            # Only on change, and through txn.apply, so the shield's vetoes still
+            # gate it. This is what makes a lease *reserve* bandwidth rather than
+            # merely reclassify into a queue that has none.
+            self.sync_lease(self._lease_book.to_policy_lease(),
+                            self._configured_capacity)
         measured = self._estimator.current.mbps
         cap = measured if measured else self._configured_capacity
         if self._enforcer.capacity_mbps != cap:
@@ -306,6 +334,28 @@ class Harness:
     def set_lease(self, lease: Lease | None, capacity_mbps: float) -> None:
         self._lease = lease
         self._current_plan = build_plan(capacity_mbps, lease)
+
+    def sync_lease(self, lease: Lease | None, capacity_mbps: float) -> bool:
+        """Re-plan when the lease actually changed. Returns whether it did.
+
+        Applied immediately rather than at the next capacity event: a lease is a
+        person asking for something *now*, and waiting for the next M2 reading
+        would mean waiting up to a sampling interval for a deliberate action.
+
+        Rebuilding only on change matters for the same reason re-marking an
+        unchanged class does: a tc rebuild is several netlink transactions, and
+        doing one per tick per lease would be the whole budget.
+
+        Goes through `txn.apply`, so the shield's vetoes still apply. A lease
+        large enough to break an invariant is refused, not forced.
+        """
+        if (lease.id if lease else None) == (self._lease.id if self._lease else None) \
+                and (lease.weight if lease else None) == (self._lease.weight if self._lease else None):
+            return False
+        self.set_lease(lease, capacity_mbps)
+        if self._current_plan is None:
+            return False
+        return bool(self.txn.apply(self._current_plan, now=self.clock()).ok)
 
     # ---------------- closed loop: M2 -> M3 -> M4 ----------------
     def adapt_step(self, counters: dict[TrafficClass, ClassCounters], dt: float,

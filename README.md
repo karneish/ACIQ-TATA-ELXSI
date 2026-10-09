@@ -19,26 +19,58 @@ to let a user grant a **time-boxed lease** to one device or flow.
 
 | | |
 |---|---|
-| Testbed gate | **14 / 14 checks passing** |
-| Unit tests | **260 passing**, none requiring root |
-| Modules built | M2 (capacity), M3 (policy), M4 (tc enforcement), M5 (metrics), M6 (harness), M9 (shield/rollback), M10 (report) |
-| Modules **not** built | M1 classifier (unwired), M7 intent API, M8 dashboard, correction loop |
-| Experiment runs | 6 (frozen as [`v0-baseline`](data/baselines/v0/)) |
-| Seeds per configuration | **1** — no significance claim is made |
+| Testbed gate | **20 / 20 checks passing** |
+| Unit tests | **580 passing**, none requiring root |
+| Modules built | M1 (classifier), M2 (capacity), M3 (policy), M4 (tc enforcement), M5 (metrics), M6 (harness), M7 (intent API), M8 (dashboard), M9 (shield/rollback), M10 (report) |
+| Modules **not** built | — |
+| Measured runs | [`data/matrix6/`](data/matrix6/) — 54 runs, 6 seeds/config |
+| Frozen baseline | [`data/baselines/v0/`](data/baselines/v0/) — verify with `sha256sum -c SHA256SUMS` (77/77) |
+| Paired significance | ACIQ vs `b0_fifo` p=0.0312; vs `b1_cake95` **not significant** |
 
-### Three things that do not work yet
+### What the measurements actually say
 
-1. **The classifier never reaches enforcement.** `aciq/classify.py` and
-   `aciq/flowtrack.py` are fully unit-tested, but neither appears in the runtime
-   import chain from `run_experiments.py`. Enforcement today is
-   **DSCP-EF filtering + HTB + `fq_codel`**.
-2. **`ADAPTIVE` receives no traffic.** Nothing routes to class `1:20`; all non-EF
-   traffic falls to the HTB default class `1:30` (BULK). In scenario 3 the three
-   video streams were classified **BULK**.
-3. **The lease is not enforced.** Class `1:40` is created and given bandwidth,
-   but no filter routes traffic to it, and no intent API exists to request one.
+Read this before quoting a number.
+
+1. **ACIQ beats `b0_fifo` and does not significantly differ from `b1_cake95`.**
+   Over 6 paired seeds: p50/p95/p99/loss all reach p = 0.0312 against pfifo;
+   against cake nothing does (p50 0.5625, p95 0.0625, p99 0.4375, jitter 0.8438).
+   The defensible claim is that ACIQ removes pfifo's bufferbloat and does not
+   beat a well-tuned cake.
+2. **`p = 0.0312` is the floor at n = 6** (2/64). It clears 0.05 barely, and
+   nothing finer is reachable without more seeds.
+3. **M2 cannot see a capacity drop the workload adapts to.** After a drop, the
+   workload's own rate falls with the capacity, so the link stops being
+   oversubscribed and the estimator's only trigger stops firing. 12 of 18 ACIQ
+   runs in `data/matrix6/` carry a **stale** estimate; each `result.json` says so.
+4. **Scenario 3 never exercises M2 at all** — ~14.3 Mbps on a 20 Mbps link is
+   71% utilisation, so those runs report `estimator=None, policy_changes=0`.
+5. **Classification accuracy is measured on self-generated traffic**, and the
+   link is an HTB token-bucket emulation rather than real access hardware.
 
 Full per-module audit with raw evidence: [`docs/WIRING_AUDIT.md`](docs/WIRING_AUDIT.md).
+Known limits: [`docs/limitations.md`](docs/limitations.md).
+
+### Trying it
+
+```bash
+# per-flow enforcement, 6 seeds, with a capacity drop
+sudo python3 run_experiments.py \
+  --scenario s1_iso_during_call --scenario s2_wan_drop \
+  --scenario s3_tv_and_gaming --enforce --seeds 6 --drop 20 --drop-at 20 \
+  --results-dir data/matrix6 --report data/matrix6/REPORT.md
+
+# re-derive the report alone -- no root, no re-running
+python3 run_experiments.py --report-only \
+  --results-dir data/matrix6 --report data/matrix6/REPORT.md
+
+# M7 intent API + M8 dashboard on :8080
+sudo python3 aciqctl serve --port 8080
+
+# or render the dashboard from an existing run, no server
+python3 aciqctl dashboard \
+  --samples data/matrix6/s1_iso_during_call__aciq__adaptive__seed42/samples.jsonl \
+  --out dashboard.html --refresh 5
+```
 
 ---
 

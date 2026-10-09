@@ -244,6 +244,35 @@ s3 offers ~14.3 Mbps. Dropped to 20, that is 71% utilisation -- not saturated, s
 M2 never reads the link. All six s3 aciq runs report `estimator=None,
 policy_changes=0`. The per-flow path *is* exercised; the adaptive path is not.
 
+## 5e. M7 leases — what they do and do not prove (2026-10-08)
+
+The intent API is built and the lease path is unit-tested end to end: a lease
+steers its flow to class `1:40`, `build_plan` reserves 39.1 Mbps for it at 100
+Mbps capacity, and expiry reverts both. The shield accepts the resulting plan.
+
+**None of that is a measurement.** A lease has never been exercised against real
+traffic, so there is no evidence here that a lease *visibly raises throughput* --
+which is the success condition `docs/architecture.md` sets for M7. Running it
+against the testbed needs a live client whose lease outlives a sample interval,
+and `--enforce` currently has no `--lease` option.
+
+Device-scope leases match on IP and ignore the source port, because a reconnect
+changes the source port and a port-sensitive request would silently stop applying.
+
+## 5f. M8 dashboard — read-only by construction, not by discipline
+
+The requirement is that it can **never** write policy. That is enforced
+structurally: `aciq/dashboard.py` imports only `html`, `pathlib`, `dataclasses`
+and `typing`. It cannot reach a `tc` call because it holds no reference that can.
+Two tests assert this -- one walks the module's imports, one greps its source for
+`tc`/`nft`/`subprocess`/`set_capacity` -- because an import is the only way a later
+edit could turn this into a writer.
+
+Trade-off accepted: no JavaScript and no CDN, so the page is one self-contained
+file. Charts update by `<meta>` refresh rather than a websocket. A dashboard that
+needs the network stops working on exactly the air-gapped host it would be
+demonstrated on.
+
 ## 6. There is no per-user or per-device fairness
 
 `8:4:2` allocates bandwidth **per class**. Fairness within a class is delegated

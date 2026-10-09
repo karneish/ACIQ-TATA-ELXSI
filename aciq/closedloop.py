@@ -79,6 +79,8 @@ class Verdict:
     cmds: list[tuple[str, ...]] = field(default_factory=list)
     #: Name for display. None means the classifier declined to classify.
     label: str = "unclassified"
+    #: True when an M7 lease, not inference, chose this class.
+    leased: bool = False
     #: True when a user correction, not inference, chose the class.
     corrected: bool = False
     #: Class actually handed to the bridge, or None to remove the filter.
@@ -110,6 +112,7 @@ class ClosedLoop:
         corrections: CorrectionStore | None = None,
         trust: TrustStore | None = None,
         capacity_mbps: float = 100.0,
+        leases=None,
     ):
         self.bridge = bridge
         self.corrections = corrections if corrections is not None else CorrectionStore()
@@ -124,6 +127,10 @@ class ClosedLoop:
         #: it was -- classifying against a configured rate is the error M2
         #: exists to prevent, and it should be visible when it happens anyway.
         self.capacity_is_measured = False
+        #: M7 leases. None until one is handed in, so a run that never opens the
+        #: intent API behaves exactly as before -- no import of intent.py's
+        #: semantics, no "unleased" branch taken on every flow, every tick.
+        self.leases = leases
         #: Verdicts by flow key, so a caller can see what it last decided.
         self.decisions: dict[FlowKey, Verdict] = {}
 
@@ -148,6 +155,15 @@ class ClosedLoop:
         `now` is passed through to the correction store so TTL expiry is
         evaluated against the same clock the caller uses everywhere else.
         """
+        # M7 first, and before corrections. A lease is a *person* asking for
+        # something specific about a specific flow; a correction is a fix to the
+        # classifier's reasoning about it. The lease is the more specific,
+        # more recent statement of intent, so it wins -- and when it lapses the
+        # correction is still there underneath.
+        lease = self.leases.for_flow(f.flow) if self.leases is not None else None
+        if lease is not None:
+            f = replace(f, correction=TrafficClass.LEASED)
+
         correction = self.corrections.lookup(f.flow, now=now)
         if correction is not None:
             # Copy rather than assign: FlowFeatures is a frozen dataclass, and
@@ -157,6 +173,12 @@ class ClosedLoop:
             f = replace(f, correction=correction.cls)
 
         decision = classify(f, capacity_mbps=self.capacity_mbps, trust=self.trust)
+        # classify() reports tier "X" for a user correction; relabel a lease so a
+        # verdict can say which kind of override decided it.
+        if lease is not None:
+            decision = replace(decision, tier="L",
+                               evidence=f"M7 lease {lease.id} on "
+                                        f"{lease.ip or lease.flow}")
 
         # A None verdict removes the filter rather than pointing it somewhere.
         # Routing to the HTB default and routing to nowhere are the same outcome
@@ -178,7 +200,7 @@ class ClosedLoop:
         if class_id is None and key.signature not in self.bridge.state.slots:
             verdict = Verdict(classification=decision, cmds=[],
                               corrected=correction is not None, class_id=None,
-                              label=label)
+                              label=label, leased=lease is not None)
             self.decisions[key] = verdict
             return verdict
 
@@ -186,7 +208,7 @@ class ClosedLoop:
 
         verdict = Verdict(classification=decision, cmds=cmds,
                           corrected=correction is not None, class_id=class_id,
-                          label=label)
+                          label=label, leased=lease is not None)
         self.decisions[key] = verdict
         return verdict
 

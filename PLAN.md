@@ -184,10 +184,26 @@ veto-gated shield and an escalating safe state. Next is phase 6, the six runs.
 | M4 | Enforcement | Sole kernel writer: rates → filters → leaf qdiscs → read-back verify. **Must rebuild the whole tree when the HTB default class changes** — it cannot be changed in place (measured). |
 | M5 | Metrics collector | p50/p95/p99, jitter, loss, per-class throughput, queue depth, Jain index, CPU. **Strictly separate from M2's inputs.** ✅ built |
 | M6 | Experiment harness | Seeded, scripted. `set_capacity()` changes **only** class 1:1. |
-| M7 | Intent API | `POST /intent` (device or flow) with auto-expiry, `GET`/`DELETE`/`/status`. |
-| M8 | Dashboard | Read-only FastAPI page, inline SVG charts. |
+| M7 | Intent API | `POST /intent` (device or flow) with auto-expiry, `GET`/`DELETE`/`/status`. ✅ built — stdlib `http.server`, **not FastAPI**: see below. |
+| M8 | Dashboard | Read-only page, inline SVG charts. ✅ built — no JS, no CDN. |
 | M9 | Transaction manager + shield | Snapshot, apply, verify, rollback, safe state, audit log, veto rules. |
 | M10 | Report generator | Reproducible report from run data, with statistics. |
+
+### Deviations from this plan, and why
+
+**M7 is `http.server`, not FastAPI.** The plan says FastAPI; it is not installed,
+and neither are starlette, uvicorn, flask or aiohttp. For *this* service the
+standard library is the better fit rather than a compromise: M8's hard
+requirement is that it can never write policy, and a handler that only reaches a
+lease book and a read-only snapshot cannot be extended into a writer later by
+accident. If FastAPI is wanted, `aciq/api.py`'s `IntentService.handle` is the part
+to wrap — it is already a pure function of (method, path, body) and needs no
+socket.
+
+**M8 uses no JavaScript.** Charts are inline SVG plus one `<meta>` refresh, so
+the page is a single self-contained file. A dashboard that needs a CDN stops
+working on exactly the air-gapped host it would be demonstrated on. The
+trade-off is real: charts update by page reload rather than over a websocket.
 
 **Module contracts** (inputs / outputs / failure handling / success conditions)
 live in `docs/architecture.md`. The **M1 and M2 contracts are marked DRAFT** —

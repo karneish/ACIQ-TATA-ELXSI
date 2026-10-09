@@ -20,11 +20,14 @@ Standard library only, like the rest of the project.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from aciq.intent import DEFAULT_PATH as DEFAULT_LEASES_PATH  # noqa: E402
+from aciq.intent import lease_to_dict  # noqa: E402
 from aciq.corrections import (  # noqa: E402
     CLASS_ALIASES,
     DEFAULT_PATH,
@@ -119,6 +122,102 @@ def cmd_check(a) -> int:
     return 0
 
 
+def cmd_lease(a) -> int:
+    """Request bandwidth for a device or a flow, for a bounded time."""
+    from aciq.intent import IntentError, LeaseBook, load
+
+    # Loaded from the shared file, not a fresh store: two commands that cannot
+    # see each other prints "no active leases" right after printing a lease id.
+    book = load(a.leases_file)
+    try:
+        lease = book.request(target=a.target, ip=a.ip, flow=a.flow,
+                             weight=a.weight, ttl_s=a.ttl_s)
+    except IntentError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    d = lease_to_dict(lease, book.now())
+    print(f"{d['id']}  {d['target']:6}  {d['ip'] or d['flow']}  "
+          f"weight={d['weight']:.2f}  expires in {d['expires_in']:.0f}s")
+    return 0
+
+
+def cmd_leases(a) -> int:
+    """List live leases, from the same file cmd_lease writes."""
+    from aciq.intent import load
+
+    book = load(a.leases_file)
+    live = book.active()
+    if not live:
+        print("no active leases")
+        return 0
+    now = book.now()
+    for d in (lease_to_dict(l, now) for l in live):
+        print(f"{d['id']}  {d['target']:6}  {d['ip'] or d['flow']:<24}  "
+              f"weight={d['weight']:.2f}  expires in {d['expires_in']:.0f}s")
+    return 0
+
+
+def cmd_dashboard(a) -> int:
+    """Render the read-only dashboard from a run's samples.jsonl."""
+    from aciq.dashboard import write_snapshot
+
+    src = Path(a.samples)
+    if not src.is_file():
+        print(f"error: no such file: {src}", file=sys.stderr)
+        return 2
+    rows = [json.loads(line) for line in src.read_text().splitlines() if line.strip()]
+    out = write_snapshot(rows, a.out,
+                         subtitle=a.subtitle or f"source: {src.name}",
+                         refresh_s=a.refresh)
+    print(f"wrote {out} ({len(rows)} samples)")
+    return 0
+
+
+def cmd_serve(a) -> int:
+    """Run the M7 intent API, serving the M8 dashboard at /."""
+    from aciq.api import serve
+    from aciq.dashboard import build_from_samples
+    from aciq.intent import load
+
+    # Rows come from a run on disk, not from a live collector. This command does
+    # not own the experiment: it serves intents alongside a view of a run, so
+    # that a lease can be requested while looking at the traffic it affects.
+    # Rendering an empty dashboard instead would look like a broken page rather
+    # than an honest "no samples given".
+    rows = []
+    src = Path(a.samples) if a.samples else None
+    if src is not None and src.is_file():
+        rows = [json.loads(line) for line in
+                src.read_text().splitlines() if line.strip()]
+    elif src is not None:
+        print(f"error: no such file: {src}", file=sys.stderr)
+        return 2
+
+    def dashboard():
+        return build_from_samples(
+            rows, subtitle=(f"source: {src.name}" if src else "no samples"),
+            refresh_s=a.refresh)
+
+    def status():
+        st = {"samples": len(rows),
+              "sample_source": str(src) if src else None}
+        return st
+
+    book = load(a.leases_file)
+    httpd = serve(book, host=a.host, port=a.port,
+                  status_provider=status, dashboard_provider=dashboard)
+    print(f"M7 intent API on http://{a.host}:{a.port}")
+    print(f"  POST /intent   DELETE /intent/<id>   GET /intent   GET /status")
+    print(f"  M8 dashboard:  http://{a.host}:{a.port}/")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nstopped")
+    finally:
+        httpd.server_close()
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="aciqctl", description="operator commands for ACIQ")
@@ -151,6 +250,39 @@ def build_parser() -> argparse.ArgumentParser:
     lst.set_defaults(func=cmd_list)
 
     ck = sub.add_parser("check", help="what correction applies to a flow?")
+
+    lz = sub.add_parser("lease", help="request bandwidth (M7)")
+    lz.add_argument("--target", choices=("device", "flow"), default="device")
+    lz.add_argument("--ip", default=None, help="device target")
+    lz.add_argument("--flow", default=None, help="flow target, src:sport->dst:dport")
+    lz.add_argument("--weight", type=float, default=0.4)
+    lz.add_argument("--ttl-s", type=float, default=90.0, dest="ttl_s")
+    lz.add_argument("--leases-file", default=str(DEFAULT_LEASES_PATH),
+                    dest="leases_file")
+    lz.set_defaults(func=cmd_lease)
+
+    ls = sub.add_parser("leases", help="list live leases (M7)")
+    ls.add_argument("--leases-file", default=str(DEFAULT_LEASES_PATH),
+                    dest="leases_file")
+    ls.set_defaults(func=cmd_leases)
+
+    db = sub.add_parser("dashboard", help="render the read-only dashboard (M8)")
+    db.add_argument("--samples", required=True, help="path to samples.jsonl")
+    db.add_argument("--out", default="dashboard.html")
+    db.add_argument("--subtitle", default=None)
+    db.add_argument("--refresh", type=int, default=0,
+                    help="seconds between page reloads; 0 disables")
+    db.set_defaults(func=cmd_dashboard)
+
+    sv = sub.add_parser("serve", help="run the intent API + dashboard (M7/M8)")
+    sv.add_argument("--host", default="127.0.0.1")
+    sv.add_argument("--port", type=int, default=8080)
+    sv.add_argument("--refresh", type=int, default=5)
+    sv.add_argument("--samples", default=None,
+                    help="samples.jsonl to chart on the dashboard")
+    sv.add_argument("--leases-file", default=str(DEFAULT_LEASES_PATH),
+                    dest="leases_file")
+    sv.set_defaults(func=cmd_serve)
     flow_args(ck)
     ck.set_defaults(func=cmd_check)
     return p
