@@ -10,6 +10,27 @@ data/baselines/*/
 testbed/logs/
 *.log
 
+# ...but the evidence is allowed to keep its logs.
+#
+# Order matters and this was silently wrong: `*.log` came *after* the
+# `!data/baselines/v0/**` negation, and a later pattern wins. So every v0 log was
+# excluded while SHA256SUMS still listed it -- the v0 README tells a reader to
+# run `sha256sum -c SHA256SUMS`, and on a fresh clone that failed on 36 of 77
+# files. The published repository's own documented verification step did not
+# work.
+!data/baselines/v0/**/*.log
+!data/baselines/v0/**/*.sink.log
+
+# The measured matrix and the first enforced runs are the project's evidence,
+# the same argument as v0. Kept out of the working tree's transient output, not
+# out of version control.
+!data/matrix6/
+!data/matrix6/**
+!data/matrix6/**/*.log
+!data/enforced/
+!data/enforced/**
+!data/enforced/**/*.log
+
 # Python
 __pycache__/
 *.py[cod]
