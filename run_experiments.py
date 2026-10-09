@@ -76,7 +76,22 @@ def main() -> int:
                          "to the v0 baseline)")
     ap.add_argument("--results-dir", default=str(RESULTS_DIR))
     ap.add_argument("--report", default=None, help="write the Markdown report here")
+    ap.add_argument("--report-only", action="store_true",
+                    help="rebuild the report from existing artefacts and exit. "
+                         "No testbed, no runs, no root-adjacent setup -- the "
+                         "report is pure post-processing, so re-deriving it after "
+                         "a reporting fix should not mean re-running an hour of "
+                         "experiments.")
     args = ap.parse_args()
+
+    # Ahead of every testbed step, including cleanup: rebuilding a report touches
+    # nothing, and asking for it should not shell out to sudo.
+    if args.report_only:
+        out = Path(args.report) if args.report else ROOT / "data" / "REPORT.md"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(build_report(Path(args.results_dir)))
+        print(f"report rebuilt from {args.results_dir} -> {out}")
+        return 0
 
     if not args.no_setup:
         print("=== building testbed ===")
