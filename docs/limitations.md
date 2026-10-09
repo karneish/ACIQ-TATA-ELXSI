@@ -283,6 +283,20 @@ file. Charts update by `<meta>` refresh rather than a websocket. A dashboard tha
 needs the network stops working on exactly the air-gapped host it would be
 demonstrated on.
 
+## 5g. Gate re-verified against current code (2026-10-09)
+
+`testbed/logs/gate-20261009-204709.log` — **20 PASS, 1 MEASURED, 0 FAIL**, no
+errors or tracebacks.
+
+This mattered: the gate's last run predated three commits that changed
+`aciq/closedloop.py` and `aciq/harness.py`, which is the path the gate exists to
+test. A green gate on stale code is not evidence about the current code, and the
+alternative — assuming it still passed — is how a regression reaches a
+demonstration.
+
+The log itself is gitignored (`.gitignore` line 10, `testbed/logs/`), so this
+note is the record.
+
 ## 6. There is no per-user or per-device fairness
 
 `8:4:2` allocates bandwidth **per class**. Fairness within a class is delegated

@@ -19,7 +19,7 @@ to let a user grant a **time-boxed lease** to one device or flow.
 
 | | |
 |---|---|
-| Testbed gate | **20 / 20 checks passing** |
+| Testbed gate | **20 PASS + 1 MEASURED**, 0 FAIL — re-run 2026-10-09 against current code |
 | Unit tests | **585 passing**, none requiring root |
 | Modules built | M1 (classifier), M2 (capacity), M3 (policy), M4 (tc enforcement), M5 (metrics), M6 (harness), M7 (intent API), M8 (dashboard), M9 (shield/rollback), M10 (report) |
 | Modules **not** built | — |
