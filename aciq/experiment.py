@@ -191,6 +191,10 @@ class ExperimentRunner:
         #: having looked at traffic.
         self._enf_ticks = 0
         self._enf_steered = 0
+        #: Ticks whose enforcement step raised. Non-zero means the kernel refused
+        #: something and the sample's empty verdicts are a failure, not an absence.
+        self._enf_errors = 0
+        self._enf_last_error: str | None = None
 
     def run_paths(self, scenario: str, system: SystemSpec, mode: CapacityMode,
                   seed: int) -> RunPaths:
@@ -258,6 +262,10 @@ class ExperimentRunner:
         # run 2 onwards.
         self._enf_ticks = 0
         self._enf_steered = 0
+        #: Ticks whose enforcement step raised. Non-zero means the kernel refused
+        #: something and the sample's empty verdicts are a failure, not an absence.
+        self._enf_errors = 0
+        self._enf_last_error: str | None = None
         #: When M2 last produced a *new* reading, and when the link was last
         #: reconfigured. Their comparison decides whether the final estimate
         #: describes the end of the run or a moment before it changed.
@@ -464,7 +472,23 @@ class ExperimentRunner:
         # is the residue gate check 20 exists to catch, and the reason
         # enforcement cannot be a write-and-forget.
         enforcement_note = self._enforcement_note(enforcement_on, enforcement_why)
+        if self._enf_errors:
+            enforcement_note += (f"; {self._enf_errors} tick(s) raised during "
+                                 f"enforcement, last: {self._enf_last_error}")
         lease_note = bool(self._lease_ips) and enforcement_on
+        # The distinction that was missing when this was first written: a lease
+        # that is *held* and a lease that is *installed* are different states.
+        # Held-but-not-installed means class 1:40 was never created, so every
+        # per-flow filter points at a class that does not exist and the run
+        # steers nothing while reporting "leases held".
+        lease_in_effect = bool(getattr(self.harness, "_lease_in_effect", False))
+        _lease_note = f"leases held for {', '.join(self._lease_ips)} "\
+            f"(weight {self._lease_weight:.2f})"
+        if not lease_in_effect:
+            _lease_note = (f"leases HELD for {', '.join(self._lease_ips)} but NOT "
+                           f"INSTALLED -- the shield refused the rate plan, so "
+                           f"class 1:40 was never created and no per-flow filter "
+                           f"could steer to it")
         if enforcement_on:
             self.harness.disable_enforcement()
             self._tracker = self._ct = None
@@ -514,7 +538,25 @@ class ExperimentRunner:
             text = self._ct.read()
         except Exception:
             # Losing one poll must not kill the run; the next tick re-reads.
+            # Narrow on purpose. This was a bare `except Exception`, which also
+            # swallowed BridgeError from a failed `tc filter add` -- so a filter
+            # the kernel rejected looked exactly like a tick that found no flows,
+            # and the run reported verdicts while steering nothing.
+            self._enf_errors += 1
             return {}
+        try:
+            return self._steer(ports, now, text)
+        except Exception as e:
+            # Recorded rather than raised: a run must finish so that its
+            # artefacts exist, but the failure has to be visible in them. A tick
+            # that silently does nothing is exactly how the leased run looked
+            # healthy while the kernel refused every filter install.
+            self._enf_errors += 1
+            self._enf_last_error = f"{type(e).__name__}: {e}"
+            return {}
+
+    def _steer(self, ports, now: float, text: str) -> dict:
+        """One tick's work: classify every flow this run owns and steer it."""
         self._tracker.observe(text, now)
         self._enf_ticks += 1
 

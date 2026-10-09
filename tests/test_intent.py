@@ -838,6 +838,39 @@ class TestRealArtefactsRender(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+class _Empty:
+    def snapshot(self):
+        return CounterSnapshot(t=time.monotonic(), by_class={})
+
+
+class _Ct:
+    def __init__(self, out=""):
+        self._out = out
+
+    def read(self):
+        return self._out
+
+
+class _NoLeases:
+    def active(self, now=None):
+        return ()
+
+    def to_policy_lease(self):
+        return None
+
+    def for_flow(self, *a, **k):
+        return None
+
+    def now(self):
+        return time.time()
+
+
+def _RAISER(argv):
+    if "-j" in argv:
+        return 0, "[]", ""
+    raise RuntimeError("Boom: tc filter add refused")
+
+
 class TestLeasesInARun(unittest.TestCase):
     """`--lease` on the driver, so M7 can finally be measured rather than only
     unit-tested.
@@ -929,3 +962,119 @@ class TestLeasesInARun(unittest.TestCase):
                  / "config.json").read_text())
             self.assertEqual(cfg["lease_ips"], [])
             self.assertIsNone(cfg["lease_weight"])
+
+
+class TestALeaseThatNeverLands(unittest.TestCase):
+    """Three bugs the first leased run found, in one place.
+
+    The run reported `leases held for 10.0.1.2` and steered nothing. Class 1:40
+    was never created because the shield's 5-second change window refused the
+    rate plan at t=0, and an early return on "the lease has not changed" then
+    stopped it ever retrying. Every per-flow filter pointed at a class that did
+    not exist.
+    """
+
+    def _harness(self):
+        from aciq.harness import Harness
+        h = Harness(runner=FakeRunner(auto_readback=True), clock=lambda: self.t[0])
+        h.reset_for_run()
+        h.set_lease(None, 100.0)
+        h.apply_system(ACIQ, 100.0)
+        return h
+
+    def setUp(self):
+        self.t = [1000.0]
+        self.lease = Lease(id="l1", target="device", ip="10.0.1.2", weight=0.5)
+
+    def test_the_first_attempt_is_rate_limited_by_the_change_window(self):
+        h = self._harness()
+        self.assertFalse(h.sync_lease(self.lease, 100.0))
+        self.assertIn("rate_limited", h.txn.last_reason)
+
+    def test_and_it_is_retried_until_it_lands(self):
+        """Not retried was the bug: an early return on "unchanged" made the
+        vetoed apply permanent for the whole run."""
+        h = self._harness()
+        h.sync_lease(self.lease, 100.0)
+        h.sync_lease(self.lease, 100.0)
+        self.assertFalse(h._lease_in_effect)
+        self.t[0] += 10.0
+        self.assertTrue(h.sync_lease(self.lease, 100.0))
+        self.assertTrue(h._lease_in_effect)
+        self.assertEqual(h.txn.last_reason, "")
+
+    def test_and_then_it_stops_rebuilding(self):
+        """A tc rebuild is several netlink transactions. Once in effect, an
+        unchanged lease must cost nothing."""
+        h = self._harness()
+        h.sync_lease(self.lease, 100.0)
+        self.t[0] += 10.0
+        h.sync_lease(self.lease, 100.0)
+        before = len(h.txn.audit) if hasattr(h.txn, "audit") else None
+        for _ in range(5):
+            self.t[0] += 1.0
+            self.assertTrue(h.sync_lease(self.lease, 100.0))
+        if before is not None:
+            self.assertEqual(len(h.txn.audit), before, "kept rebuilding")
+
+    def test_changing_the_weight_reapplies(self):
+        h = self._harness()
+        h.sync_lease(self.lease, 100.0)
+        self.t[0] += 10.0
+        h.sync_lease(self.lease, 100.0)
+        bigger = Lease(id="l2", target="device", ip="10.0.1.2", weight=0.9)
+        self.t[0] += 10.0
+        self.assertTrue(h.sync_lease(bigger, 100.0))
+        self.assertEqual(h._lease.weight, 0.9)
+
+    def test_expiry_puts_the_lease_out_of_effect(self):
+        from aciq.intent import LeaseBook
+        # ttl 60, not 10: the apply is rate-limited for the first 5 s, so a
+        # short TTL would lapse before it could ever land.
+        book = LeaseBook(clock=lambda: self.t[0])
+        book.request(target="device", ip="10.0.1.2", ttl_s=60)
+        h = self._harness()
+        h.enable_leases(book)
+        h.sync_lease(book.to_policy_lease(), 100.0)
+        # apply_system ran a moment ago, so the first apply is rate-limited --
+        # the same refusal this whole test class is about.
+        self.assertFalse(h._lease_in_effect)
+        self.t[0] += 10.0
+        h.sync_lease(book.to_policy_lease(), 100.0)
+        self.assertTrue(h._lease_in_effect)
+        # Past the lease's TTL *and* the shield's change window: the revert is a
+        # policy change too, so it is rate-limited like any other.
+        self.t[0] += 70.0
+        h.sync_lease(book.to_policy_lease(), 100.0)
+        self.assertIsNone(h._lease, "an expired lease stayed in the plan")
+        self.assertFalse(h._lease_in_effect)
+
+    def test_a_tick_that_raises_is_counted_not_swallowed(self):
+        """The bare `except Exception` also caught BridgeError, so a filter the
+        kernel refused looked like a tick that found no flows."""
+        from aciq.bridge import BridgeError
+        runner = ExperimentRunner(
+            launcher=_LiveishLauncher(),
+            harness=Harness(runner=FakeRunner(auto_readback=True), clock=lambda: 0.0),
+            results_dir=Path("/tmp"), real_time=False, tick_s=1.0,
+            source=_Empty(), bridge_executor=_Exec())
+        from aciq.flowtrack import FlowTracker
+        ct = ("udp 17 29 src=203.0.113.2 dst=10.0.1.2 sport=1 dport=7001 "
+              "packets=9000 bytes=9000000 [UNREPLIED] src=10.0.1.2 "
+              "dst=203.0.113.2 sport=7001 dport=1 packets=0 bytes=0 "
+              "mark=0 use=1\n"
+              "udp 17 29 src=203.0.113.2 dst=10.0.1.2 sport=1 dport=7001 "
+              "packets=9500 bytes=9500000 [UNREPLIED] src=10.0.1.2 "
+              "dst=203.0.113.2 sport=7001 dport=1 packets=0 bytes=0 "
+              "mark=0 use=1\n")
+        runner._tracker = FlowTracker()
+        runner._tracker.observe(ct, 1.0)
+        runner._tracker.observe(ct, 2.0)
+        runner._ct = _Ct(ct)
+        runner.harness.enable_enforcement(executor=_RAISER)
+        runner.harness._lease_book = _NoLeases()
+        runner.harness._lease_book.for_flow = lambda *a, **k: None
+        out = runner._enforcement_step([("tv1", 7001, None)], 3.0)
+        self.assertEqual(out, {})
+        self.assertEqual(runner._enf_errors, 1)
+        self.assertIn("Boom", runner._enf_last_error)

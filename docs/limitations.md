@@ -282,7 +282,38 @@ and a flow between two other hosts still does not.
 
 A second, cosmetic bug in the same run: `lease_note` was computed and never added
 to `result.json`'s notes, so even the intended diagnostic was invisible. Both are
-fixed. **The measurement has still not been repeated.**
+fixed. **A **third** bug then stopped it working, and this one is about the shield rather
+than the lease:
+
+    $ sudo python3 run_experiments.py ... --lease 10.0.1.2 --results-dir data/leased2
+           per-flow enforcement ON (2/41 ticks changed a filter)
+           leases held for 10.0.1.2 (weight 0.50)
+    # artefacts:
+    #   verdicts seen: [leased, leased, leased, leased]   <- every flow, every tick
+    #   classes with traffic: adaptive_video 0.00, bulk_transfer 24.71, ...
+    #   leased_flow: absent
+
+The verdict was right and nothing steered. `apply_system` has just changed policy,
+so the shield's 5-second change window refused the lease's rate plan at t=0:
+
+    sync_lease ok : False
+    last_reason   : 'rate_limited: 0.00s since last change, minimum 5.0s'
+
+Class `1:40` was therefore never created, every per-flow filter pointed at a class
+that did not exist, and the run reported the lease as *held* -- which is true,
+and not the same as *installed*.
+
+`sync_lease` now retries while the shield is rate-limiting, and stops rebuilding
+once the lease is in effect. "Unchanged but not yet applied" is a third state,
+distinct from both "unchanged and applied" and "changed".
+
+Two more bugs surfaced while fixing it: a bare `except Exception` around the
+enforcement tick also swallowed `BridgeError`, so a filter the kernel refused
+looked identical to a tick that found no flows; and `_lease_in_effect` read
+`ok` from the apply, so applying a plan with no leased class -- which succeeds
+trivially -- reported a lease in effect after every expiry.
+
+**The measurement has still not been repeated.****
 
 The default TTL is the whole run, so the measurement is of the effect rather than
 of the expiry; `--lease-ttl-s` makes a shorter lease if the expiry is what you

@@ -193,6 +193,10 @@ class Harness:
         #: M7's lease book. None until enable_leases(), so a run that never
         #: opens the intent API behaves exactly as it did before M7 existed.
         self._lease_book = None
+        #: Whether the lease currently held is actually installed in the tree.
+        #: Distinct from "a lease is held": the shield can refuse the plan, and a
+        #: filter pointing at a class that was never created steers nothing.
+        self._lease_in_effect = False
 
     # ---------------- enforcement: opt-in, see aciq/enforce.py ----------------
     @property
@@ -269,9 +273,10 @@ class Harness:
         # that is a fallback for the window before the first measurement -- not
         # the input to a decision.
         if self._lease_book is not None:
-            # Only on change, and through txn.apply, so the shield's vetoes still
-            # gate it. This is what makes a lease *reserve* bandwidth rather than
-            # merely reclassify into a queue that has none.
+            # Every tick, and through txn.apply, so the shield gates it. This is
+            # what makes a lease *reserve* bandwidth rather than merely
+            # reclassify into a queue that has none. Cheap once applied: the
+            # call is a no-op while the lease is unchanged and already in effect.
             self.sync_lease(self._lease_book.to_policy_lease(),
                             self._configured_capacity)
         measured = self._estimator.current.mbps
@@ -336,26 +341,41 @@ class Harness:
         self._current_plan = build_plan(capacity_mbps, lease)
 
     def sync_lease(self, lease: Lease | None, capacity_mbps: float) -> bool:
-        """Re-plan when the lease actually changed. Returns whether it did.
+        """Make the tree match the lease. Returns whether the lease is in effect.
 
         Applied immediately rather than at the next capacity event: a lease is a
         person asking for something *now*, and waiting for the next M2 reading
         would mean waiting up to a sampling interval for a deliberate action.
 
-        Rebuilding only on change matters for the same reason re-marking an
-        unchanged class does: a tc rebuild is several netlink transactions, and
-        doing one per tick per lease would be the whole budget.
-
         Goes through `txn.apply`, so the shield's vetoes still apply. A lease
         large enough to break an invariant is refused, not forced.
+
+        **Retries while the shield is rate-limiting.** This is the bug the first
+        leased run found. `apply_system` has just changed policy, so the shield's
+        5-second change window rejects the lease plan at t=0 -- and an early
+        return on "the lease has not changed" then meant it was never retried.
+        Class 1:40 was never created, the per-flow filter pointed at a class that
+        did not exist, and the run reported the lease as held while steering
+        nothing. Unchanged-but-not-yet-applied is a third state, distinct from
+        both "unchanged and applied" and "changed".
         """
-        if (lease.id if lease else None) == (self._lease.id if self._lease else None) \
-                and (lease.weight if lease else None) == (self._lease.weight if self._lease else None):
-            return False
-        self.set_lease(lease, capacity_mbps)
+        same = ((lease.id if lease else None) == (self._lease.id if self._lease else None)
+                and (lease.weight if lease else None)
+                == (self._lease.weight if self._lease else None))
+        if same and self._lease_in_effect:
+            return True
+
+        if not same:
+            self.set_lease(lease, capacity_mbps)
         if self._current_plan is None:
+            self._lease_in_effect = False
             return False
-        return bool(self.txn.apply(self._current_plan, now=self.clock()).ok)
+        ok = bool(self.txn.apply(self._current_plan, now=self.clock()).ok)
+        # `and lease is not None`, because applying a plan that has no leased class
+        # succeeds trivially. Reading `ok` alone reported a lease "in effect" when
+        # there was no lease at all -- which is the state after every expiry.
+        self._lease_in_effect = ok and lease is not None
+        return self._lease_in_effect
 
     # ---------------- closed loop: M2 -> M3 -> M4 ----------------
     def adapt_step(self, counters: dict[TrafficClass, ClassCounters], dt: float,
