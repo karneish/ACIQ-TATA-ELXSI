@@ -313,7 +313,37 @@ looked identical to a tick that found no flows; and `_lease_in_effect` read
 `ok` from the apply, so applying a plan with no leased class -- which succeeds
 trivially -- reported a lease in effect after every expiry.
 
-**The measurement has still not been repeated.****
+## 5h. The lease, measured (2026-10-09)
+
+Third attempt, and it works. `data/leased3/`:
+
+| class | peak | mean |
+|---|---|---|
+| **leased_flow** | **24.85 Mbps** | **12.92 Mbps** |
+| adaptive_video | 0.00 | 0.00 |
+| bulk_transfer | 0.00 | 0.00 |
+
+Every flow routed to class `1:40` — which is why the other three are zero: the
+lease is on the client's address, and in this direction the client is the
+*destination* of all four flows.
+
+Cross-checked against the generators' own byte counts, as the first enforced run
+was:
+
+    generators sent 71,638,750 B over 40 s = 14.33 Mbps
+    leased class carried                    = 13.58 Mbps mean over 39 live ticks
+
+The ~5% gap is tick-boundary sampling: the counter is read once per second, so
+traffic in the gaps belongs to no tick, while the generators' figure averages
+the whole 40 s. Two independent measurements agreeing to within sampling error is
+what makes this evidence rather than an assertion.
+
+So: **routing a leased flow to its class is measured.** What is *not* measured is
+the other half of M7's success condition -- that the lease **visibly raises
+throughput**. This run had no capacity drop, so the link carried ~14 Mbps of
+100 and nothing was contended; a lease cannot raise throughput on a link that was
+never the constraint. That needs a `--drop-at` run with and without `--lease`,
+compared. Not yet done.**
 
 The default TTL is the whole run, so the measurement is of the effect rather than
 of the expiry; `--lease-ttl-s` makes a shorter lease if the expiry is what you

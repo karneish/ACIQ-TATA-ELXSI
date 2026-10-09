@@ -20,7 +20,7 @@ to let a user grant a **time-boxed lease** to one device or flow.
 | | |
 |---|---|
 | Testbed gate | **20 PASS + 1 MEASURED**, 0 FAIL — re-run 2026-10-09 against current code |
-| Unit tests | **585 passing**, none requiring root |
+| Unit tests | **595 passing**, none requiring root |
 | Modules built | M1 (classifier), M2 (capacity), M3 (policy), M4 (tc enforcement), M5 (metrics), M6 (harness), M7 (intent API), M8 (dashboard), M9 (shield/rollback), M10 (report) |
 | Modules **not** built | — |
 | Measured runs | [`data/matrix6/`](data/matrix6/) — 54 runs, 6 seeds/config |
@@ -44,7 +44,12 @@ Read this before quoting a number.
    runs in `data/matrix6/` carry a **stale** estimate; each `result.json` says so.
 4. **Scenario 3 never exercises M2 at all** — ~14.3 Mbps on a 20 Mbps link is
    71% utilisation, so those runs report `estimator=None, policy_changes=0`.
-5. **Classification accuracy is measured on self-generated traffic**, and the
+5. **A lease routes its flow to class `1:40`; that it raises throughput is
+   unmeasured.** Measured: 12.92 Mbps mean in the leased class, cross-checked
+   against the generators' byte counts. Unmeasured because the measured run had
+   no capacity drop, so the link was never contended — a lease cannot raise
+   throughput on a link that was never the constraint.
+6. **Classification accuracy is measured on self-generated traffic**, and the
    link is an HTB token-bucket emulation rather than real access hardware.
 
 Full per-module audit with raw evidence: [`docs/WIRING_AUDIT.md`](docs/WIRING_AUDIT.md).

@@ -122,8 +122,11 @@ Each contract states **inputs / outputs / failure handling / success condition**
 
 **Delivered:** `aciq/intent.py` (lifecycle), `aciq/api.py` (HTTP), `--lease` on the driver.
 **Deviation:** stdlib `http.server`, not FastAPI — see `PLAN.md`.
-**Not yet measured:** the success condition below needs a live run. `--lease IP`
-now makes that possible; `docs/limitations.md` §5e records the gap.
+**Measured:** routing a leased flow to class `1:40`, 12.92 Mbps mean, cross-checked
+against the generators' byte counts (`docs/limitations.md` §5h).
+**Not yet measured:** the "visibly raises throughput" half of the success
+condition. The measured run had no capacity drop, so the link was never
+constrained. Needs a `--drop-at` run with and without `--lease`.
 
 | | |
 |---|---|
