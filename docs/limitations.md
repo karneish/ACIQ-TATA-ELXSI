@@ -174,6 +174,76 @@ offered, M2 never saw saturation and nothing had to adapt. The enforced
 per-flow path *is* exercised -- video was measured at 13.96 Mbps mean in class
 1:20 -- but nothing about capacity adaptation was.
 
+## 5d. The 6-seed matrix (2026-10-08), and two reporting bugs it exposed
+
+`data/matrix6/` -- 54 runs, 3 scenarios x 3 systems x seeds 42-47, 100 -> 20 Mbps
+drop at t=20 s. Reproduce:
+
+    sudo python3 run_experiments.py \
+      --scenario s1_iso_during_call --scenario s2_wan_drop \
+      --scenario s3_tv_and_gaming --enforce --seeds 6 --drop 20 --drop-at 20 \
+      --results-dir data/matrix6 --report data/matrix6/REPORT.md
+
+### The report was showing ONE seed under a "54 runs" header
+
+`latency_table` assigned per run directory, so each seed overwrote the last. s1's
+ACIQ row read p99=18.461 ms. The six seeds were:
+
+    2.665   1.443   2.147   20.104   2.538   18.461
+
+Two of six hit ~20 ms and the reported number was one of them. The verdict
+bullets were one seed's luck. Fixed: cells are mean (min-max) with n stated, and
+the seed travels with each value so pairs can be formed.
+
+### No p-value had ever been computed
+
+`build_report` only ever *withdrew the caveat* once 6 runs existed. Nothing
+implemented the other branch, so at n=6 the warning vanished and no number
+appeared -- silence that reads as significance.
+
+`exact_wilcoxon` is now implemented (two-sided signed-rank, exact, by
+enumerating 2^n sign flips; no scipy on this machine and none needed).
+
+### What the result actually says
+
+| comparison | metrics | verdict |
+|---|---|---|
+| vs `b0_fifo` | p50, p95, p99, loss | p = 0.0312 -- significant |
+| vs `b1_cake95` | p50 0.5625, p95 0.0625, p99 0.4375, jitter 0.8438 | **not significant** |
+
+13 of 26 comparisons reach p < 0.05, all of them against pfifo. The defensible
+claim is: **ACIQ removes pfifo's bufferbloat decisively, and does not
+significantly differ from cake.** The earlier "ACIQ beats both" was an artefact
+of comparing one seed.
+
+Note p = 0.0312 is 2/64, the floor at n=6. It barely clears 0.05 and cannot go
+lower without more seeds.
+
+### M2 cannot see a drop the workload adapts to
+
+Twelve runs reported `estimator=102.77 Mbps` beside `link_end=20.0`. The
+mechanism, from `samples.jsonl`:
+
+| t | link overlimits/s | bulk goodput | saturated |
+|---|---|---|---|
+| 19.6 | ~7000 | 102.5 Mbps | True |
+| 21.6 | ~190 | 19.9 Mbps | False |
+
+M2 measures capacity only while the link is oversubscribed. When the link drops
+and the workload's own rate falls with it, the link stops being oversubscribed,
+so there is no information left in the counters about capacity -- and the
+pre-drop reading is carried to the end of the run as the estimate. Now labelled
+STALE with both timestamps.
+
+This is defensible as estimator behaviour; it is **not** defensible to print the
+stale number beside the new capacity and say nothing.
+
+### s3 never exercises M2 at all
+
+s3 offers ~14.3 Mbps. Dropped to 20, that is 71% utilisation -- not saturated, so
+M2 never reads the link. All six s3 aciq runs report `estimator=None,
+policy_changes=0`. The per-flow path *is* exercised; the adaptive path is not.
+
 ## 6. There is no per-user or per-device fairness
 
 `8:4:2` allocates bandwidth **per class**. Fairness within a class is delegated
