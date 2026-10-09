@@ -406,18 +406,28 @@ address it.
 that point floors are scaled down proportionally and flagged. Verified by
 running the policy engine, not estimated.
 
-## 9. No aggregation over repeated runs
+## 9. Significance rests on six seeds, and the floor is close
 
-Every result so far is **one seed**. Paired Wilcoxon cannot reach p < 0.05 with
-fewer than 6 pairs — the smallest attainable two-sided p is 2^(1−n), which is
-0.0625 at n=5. Until the matrix runs with ≥6 seeds, only ranges and confidence
-intervals are legitimate, and no significance claim is made.
+**Superseded 2026-10-08.** This section used to say every result was one seed and
+that no significance claim could be made. The matrix in §5d now runs 6 seeds per
+configuration and the report computes an exact paired Wilcoxon.
+
+What still constrains it: the smallest attainable two-sided p at n=6 is 2/64 =
+**0.0312**. It clears 0.05, but only just, and nothing finer is reachable without
+more seeds. A comparison whose true p is 0.04 and one whose true p is 0.001 are
+both reported as 0.0312. **Treat p=0.0312 as "at the floor", not as a measurement
+of how large the effect is.**
 
 ## 10. Out of scope
 
 Wi-Fi airtime and WMM · ISP-side policing · TR-069 / TR-369 · certification ·
 scale above 1 Gbps · encrypted DNS · QUIC port hiding · real CPE hardware ·
-uplink shaping · a dashboard · an intent API · a working correction loop.
+uplink shaping.
+
+**Removed from this list 2026-10-08**, having been built: *a dashboard* (M8,
+`aciq/dashboard.py`), *an intent API* (M7, `aciq/intent.py` + `aciq/api.py`), and
+*a working correction loop* (`aciq/corrections.py`, on the enforcement path
+since `aciq/closedloop.py`).
 
 ## 11. Honest reading of the v0 results
 
