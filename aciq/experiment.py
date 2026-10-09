@@ -491,7 +491,9 @@ class ExperimentRunner:
             policy_changes=self.harness.policy_changes,
             notes=(([] if dropped else ["no capacity drop in this run"])
                    + ([stale_note] if stale_note else [])
-                   + [enforcement_note]),
+                   + [enforcement_note]
+                  + ([f"leases held for {', '.join(self._lease_ips)} "
+                      f"(weight {self._lease_weight:.2f})"] if lease_note else [])),
         )
         paths.write_json("result.json", json.loads(res.to_json()))
         return res

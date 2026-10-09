@@ -257,10 +257,32 @@ testbed: `--enforce` had no `--lease`. That is now built --
       --enforce --lease 10.0.1.2 --seed 42 \
       --results-dir data/leased --report data/leased/REPORT.md
 
--- and the lease path is unit-tested end to end, but **the experiment has not been
-run**, so there is still no evidence that a lease visibly raises throughput. That
-is the success condition in `docs/architecture.md`, and it remains open until the
-command above has been run and its output read.
+The first attempt at that command **failed, and the reason was a real bug.**
+
+    $ sudo python3 run_experiments.py --scenario s3_tv_and_gaming --system aciq \
+        --enforce --lease 10.0.1.2 --seed 42 --results-dir data/leased ...
+    === s3_tv_and_gaming / aciq / adaptive / seed 42 ===
+           per-flow enforcement ON (1/41 ticks changed a filter)
+
+No `leases held` line. Reading the artefacts:
+
+    config lease_ips:      ['10.0.1.2']     <- the flag arrived
+    lease_active values:   [False, True]     <- the lease was genuinely held
+    verdicts seen:         [adaptive, interactive, unclassified]   <- never "leased"
+
+`LeaseStore.for_flow` matched a device lease on `flow.src` only. Traffic runs
+internet -> device, so the device's own address is the **destination**: video
+flows as `src=203.0.113.2 dst=10.0.1.2`. A lease for 10.0.1.2 -- the client's
+own address, the thing a user would naturally name -- matched nothing, while the
+run still reported the lease as held.
+
+So src-only matching is wrong for the dominant direction of a home broadband
+link. Devices now match on either endpoint. Two tests: a downlink flow matches,
+and a flow between two other hosts still does not.
+
+A second, cosmetic bug in the same run: `lease_note` was computed and never added
+to `result.json`'s notes, so even the intended diagnostic was invisible. Both are
+fixed. **The measurement has still not been repeated.**
 
 The default TTL is the whole run, so the measurement is of the effect rather than
 of the expiry; `--lease-ttl-s` makes a shorter lease if the expiry is what you

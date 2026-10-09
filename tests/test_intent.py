@@ -205,6 +205,34 @@ class TestLeaseScope(unittest.TestCase):
         self.assertIsNotNone(st.for_flow(flow(sport=1), c.t))
         self.assertIsNotNone(st.for_flow(flow(sport=99999), c.t))
 
+    def test_a_device_lease_matches_on_the_destination_too(self):
+        """The bug the first leased run found.
+
+        Traffic runs internet -> device, so a device's own address is the
+        *destination*. Matching on source only meant a lease for 10.0.1.2 -- the
+        client's address, the obvious thing to name -- matched nothing, and the
+        run reported the lease as held and steered nothing at all.
+        """
+        c = Clock()
+        st, _ = LeaseStore(_now=c).request("device", ip="10.0.1.2", ttl_s=60)
+        downlink = flow(ip="203.0.113.2", sport=1111, dst="10.0.1.2", dport=7001)
+        self.assertIsNotNone(st.for_flow(downlink, c.t),
+                              "downlink did not match a device lease")
+
+    def test_a_device_lease_matches_uplink_as_well(self):
+        c = Clock()
+        st, _ = LeaseStore(_now=c).request("device", ip="10.0.1.2", ttl_s=60)
+        uplink = flow(ip="10.0.1.2", sport=5000, dst="203.0.113.2", dport=80)
+        self.assertIsNotNone(st.for_flow(uplink, c.t))
+
+    def test_a_device_lease_still_ignores_a_third_party(self):
+        """Matching either endpoint must not lease traffic that merely involves
+        two other hosts."""
+        c = Clock()
+        st, _ = LeaseStore(_now=c).request("device", ip="10.0.1.2", ttl_s=60)
+        stranger = flow(ip="10.0.1.9", sport=1, dst="10.0.1.3", dport=7001)
+        self.assertIsNone(st.for_flow(stranger, c.t))
+
     def test_a_device_lease_does_not_match_another_host(self):
         c = Clock()
         st, _ = LeaseStore(_now=c).request("device", ip="10.0.1.2", ttl_s=60)
@@ -880,6 +908,17 @@ class TestLeasesInARun(unittest.TestCase):
                 (Path(d) / "s3_tv_and_gaming__aciq__adaptive__seed42"
                  / "config.json").read_text())
             self.assertEqual(cfg["lease_ttl_s"], 5.0)
+
+    def test_the_run_says_it_held_leases(self):
+        """A lease held but never reported is the same failure as a lease held
+        and never applied: the reader cannot tell them apart."""
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r.run("s3_tv_and_gaming", ACIQ, enforce=True, lease_ips=["10.0.1.2"])
+            res = json.loads(
+                (Path(d) / "s3_tv_and_gaming__aciq__adaptive__seed42"
+                 / "result.json").read_text())
+            self.assertIn("leases held for 10.0.1.2", " ".join(res["notes"]))
 
     def test_a_run_without_leases_records_none(self):
         with tempfile.TemporaryDirectory() as d:

@@ -157,10 +157,19 @@ class LeaseStore:
         Device scope wins over flow scope, as in `corrections`: the narrower
         statement is the more deliberate one. Two leases can both match, and
         picking wrongly would hand a specific request to a general one.
+
+        **A device matches on either endpoint, not just the source.** This was
+        src-only, and it is wrong for the dominant direction of a home broadband
+        link: traffic runs internet -> device, so the device's own address is
+        the *destination*. In the testbed, video flows as
+        `src=203.0.113.2 dst=10.0.1.2`, so a lease for 10.0.1.2 -- the client's
+        address, the thing a user would naturally name -- matched nothing at all.
+        The first leased run reported the lease as active and steered nothing,
+        which is exactly the failure this endpoint test exists to catch.
         """
         best: Lease | None = None
         for l in self.active(now):
-            if l.target == "device" and flow.src == l.ip:
+            if l.target == "device" and l.ip in (flow.src, flow.dst):
                 cand, prec = l, 1
             elif l.target == "flow" and l.flow == flow.key:
                 cand, prec = l, 2
