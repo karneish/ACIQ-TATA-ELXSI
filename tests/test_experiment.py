@@ -7,7 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from aciq.experiment import DryLauncher, ExperimentRunner, RunPaths
+from aciq.experiment import (DryLauncher, ExperimentRunner, RunPaths,
+                            device_ip_for)
 from aciq.harness import CapacityMode, Harness, SystemSpec
 from aciq.report import (
     MIN_PAIRS_FOR_PVALUE,
@@ -645,7 +646,8 @@ class _LiveishLauncher:
     def spawn_sink(self, kind, port, log_path):
         return None
 
-    def spawn_source(self, kind, dst, port, duration, dscp, json_out, log_path):
+    def spawn_source(self, kind, dst, port, duration, dscp, json_out, log_path,
+                     src=None):
         return None
 
     def collect(self):
@@ -1039,3 +1041,88 @@ class TestAStaleEstimateSaysSo(unittest.TestCase):
             r = self._runner(d)
             r._est_t, r._cap_t = 2.0, None
             self.assertEqual(r._stale_note(102.0), "")
+
+
+class TestDevicesHaveTheirOwnAddresses(unittest.TestCase):
+    """Every workload used to send from the one address the wan namespace held,
+    so a lease for "a device" matched every flow and the leased class took the
+    whole link. That is true about steering and useless about leases: with one
+    device there is no expense-to-others to measure.
+    """
+
+    def test_each_workload_gets_a_distinct_address(self):
+        addrs = {device_ip_for(i) for i in range(5)}
+        self.assertEqual(len(addrs), 5, f"addresses collide: {addrs}")
+
+    def test_no_workload_gets_the_namespace_address(self):
+        """203.0.113.2 is the wan namespace itself. A lease naming it would be
+        indistinguishable from leasing the whole namespace."""
+        self.assertNotIn("203.0.113.2", {device_ip_for(i) for i in range(9)})
+
+    def test_the_mapping_is_stable_across_calls(self):
+        self.assertEqual(device_ip_for(0), device_ip_for(0))
+        self.assertEqual(device_ip_for(1), device_ip_for(1))
+        self.assertNotEqual(device_ip_for(0), device_ip_for(1))
+
+    def test_a_real_run_gives_every_workload_an_address(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = ExperimentRunner(launcher=DryLauncher(), results_dir=Path(d),
+                                 real_time=False, tick_s=1.0)
+            r.run("s3_tv_and_gaming", SystemSpec.ACIQ)
+            cfg = json.loads(
+                (Path(d) / "s3_tv_and_gaming__aciq__adaptive__seed42"
+                 / "config.json").read_text())
+            devs = cfg["device_ips"]
+            self.assertTrue(devs, "the artefact does not say which IP is which")
+            self.assertEqual(len(set(devs.values())), len(devs),
+                             f"two workloads share an address: {devs}")
+
+    def test_the_real_launcher_passes_the_address_to_the_generator(self):
+        """The address only helps if it reaches the process. A DryLauncher run
+        cannot check this: apply_system fails without tc, so the run returns
+        before it ever launches, and asserting on it would test a path the test
+        never reaches."""
+        import aciq.experiment as E
+        seen = {}
+
+        class _P:
+            def __init__(self, argv, **kw):
+                seen["argv"] = argv
+
+        real_popen, real_open = E.subprocess.Popen, open
+        E.subprocess.Popen = _P
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                launcher = E.NetnsLauncher()
+                launcher._argv = lambda ns, script, *a: ["ip", "netns", "exec",
+                                                        ns, script, *a]
+                launcher.spawn_source("video", "10.0.1.2", 5003, 5.0, None,
+                                      Path(d) / "v.json", Path(d) / "v.log",
+                                      src="203.0.113.4")
+        finally:
+            E.subprocess.Popen = real_popen
+        argv = seen["argv"]
+        self.assertIn("--src", argv, argv)
+        self.assertEqual(argv[argv.index("--src") + 1], "203.0.113.4")
+
+    def test_no_address_is_passed_when_none_is_given(self):
+        """Backwards compatible: setup scripts and gate.sh call the generators
+        without --src and must keep working."""
+        import aciq.experiment as E
+        seen = {}
+
+        class _P:
+            def __init__(self, argv, **kw):
+                seen["argv"] = argv
+
+        real_popen = E.subprocess.Popen
+        E.subprocess.Popen = _P
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                launcher = E.NetnsLauncher()
+                launcher._argv = lambda ns, script, *a: ["ns", script, *a]
+                launcher.spawn_source("video", "10.0.1.2", 5003, 5.0, None,
+                                      Path(d) / "v.json", Path(d) / "v.log")
+        finally:
+            E.subprocess.Popen = real_popen
+        self.assertNotIn("--src", seen["argv"])

@@ -65,9 +65,10 @@ class DryLauncher:
         self.commands.append([kind, "--listen", str(port)])
 
     def spawn_source(self, kind: str, dst: str, port: int, duration: float,
-                     dscp: int | None, json_out: Path, log_path: Path) -> None:
-        self.sources.append([kind, dst, str(port)])
-        self.commands.append([kind, dst, str(port)])
+                     dscp: int | None, json_out: Path, log_path: Path,
+                     src: str | None = None) -> None:
+        self.sources.append([kind, dst, str(port), src])
+        self.commands.append([kind, dst, str(port), src])
 
     def collect(self) -> list:
         return []
@@ -102,11 +103,16 @@ class NetnsLauncher:
         return p
 
     def spawn_source(self, kind: str, dst: str, port: int, duration: float,
-                     dscp: int | None, json_out: Path, log_path: Path) -> subprocess.Popen:
+                     dscp: int | None, json_out: Path, log_path: Path,
+                     src: str | None = None) -> subprocess.Popen:
         """Sending end, always in the wan namespace (the 'internet')."""
         argv = self._argv(self.ns_wan, f"{kind}.py", "--dst", dst,
                           "--port", str(port), "--duration", str(duration),
                           "--json-out", str(json_out))
+        if src:
+            # See device_ip_for: one address per workload, so a lease can match
+            # one device instead of all of them.
+            argv += ["--src", src]
         if dscp is not None:
             argv += ["--dscp", str(dscp)]
         p = subprocess.Popen(argv, stdout=open(log_path, "w"),
@@ -354,6 +360,11 @@ class ExperimentRunner:
             # Recorded because a lease that was requested and silently refused is
             # indistinguishable from one never asked for.
             "lease_ips": list(self._lease_ips),
+            # Which address belongs to which workload. Without this the
+            # artefact says a lease was held for 203.0.113.4 and gives no way
+            # to tell what that was meant to protect.
+            "device_ips": {label: device_ip_for(i)
+                           for i, (label, _p, _d) in enumerate(ports)},
             "lease_weight": self._lease_weight if self._lease_ips else None,
             "lease_ttl_s": self._lease_ttl_s,
         }
@@ -418,10 +429,12 @@ class ExperimentRunner:
         if settle > 0:
             self._settle(paths, ports, sc, settle)
 
-        for (label, port, dscp), w in zip(ports, _expand(sc)):
+        for idx, ((label, port, dscp), w) in enumerate(
+                zip(ports, _expand(sc))):
             self.launcher.spawn_source(
                 w.kind, CLIENT_IP, port, sc.duration_s, w.dscp,
-                paths.file(f"{label}.json"), paths.file(f"{label}.log"))
+                paths.file(f"{label}.json"), paths.file(f"{label}.log"),
+                src=device_ip_for(idx))
 
         # ---- 3. sample
         # Text first: verified by gate check 10. The JSON reader silently
@@ -824,6 +837,27 @@ notes=(([] if dropped else ["no capacity drop in this run"])
 
 def _counters_from_last_frame(collector: MetricsCollector):
     return collector.last_counters()
+
+
+#: First address handed out to a simulated device. 203.0.113.2 is the wan
+#: namespace's own address and is deliberately skipped so "the device" and "the
+#: namespace" cannot be confused for each other in a lease.
+DEVICE_IP_BASE = 3
+
+
+def device_ip_for(index: int) -> str:
+    """The source address for the *index*-th workload.
+
+    The testbed ran every workload from one address, so a lease for "a device"
+    matched every flow and the leased class took the whole link. That is a true
+    statement about steering and a useless one about leases: with one device
+    there is no "expense to others" to measure.
+
+    Assigning by position rather than by name keeps the mapping deterministic --
+    the same scenario always produces the same addresses, so a lease for
+    203.0.113.4 means the same workload across runs.
+    """
+    return f"203.0.113.{DEVICE_IP_BASE + index}"
 
 
 def _expand(sc):

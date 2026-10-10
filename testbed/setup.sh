@@ -27,10 +27,20 @@ ip -n router addr add 10.0.1.1/24   dev veth-lan
 ip -n router addr add 203.0.113.1/24 dev veth-wan
 ip -n client addr add 10.0.1.2/24   dev veth-c
 ip -n wan    addr add 203.0.113.2/24 dev veth-w
+# One address per simulated device. The single 203.0.113.2 meant every workload
+# shared one identity, so a lease for "a device" matched every flow in the run
+# and the leased class took the whole link -- true, but not evidence that a
+# lease protects one device.
+for i in 3 4 5 6 7 8 9 10; do
+  ip -n wan addr add 203.0.113.$i/24 dev veth-w
+done
 ip -n router addr add fd00:1::1/64  dev veth-lan nodad
 ip -n router addr add fd00:2::1/64  dev veth-wan nodad
 ip -n client addr add fd00:1::2/64  dev veth-c    nodad
 ip -n wan    addr add fd00:2::2/64  dev veth-w    nodad
+for i in 3 4 5 6 7 8 9 10; do
+  ip -n wan addr add fd00:2::$i/64 dev veth-w nodad
+done
 
 for p in "router veth-lan" "router veth-wan" "client veth-c" "wan veth-w"; do
   set -- $p

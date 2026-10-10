@@ -68,6 +68,9 @@ def main() -> int:
     ap.add_argument("--port", type=int, default=5003)
     ap.add_argument("--duration", type=float, default=30.0)
     ap.add_argument("--dscp", type=int, default=None)
+    ap.add_argument("--src", default=None,
+                    help="source address to bind, so this workload is a "
+                         "distinct device for lease matching")
     ap.add_argument("--json-out", default=None)
     args = ap.parse_args()
 
@@ -83,7 +86,16 @@ def main() -> int:
     last = None
     for _ in range(20):
         try:
-            s = socket.create_connection((args.dst, args.port), timeout=2)
+            # See udpx.UdpProbe: binding a source is what makes this workload
+            # a distinct device rather than another flow from the one address
+            # the wan namespace holds.
+            if args.src:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(2)
+                s.bind((args.src, 0))
+                s.connect((args.dst, args.port))
+            else:
+                s = socket.create_connection((args.dst, args.port), timeout=2)
             break
         except OSError as e:
             last = e

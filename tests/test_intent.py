@@ -57,7 +57,8 @@ class _LiveishLauncher:
     def spawn_sink(self, kind, port, log_path):
         return None
 
-    def spawn_source(self, kind, dst, port, duration, dscp, json_out, log_path):
+    def spawn_source(self, kind, dst, port, duration, dscp, json_out, log_path,
+                     src=None):
         return None
 
     def collect(self):

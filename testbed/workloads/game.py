@@ -35,6 +35,9 @@ def main() -> int:
     ap.add_argument("--bytes", type=int, default=GAME_BYTES)
     ap.add_argument("--dscp", type=int, default=None)
     ap.add_argument("-6", "--ipv6", action="store_true")
+    ap.add_argument("--src", default=None,
+                    help="source address to bind, so this workload is a "
+                         "distinct device for lease matching")
     ap.add_argument("--json-out", default=None)
     args = ap.parse_args()
 
@@ -53,7 +56,7 @@ def main() -> int:
 
     probe = UdpProbe(
         dst=args.dst, port=args.port, pps=args.pps,
-        payload_bytes=args.bytes, family=family, label="game",
+        payload_bytes=args.bytes, family=family, label="game", src=args.src,
     )
     print(f"game -> {args.dst}:{args.port} for {args.duration}s at {args.pps}pps", flush=True)
     rep = probe.run(args.duration, dscp=args.dscp)

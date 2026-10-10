@@ -114,6 +114,7 @@ class UdpProbe:
         payload_bytes: int = 256,
         family: int = socket.AF_INET,
         label: str = "probe",
+        src: str | None = None,
     ):
         self.dst = dst
         self.port = port
@@ -123,6 +124,12 @@ class UdpProbe:
         self.label = label
 
         self.sock = socket.socket(family, socket.SOCK_DGRAM)
+        # Binding a source is what makes a device addressable at all. The wan
+        # namespace holds one address, so every workload shared it and a lease
+        # for "a device" matched every flow in the run -- which made the lease
+        # look like it took the whole link rather than one device's share.
+        if src:
+            self.sock.bind((src, 0))
         self.addr = (dst, port, 0, 0) if family == socket.AF_INET6 else (dst, port)
 
         self.sent = 0
