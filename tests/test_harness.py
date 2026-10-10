@@ -17,6 +17,7 @@ from aciq.harness import (
     Workload,
     baseline_tree,
 )
+from aciq.intent import Lease
 from aciq.metrics import ClassCounters
 from aciq.model import TrafficClass
 from aciq.tc import render
@@ -412,3 +413,54 @@ class TestRunResult(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestALeaseCannotUndoACapacityDrop(unittest.TestCase):
+    """A lease applied after a drop rebuilt its plan from the capacity the run
+    *started* at, because set_capacity never recorded the capacity it had
+    applied. The lease plan carries the parent rate, so applying it restored the
+    link: measured 15.1-15.4 Mbps against a 10 Mbps cap for the six seconds
+    after the lease committed.
+    """
+
+    def _dropped(self):
+        h = harness()
+        h.apply_system(SystemSpec.ACIQ, 100.0)
+        h.set_capacity(10.0)
+        return h
+
+    def test_the_applied_capacity_is_remembered(self):
+        self.assertEqual(self._dropped()._capacity_mbps, 10.0)
+
+    def test_a_stale_capacity_argument_cannot_restore_the_link(self):
+        h = self._dropped()
+        lease = Lease(id="l1", target="device", ip="203.0.113.4", weight=0.6)
+        h.sync_lease(lease, 100.0)          # the value the run started at
+        self.assertEqual(h._current_plan.capacity_mbps, 10.0,
+                         "the lease plan was built for the pre-drop capacity")
+
+    def test_no_class_is_promised_more_than_the_link_has(self):
+        h = self._dropped()
+        lease = Lease(id="l1", target="device", ip="203.0.113.4", weight=0.6)
+        h.sync_lease(lease, 100.0)
+        # rates are keyed by TrafficClass, not by classid string.
+        children = sum(h._current_plan.rates.values())
+        self.assertLessEqual(children, 10.0,
+                             f"children promised {children} of a 10 Mbps link")
+
+    def test_the_lease_still_gets_its_share_of_the_smaller_link(self):
+        """The point of the fix is to *shrink* the lease, not to lose it."""
+        h = self._dropped()
+        lease = Lease(id="l1", target="device", ip="203.0.113.4", weight=0.6)
+        h.sync_lease(lease, 100.0)
+        self.assertIn(TrafficClass.LEASED, h._current_plan.rates,
+                      "the lease class disappeared from the plan")
+        self.assertGreater(h._current_plan.rates[TrafficClass.LEASED], 0.0)
+
+    def test_a_fresh_harness_still_accepts_the_caller_capacity(self):
+        """_capacity_mbps is None until something is applied; falling back to
+        the argument keeps a fresh harness working."""
+        h = harness()
+        self.assertIsNone(h._capacity_mbps)
+        h.apply_system(SystemSpec.ACIQ, 50.0)
+        self.assertEqual(h._capacity_mbps, 50.0)

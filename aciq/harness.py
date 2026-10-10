@@ -358,6 +358,12 @@ class Harness:
 
     # ---------------- the invariant ----------------
     def set_capacity(self, capacity_mbps: float) -> tuple[tuple[str, ...], ...]:
+        # Remember what the link is *now*. Without this a lease applied later
+        # rebuilt its plan from the capacity the run started at and quietly
+        # restored a dropped link: measured 15.1-15.4 Mbps against a 10 Mbps
+        # cap for six seconds after the lease plan committed.
+        self._capacity_mbps = capacity_mbps
+
         """Change the emulated link capacity: class 1:1, and the children's ceil.
 
         **The parent alone does not bound the link.** HTB lets a child borrow up
@@ -430,6 +436,11 @@ class Harness:
         """Build the full tree for a system. Required for every apply because
         HTB's default class cannot be changed on a live qdisc."""
         self._configured_capacity = capacity_mbps
+        # The capacity actually configured on the link right now. Every path
+        # that applies a capacity passes through here, which is what makes it
+        # safe for a later lease rebuild to trust this rather than the value the
+        # run started at.
+        self._capacity_mbps = capacity_mbps
         if system is SystemSpec.ACIQ:
             plan = self._current_plan or build_plan(capacity_mbps, self._lease)
             # Record the plan that was applied. `apply_system` built it, handed it
@@ -457,12 +468,16 @@ class Harness:
         return True
 
     _current_plan: RatePlan | None = None
+    #: The capacity last applied to the tree. None until the first one, which is
+    #: what lets sync_lease fall back to the caller's value on a fresh harness.
+    _capacity_mbps: float | None = None
     _lease: Lease | None = None
     _tree = None
 
     def set_lease(self, lease: Lease | None, capacity_mbps: float) -> None:
         self._lease = lease
         self._current_plan = build_plan(capacity_mbps, lease)
+        self._capacity_mbps = capacity_mbps
 
     def sync_lease(self, lease: Lease | None, capacity_mbps: float) -> bool:
         """Make the tree match the lease. Returns whether the lease is in effect.
@@ -501,7 +516,13 @@ class Harness:
             return True
 
         if not same:
-            self.set_lease(lease, capacity_mbps)
+            # The caller's capacity is the one the run *started* at. Once a drop
+            # has been applied, rebuilding the lease plan from it would undo the
+            # drop -- the plan carries the parent rate. The link's current
+            # capacity is the only correct input here.
+            effective = (self._capacity_mbps
+                         if self._capacity_mbps is not None else capacity_mbps)
+            self.set_lease(lease, effective)
         if self._current_plan is None:
             self._lease_in_effect = False
             return False
