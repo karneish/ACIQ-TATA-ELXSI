@@ -288,6 +288,21 @@ class Harness:
 
     #: What was last written to class 1:1. A fallback for the window before M2
     #: has a reading, never the input to a classification.
+    def _invalidate_enforcer_filters(self) -> None:
+        """Tell the bridge its filters are gone, after a rebuild.
+
+        Best effort by design: the enforcer may not exist, and a failure here
+        must not stop a capacity change from being applied. The alternative --
+        leaving stale state -- is a silent no-op on the next mark, which is the
+        bug this exists to prevent.
+        """
+        if self._enforcer is None:
+            return
+        try:
+            self._enforcer.bridge.invalidate()
+        except Exception:
+            pass
+
     _configured_capacity: float = 100.0
 
     # ---------------- the invariant ----------------
@@ -359,6 +374,17 @@ class Harness:
         nothing. Unchanged-but-not-yet-applied is a third state, distinct from
         both "unchanged and applied" and "changed".
         """
+        # No lease and nothing installed: there is nothing to do, and saying so
+        # is the whole fix. `enforce()` calls this every tick, so an "unchanged"
+        # that still applies rebuilds the entire qdisc once the shield's window
+        # opens -- and a rebuild destroys every per-flow flower filter on
+        # parent 1:, while the bridge's own state still says they are installed.
+        # That loop ran every 5 s for the whole of a leased-B run and silently
+        # dumped video into the default class. Ten commits, `policy_changes=0`.
+        if lease is None and self._lease is None:
+            self._lease_in_effect = False
+            return True
+
         same = ((lease.id if lease else None) == (self._lease.id if self._lease else None)
                 and (lease.weight if lease else None)
                 == (self._lease.weight if self._lease else None))
@@ -371,6 +397,16 @@ class Harness:
             self._lease_in_effect = False
             return False
         ok = bool(self.txn.apply(self._current_plan, now=self.clock()).ok)
+        if ok:
+            # The tree was rebuilt, so every per-flow filter went with it. Tell
+            # the bridge, or it keeps believing filters are installed and
+            # `mark()` returns a no-op for a flow that has none.
+            self._invalidate_enforcer_filters()
+            # Attributed separately from a capacity change. A plan applied here
+            # still rebuilds the qdisc, so it is a policy change in every sense
+            # that matters to a reader -- and `policy_changes` staying 0 while
+            # ten commits sat in the audit is how this went unnoticed.
+            self.policy_changes += 1
         # `and lease is not None`, because applying a plan that has no leased class
         # succeeds trivially. Reading `ok` alone reported a lease "in effect" when
         # there was no lease at all -- which is the state after every expiry.
@@ -419,6 +455,9 @@ class Harness:
         # same timeline as the estimator, or the dwell window is measured wrong
         if self.txn.apply(plan, now=now).committed:
             self.policy_changes += 1
+            # Same as above: a committed apply rebuilt the qdisc, so the
+            # bridge's filters are gone even though its state says otherwise.
+            self._invalidate_enforcer_filters()
             return cap.mbps, True
         return cap.mbps, False
 

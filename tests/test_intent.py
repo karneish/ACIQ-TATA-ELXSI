@@ -16,7 +16,7 @@ import urllib.request
 import unittest
 
 from aciq.api import IntentService, serve
-from aciq.bridge import Bridge
+from aciq.bridge import Bridge, FlowKey
 from aciq.classify import FlowFeatures
 from aciq.closedloop import ClosedLoop
 from aciq.dashboard import PANELS, build_from_samples, panels_from_samples
@@ -1243,3 +1243,121 @@ class TestFilterCountingIsCrossChecked(unittest.TestCase):
             self.assertTrue(p.is_file(),
                             "the txn audit was in memory and never written")
             self.assertIsInstance(json.loads(p.read_text()), list)
+
+
+class TestNoRebuildLoop(unittest.TestCase):
+    """The bug behind "the filters vanish at t=5".
+
+    `enforce()` calls `sync_lease(...)` every tick. With no lease, and after a
+    fix that made `_lease_in_effect` False for the no-lease case, that call never
+    settled: it re-applied the plan, the shield's 5-second window deferred it,
+    and once the window opened the whole qdisc was rebuilt -- destroying every
+    per-flow flower filter on parent 1:.
+
+    Ten commits in a 45-second run, `policy_changes=0`, and video silently dumped
+    into the default class from t=5 onward.
+    """
+
+    def _harness(self):
+        from aciq.harness import Harness
+        h = Harness(runner=FakeRunner(auto_readback=True), clock=lambda: self.t[0])
+        h.reset_for_run()
+        h.set_lease(None, 100.0)
+        h.apply_system(ACIQ, 100.0)
+        return h
+
+    def setUp(self):
+        self.t = [1000.0]
+
+    def test_idle_sync_lease_never_rebuilds(self):
+        h = self._harness()
+        for _ in range(60):          # 60 s, so the change window opens many times
+            self.t[0] += 1.0
+            self.assertTrue(h.sync_lease(None, 100.0))
+        commits = [e for e in h.txn.audit if e["event"] == "committed"]
+        self.assertEqual(len(commits), 1, "only the initial apply should commit")
+        self.assertEqual(h.policy_changes, 0)
+
+    def test_a_real_lease_still_applies(self):
+        h = self._harness()
+        L = Lease(id="l1", target="device", ip="10.0.1.2", weight=0.5, ttl_s=60)
+        self.assertFalse(h.sync_lease(L, 100.0), "first attempt is rate limited")
+        self.t[0] += 10.0
+        self.assertTrue(h.sync_lease(L, 100.0))
+        self.assertIn(TrafficClass.LEASED, h._current_plan.rates)
+
+    def test_expiry_still_removes_the_lease(self):
+        h = self._harness()
+        L = Lease(id="l1", target="device", ip="10.0.1.2", weight=0.5, ttl_s=20)
+        self.t[0] += 10.0
+        h.sync_lease(L, 100.0)
+        self.assertIn(TrafficClass.LEASED, h._current_plan.rates)
+        self.t[0] += 40.0
+        h.sync_lease(None, 100.0)
+        self.assertNotIn(TrafficClass.LEASED, h._current_plan.rates)
+
+    def test_a_lease_apply_is_counted_as_a_policy_change(self):
+        """Ten commits sat in the audit while `policy_changes` said 0, which is
+        how the loop stayed invisible. Any apply here is a policy change."""
+        h = self._harness()
+        L = Lease(id="l1", target="device", ip="10.0.1.2", weight=0.5, ttl_s=60)
+        before = h.policy_changes
+        self.t[0] += 10.0
+        h.sync_lease(L, 100.0)
+        self.assertEqual(h.policy_changes, before + 1)
+
+
+class TestStaleFilterState(unittest.TestCase):
+    """A rebuild destroys the filters; the bridge's state does not know."""
+
+    def test_invalidate_clears_slots_without_touching_the_device(self):
+        def ex(argv):
+            return (0, "[]", "") if "-j" in argv else (0, "", "")
+        b = Bridge("veth-lan", "eth0", "router", executor=ex)
+        key = FlowKey("203.0.113.2", "10.0.1.2", "udp", 7001)
+        b.mark(key, 1)
+        self.assertTrue(b.state.slots)
+        b.invalidate()
+        self.assertEqual(b.state.slots, {})
+
+    def test_and_the_next_mark_reinstalls_rather_than_no_opping(self):
+        """Without this, mark() returns [] for a flow that has no filter -- the
+        run reports verdicts, the device has nothing, and traffic falls through."""
+        calls = []
+
+        def ex(argv):
+            calls.append(" ".join(argv))
+            return (0, "[]", "") if "-j" in argv else (0, "", "")
+        b = Bridge("veth-lan", "eth0", "router", executor=ex)
+        key = FlowKey("203.0.113.2", "10.0.1.2", "udp", 7001)
+        b.mark(key, 1)
+        self.assertEqual(b.mark(key, 1), [], "same class is a no-op")
+
+        b.invalidate()
+        again = b.mark(key, 1)
+        self.assertTrue(again, "stale state made this a no-op")
+        self.assertTrue(any("filter add" in c for c in calls[-len(again):]))
+
+    def test_a_harness_apply_invalidates_the_enforcer(self):
+        from aciq.harness import Harness
+        h = Harness(runner=FakeRunner(auto_readback=True), clock=lambda: self_t[0])
+        h.reset_for_run()
+        h.set_lease(None, 100.0)
+        h.apply_system(ACIQ, 100.0)
+        h._enforcer = _Loop(Bridge("d", "e", "n", executor=lambda a: (0, "[]", "")
+                                   if "-j" in a else (0, "", "")))
+        key = FlowKey("203.0.113.2", "10.0.1.2", "udp", 7001)
+        h._enforcer.bridge.mark(key, 1)
+        self.assertTrue(h._enforcer.bridge.state.slots)
+        h._invalidate_enforcer_filters()
+        self.assertEqual(h._enforcer.bridge.state.slots, {})
+
+
+self_t = [0.0]
+
+
+class _Loop:
+    """Stands in for ClosedLoop, which only needs `.bridge` here."""
+
+    def __init__(self, bridge):
+        self.bridge = bridge

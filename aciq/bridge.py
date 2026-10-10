@@ -848,6 +848,23 @@ class Bridge:
         return ran
 
     # -- per-flow ----------------------------------------------------------
+    def invalidate(self) -> None:
+        """Forget that anything is installed, without touching the device.
+
+        For after a qdisc rebuild. `_rebuild` issues `tc qdisc del`, which
+        destroys every filter attached to it -- but `state.slots` still says the
+        flow is in its class, so `mark()` treats the next call as a no-op and
+        never reinstalls. The result is a filter that is neither installed nor
+        missed: the run reports verdicts, the device has no filter, and traffic
+        falls to the default class.
+
+        Not a teardown: it deletes nothing. If filters really are still on the
+        device the next `mark()` will try to add a duplicate and fail loudly,
+        which is the honest failure -- better than silently believing a filter
+        exists when it does not.
+        """
+        self.state.slots.clear()
+
     def mark(self, key: FlowKey, class_id: int, confidence: float = 0.0,
              reason: int = 0, lease_id: int = 0) -> list[tuple[str, ...]]:
         """Give a flow a per-flow tc filter pointing at its class.
