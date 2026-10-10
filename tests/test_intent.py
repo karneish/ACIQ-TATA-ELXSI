@@ -958,7 +958,7 @@ class TestLeasesInARun(unittest.TestCase):
                  / "result.json").read_text())
             notes = " ".join(res["notes"])
             self.assertIn("10.0.1.2", notes, "the lease was never mentioned")
-            self.assertTrue("NOT INSTALLED" in notes
+            self.assertTrue("NEVER INSTALLED" in notes
                             or "leases held for" in notes,
                             f"neither wording present: {notes}")
 
@@ -1521,3 +1521,33 @@ class TestARefusalSaysWhy(unittest.TestCase):
                  / "result.json").read_text())
             self.assertTrue(res["capacity_change_applied"])
             self.assertEqual(res["capacity_change_error"], "")
+
+
+class TestTheLeaseNoteReportsCoverageNotEndState(unittest.TestCase):
+    """A lease installed at t=6 and reverted at t=46 by its own TTL was reported
+    as "NOT INSTALLED", and a working lease arm got read as a failed one. The
+    audit showed classes=5 for forty seconds; the note said otherwise because it
+    read the state at teardown."""
+
+    def test_a_lease_that_expires_mid_run_is_reported_as_held(self):
+        r = ExperimentRunner(
+            launcher=_LiveishLauncher(),
+            harness=Harness(runner=FakeRunner(auto_readback=True), clock=lambda: 0.0),
+            results_dir=Path("/tmp"), real_time=False, tick_s=1.0, bridge_executor=_Exec())
+        r._lease_ips = ["10.0.1.2"]
+        r._lease_effective_s = 40.0          # it did steer, for a long time
+        r.harness._lease_in_effect = False   # ... and then the TTL reverted it
+        r.harness.disable_enforcement = lambda: None
+        note = r._lease_note_text()
+        self.assertIn("in effect for 40.0s", note)
+        self.assertNotIn("NEVER INSTALLED", note)
+
+    def test_a_lease_that_never_steered_is_reported_as_not_installed(self):
+        r = ExperimentRunner(
+            launcher=_LiveishLauncher(),
+            harness=Harness(runner=FakeRunner(auto_readback=True), clock=lambda: 0.0),
+            results_dir=Path("/tmp"), real_time=False, tick_s=1.0, bridge_executor=_Exec())
+        r._lease_ips = ["10.0.1.2"]
+        r._lease_effective_s = 0.0
+        note = r._lease_note_text()
+        self.assertIn("NEVER INSTALLED", note)

@@ -211,6 +211,12 @@ class ExperimentRunner:
         #: because otherwise the run reports a link state it never reached.
         self._capacity_change_failed = False
         self._capacity_change_error = ""
+        #: Lease reporting state. Defaults live here as well as in run() so a
+        #: note helper cannot AttributeError on a runner that has not run yet --
+        #: which is exactly what happened the first time one was tested.
+        self._lease_ips: list[str] = []
+        self._lease_weight = 0.5
+        self._lease_effective_s = 0.0
 
     def run_paths(self, scenario: str, system: SystemSpec, mode: CapacityMode,
                   seed: int) -> RunPaths:
@@ -234,6 +240,12 @@ class ExperimentRunner:
     ) -> RunResult:
         self.enforce = enforce
         self._lease_ips = list(lease_ips)
+        #: Seconds during which the lease class actually existed and could steer
+        #: a flow. The old note read the *end* state, so a lease installed at
+        #: t=6 and reverted at t=46 by its own TTL was reported as "NOT
+        #: INSTALLED" -- which is how a working lease arm got read as a failed
+        #: one. Coverage over time is the only thing a run can honestly report.
+        self._lease_effective_s = 0.0
         self._lease_weight = lease_weight
         #: None means "one whole run", which is the useful default for measuring
         #: a lease: a TTL shorter than the run would demonstrate expiry and
@@ -440,6 +452,9 @@ class ExperimentRunner:
             # the estimate stayed 0.0 for the whole run.
             if mode is CapacityMode.ADAPTIVE:
                 self._closed_loop_step(collector, self.tick_s, t0 + elapsed)
+            if (self._lease_book and self._lease_book.active()
+                    and getattr(self.harness, "_lease_in_effect", False)):
+                self._lease_effective_s += self.tick_s
             if enforcement_on:
                 verdicts, filters_n = self._enforcement_step(ports, t0 + elapsed)
                 self._enf_filters_n = filters_n
@@ -539,14 +554,7 @@ class ExperimentRunner:
         # Held-but-not-installed means class 1:40 was never created, so every
         # per-flow filter points at a class that does not exist and the run
         # steers nothing while reporting "leases held".
-        lease_in_effect = bool(getattr(self.harness, "_lease_in_effect", False))
-        _lease_note = f"leases held for {', '.join(self._lease_ips)} "\
-            f"(weight {self._lease_weight:.2f})"
-        if not lease_in_effect:
-            _lease_note = (f"leases HELD for {', '.join(self._lease_ips)} but NOT "
-                           f"INSTALLED -- the shield refused the rate plan, so "
-                           f"class 1:40 was never created and no per-flow filter "
-                           f"could steer to it")
+        _lease_note = self._lease_note_text() if lease_note else ""
         if enforcement_on:
             self.harness.disable_enforcement()
             self._tracker = self._ct = None
@@ -686,6 +694,22 @@ notes=(([] if dropped else ["no capacity drop in this run"])
             if self._enf_first_steer is None:
                 self._enf_first_steer = (len(out), self._count_filters())
         return out
+
+    def _lease_note_text(self) -> str:
+        """The lease note, factored out so it can be tested directly.
+
+        Coverage over time, not the end state. Leases expire by design, so the
+        teardown state is almost always "not installed" even for a lease that
+        steered traffic for the whole run -- which is exactly how the lease arm
+        of the ab_* comparison got read as a failed one.
+        """
+        if self._lease_effective_s > 0:
+            return (f"leases held for {', '.join(self._lease_ips)} "
+                    f"(weight {self._lease_weight:.2f}), in effect for "
+                    f"{self._lease_effective_s:.1f}s of the run")
+        return (f"leases HELD for {', '.join(self._lease_ips)} but "
+                "NEVER INSTALLED -- the shield refused the rate plan, so class "
+                "1:40 was never created and no per-flow filter could steer to it")
 
     def _capacity_note(self) -> str:
         """Loud, because `link_end_mbps` still reports the requested value."""
