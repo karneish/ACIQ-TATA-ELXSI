@@ -28,7 +28,7 @@ from typing import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .bridge import enumerate_flow_filters
+from .bridge import count_flow_filters_text, enumerate_flow_filters
 from .flowtrack import ConntrackSource, FlowTracker
 from .intent import IntentError, LeaseBook
 from .harness import SCENARIOS, CapacityMode, Harness, RunResult, SystemSpec
@@ -206,6 +206,7 @@ class ExperimentRunner:
         #: when the loop was skipped entirely.
         self._enf_filters_n = -1
         self._enf_filters_seen_max = 0
+        self._last_filter_reads: tuple[int, int] = (-1, -1)
 
     def run_paths(self, scenario: str, system: SystemSpec, mode: CapacityMode,
                   seed: int) -> RunPaths:
@@ -287,6 +288,7 @@ class ExperimentRunner:
         #: when the loop was skipped entirely.
         self._enf_filters_n = -1
         self._enf_filters_seen_max = 0
+        self._last_filter_reads: tuple[int, int] = (-1, -1)
         #: When M2 last produced a *new* reading, and when the link was last
         #: reconfigured. Their comparison decides whether the final estimate
         #: describes the end of the run or a moment before it changed.
@@ -408,6 +410,9 @@ class ExperimentRunner:
         collector = MetricsCollector(
             self.source or TextClassSource(dev=self.harness.dev, ns=self.harness.ns))
         samples: list[dict] = []
+        # Read fresh each tick. Bound before the loop so a run with enforcement
+        # off still has them: -1 means "not read", which is what it is.
+        n_json = n_text = -1
         _prev_est = self.harness._estimator.current.mbps
         t0 = time.monotonic()
         ticks = int(sc.duration_s / self.tick_s) + 1
@@ -430,6 +435,7 @@ class ExperimentRunner:
             if enforcement_on:
                 verdicts, filters_n = self._enforcement_step(ports, t0 + elapsed)
                 self._enf_filters_n = filters_n
+                n_json, n_text = self._last_filter_reads
                 if filters_n > 0:
                     self._enf_filters_seen_max = max(self._enf_filters_seen_max,
                                                      filters_n)
@@ -470,6 +476,10 @@ class ExperimentRunner:
                 # matching", which look identical in the verdicts alone. It is
                 # what turned a healthy-looking run into an unanswerable one.
                 "filters_installed": filters_n,
+                # Both readers, always. When these disagree the JSON reader is
+                # lying, and a future run should be able to see that from its own
+                # artefacts instead of re-deriving it.
+                "filters_json": n_json, "filters_text": n_text,
             })
 
             # the drop: the link changes, and only the link changes
@@ -531,6 +541,10 @@ class ExperimentRunner:
 
         paths.write_jsonl("samples.jsonl", samples)
         paths.write_json("workloads.json", workloads)
+        # The transaction manager's audit was in memory and never written, so a
+        # run that applied, vetoed or rolled back a policy left no trace of it.
+        # "policy_changes=0" says the count, not the reason.
+        paths.write_json("audit.json", self.harness.txn.audit)
 
         # ---- 5. the loop has already run on every tick
         est = self.harness._estimator.current.mbps or None
@@ -597,14 +611,36 @@ class ExperimentRunner:
     def _count_filters(self) -> int:
         """How many of our flower filters the device still has.
 
-        -1 when it cannot be read, which is deliberately not 0: "the filters are
-        gone" and "I could not tell" must not look the same in the artefact, or
-        the check below fires on a permissions problem and blames the filters.
+        Two independent readers, and the more generous one wins. The JSON reader
+        has already been observed returning empty on this host for a sibling
+        `tc -j` command, and "empty from JSON" is indistinguishable from "the
+        filters are gone" -- which is how a run came to report all four removed
+        when they may simply not have been read.
+
+        Taking the max means a filter has to be invisible to *both* readers to
+        count as gone. Reporting the smaller number would make every JSON glitch
+        look like a lost filter, which is the error in the other direction.
+
+        -1 when neither reader worked, which is deliberately not 0.
         """
+        dev, ns = self.harness.dev, self.harness.ns
+        # The injected executor, so a dry run or a unit test measures the same
+        # thing the bridge would. Without this the readers always shell out for
+        # real, return nothing, and the count is permanently -1 -- which reads
+        # as "could not tell" and is exactly what makes the note untestable.
+        ex = self.bridge_executor
+        if ex is None and self.harness.enforcement_enabled:
+            ex = getattr(self.harness._enforcer.bridge, "executor", None)
         try:
-            return len(enumerate_flow_filters(self.harness.dev, self.harness.ns))
+            n_json = len(enumerate_flow_filters(dev, ns, executor=ex))
         except Exception:
+            n_json = -1
+        n_text = count_flow_filters_text(dev, ns, executor=ex)
+        self._last_filter_reads = (n_json, n_text)
+        known = [n for n in (n_json, n_text) if n >= 0]
+        if not known:
             return -1
+        return max(known)
 
     def _steer(self, ports, now: float, text: str) -> dict:
         """One tick's work: classify every flow this run owns and steer it."""

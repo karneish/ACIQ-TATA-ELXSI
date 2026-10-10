@@ -1143,3 +1143,103 @@ class TestMissingFiltersAreReported(unittest.TestCase):
             # -1 because the fake executor answers tc -j with an empty device and
             # _LiveishLauncher spawns nothing; the point is the key is present.
             self.assertTrue(all("filters_installed" in q for q in rows))
+
+
+class TestFilterCountingIsCrossChecked(unittest.TestCase):
+    """`filters_installed` reported "all 4 GONE" on a run where traffic was
+    still being steered -- so the JSON reader returned empty while the filters
+    were plainly there.
+
+    `tc -j` has already been observed returning empty on this host for the
+    sibling class reader, and "empty" is indistinguishable from "nothing there".
+    Two independent readers now, and the more generous one wins.
+    """
+
+    JSON = ('[{"protocol":"ip","pref":5,"kind":"flower",'
+            '"options":{"handle":1813213613}},{"protocol":"ip","pref":5,'
+            '"kind":"flower","options":{"handle":1813213614}}]')
+    TEXT = ("filter protocol ip pref 5 flower chain 0 handle 0x6c1371ad classid 1:20\n"
+            "filter protocol ip pref 5 flower chain 0 handle 0x6c1371ae classid 1:20\n"
+            "filter protocol ip pref 30 u32 chain 0\n")
+
+    def _runner(self, tmp):
+        return ExperimentRunner(
+            launcher=_LiveishLauncher(),
+            harness=Harness(runner=FakeRunner(auto_readback=True), clock=lambda: 0.0),
+            results_dir=Path(tmp), real_time=False, tick_s=1.0,
+            bridge_executor=_Exec())
+
+    def _exec(self, json_out=None):
+        def run(argv):
+            if "-j" in argv:
+                return 0, self.JSON if json_out is None else json_out, ""
+            return 0, self.TEXT, ""
+        return run
+
+    def test_both_readers_agree(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r.bridge_executor = self._exec()
+            r.harness.dev, r.harness.ns = "veth-lan", "router"
+            self.assertEqual(r._count_filters(), 2)
+            self.assertEqual(r._last_filter_reads, (2, 2))
+
+    def test_json_returning_empty_does_not_report_the_filters_gone(self):
+        """The failure itself: the JSON reader returned empty while the text
+        reader saw two, and reporting the smaller number would have said the
+        filters were gone while they were being used."""
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r.bridge_executor = self._exec(json_out="[]")
+            r.harness.dev, r.harness.ns = "veth-lan", "router"
+            self.assertEqual(r._count_filters(), 2)
+            self.assertEqual(r._last_filter_reads, (0, 2))
+
+    def test_text_returning_nothing_does_not_hide_real_filters(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r.bridge_executor = self._exec()
+            r.harness.dev, r.harness.ns = "veth-lan", "router"
+            r._count_filters()
+            self.assertEqual(r._last_filter_reads[0], 2)
+
+    def test_neither_reader_working_is_minus_one_not_zero(self):
+        """"The filters are gone" and "I could not read the device" must not be
+        the same number, or the note fires on a permissions problem and blames
+        filters that are fine."""
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r.bridge_executor = lambda argv: (_ for _ in ()).throw(OSError("nope"))
+            r.harness.dev, r.harness.ns = "veth-lan", "router"
+            self.assertEqual(r._count_filters(), -1)
+            self.assertEqual(r._filter_loss_note(-1), "",
+                             "an unreadable device must not be reported as a loss")
+
+    def test_the_count_uses_the_injected_executor(self):
+        """Without this the readers shell out for real, always fail, and the
+        count is permanently -1 -- unreadable, and untestable."""
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r.bridge_executor = self._exec()
+            r.harness.dev, r.harness.ns = "veth-lan", "router"
+            self.assertNotEqual(r._count_filters(), -1)
+
+    def test_both_readers_are_recorded_per_sample(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r.run("s3_tv_and_gaming", ACIQ, enforce=True)
+            rows = [json.loads(l) for l in
+                    (Path(d) / "s3_tv_and_gaming__aciq__adaptive__seed42"
+                     / "samples.jsonl").read_text().splitlines()]
+            for q in rows:
+                self.assertIn("filters_json", q)
+                self.assertIn("filters_text", q)
+
+    def test_the_transaction_audit_is_written(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r.run("s3_tv_and_gaming", ACIQ, enforce=True)
+            p = Path(d) / "s3_tv_and_gaming__aciq__adaptive__seed42" / "audit.json"
+            self.assertTrue(p.is_file(),
+                            "the txn audit was in memory and never written")
+            self.assertIsInstance(json.loads(p.read_text()), list)

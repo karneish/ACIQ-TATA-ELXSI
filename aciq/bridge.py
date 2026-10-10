@@ -616,6 +616,60 @@ class InstalledFilter:
     handle: int
 
 
+def enumerate_flow_filters_verbose(dev: str, ns: str | None = None,
+                                   executor=None) -> tuple[list, str]:
+    """-> (filters, status). `status` is "ok", or why the list may be short.
+
+    Text output is consulted as a cross-check, because `tc -j` has already been
+    observed returning empty on this host for a sibling command -- and "empty"
+    from the JSON path is indistinguishable from "the filters are gone". If the
+    two disagree, the status says so rather than leaving the caller to guess.
+    """
+    run = executor or _subprocess_executor
+    argv = _netns(ns) + ("tc", "-j", "filter", "show", "dev", dev, "parent", "1:")
+    try:
+        rc, out, _err = run(argv)
+    except Exception as e:
+        return [], f"json-reader-raised:{type(e).__name__}"
+    if rc != 0:
+        return [], f"json-reader-rc{rc}"
+    try:
+        entries = json.loads(out)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return [], "json-unparseable"
+    if not isinstance(entries, list):
+        return [], "json-not-a-list"
+    if not entries:
+        return [], "json-empty"
+    return enumerate_flow_filters(dev, ns, executor), "ok"
+
+
+def count_flow_filters_text(dev: str, ns: str | None = None,
+                            executor=None) -> int:
+    """Count our per-flow flower filters from the *text* listing.
+
+    Deliberately independent of the JSON path, so the two can disagree. Not a
+    replacement parser: `tc -s filter show` prints one line per filter with its
+    handle and its kind, and counting those lines is enough to cross-check.
+    """
+    run = executor or _subprocess_executor
+    argv = _netns(ns) + ("tc", "filter", "show", "dev", dev, "parent", "1:")
+    try:
+        rc, out, _err = run(argv)
+    except Exception:
+        return -1
+    if rc != 0:
+        return -1
+    n = 0
+    for line in out.splitlines():
+        t = line.strip()
+        if not t.startswith("filter "):
+            continue
+        if " flower " in f" {t} " and "handle 0x" in t:
+            n += 1
+    return n
+
+
 def enumerate_flow_filters(dev: str, ns: str | None = None,
                            executor=None) -> list[InstalledFilter]:
     """Find every per-flow filter currently on `dev`.
@@ -633,6 +687,12 @@ def enumerate_flow_filters(dev: str, ns: str | None = None,
 
     Returns an empty list if the listing cannot be read or parsed. Failing to
     enumerate must not prevent teardown from removing what it *does* know about.
+
+    **But an empty list is ambiguous**: "no filters" and "could not read the
+    device" are the same value, and this is exactly the confusion that made a
+    lease run undiagnosable -- the run reported "all 4 filters GONE" on the
+    strength of this function. `enumerate_flow_filters_verbose` returns the
+    reason, and the experiment samples both.
     """
     run = executor or _subprocess_executor
     argv = _netns(ns) + ("tc", "-j", "filter", "show", "dev", dev, "parent", "1:")
