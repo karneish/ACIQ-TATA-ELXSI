@@ -828,13 +828,32 @@ Files: `aciq/harness.py` for the logic, `aciq/experiment.py` for execution
 
 **The one invariant this module exists to protect.**
 
-> **`set_capacity(C)` changes ONLY class 1:1. It never rescales the children.**
+> **`set_capacity(C)` changes class 1:1 and clamps every child's ceil to C. It
+> never rescales child *rates*.**
 
-This is not a style preference. Gate runs 1 and 2 measured that changing the parent
-rate alone does **not** cap throughput, because a child can borrow past its parent's
-rate. If the harness rescaled the children, it would bypass M2 and M3 **entirely**,
-and "adaptation time" would be a measurement of the test harness rather than of the
-system.
+Two halves, and they were once conflated.
+
+**Rates are policy.** If the harness rescaled them it would bypass M2 and M3
+entirely, and "adaptation time" would measure the test harness rather than the
+system. That half was right and is unchanged.
+
+**Ceil is a safety clamp, and omitting it broke every `--drop-at` run.** Changing
+the parent rate alone does not cap throughput — a class borrows past its parent's
+rate up to its own ceil — and `build_plan` gives every child a ceil equal to the
+capacity at plan time. So a parent-only drop to 10 Mbps left the children at ceil
+100 and the link kept passing traffic. Measured in `data/leaseB4`:
+
+    t=19.50  parent counter  4.67 Mbps
+    t=25.66  parent counter 24.68 Mbps    <- the "10 Mbps" link
+
+Gate check 6 is the evidence both halves are required: it drops the parent *and*
+clamps child ceil, then asserts `max(child ceil) <= capacity`.
+
+The previous wording here said "ONLY class 1:1" and treated the parent-only change
+as correct. That claim was measured wrong, and it is why six experiments reported
+a link state they never reached — `matrix6`, `leaseA`, `leaseB`, `fixcheck`,
+`leaseA2`, `leaseB4`, all with `link_end_mbps` written from the argument while the
+parent counter showed the link never changed.
 
 **Three delivery modes, and this is where the honesty lives.**
 

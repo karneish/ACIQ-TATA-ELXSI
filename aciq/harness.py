@@ -5,14 +5,33 @@ test, with a fixed seed so a run can be repeated.
 
 The one invariant this module exists to protect:
 
-    set_capacity(C) changes ONLY HTB class 1:1. It never rescales children.
+    set_capacity(C) changes HTB class 1:1, and clamps each child's ceil to C. It
+    never rescales child *rates* -- that is M3's job after M2 detects the drop.
 
-That is not a style preference. Gate runs 1 and 2 measured that changing the
-parent rate alone does not cap throughput (28.5 Mbps through a 20 Mbps parent),
-because a class borrows past its parent's rate up to its own `ceil`. Rescaling
-children is M3's job, and only after M2 has detected the drop. If the harness
-rescaled them, the whole estimator would be bypassed and "adaptation time"
-would measure the harness rather than the system.
+Child *rates* are never touched here. That is not a style preference: if the
+harness rescaled them, the estimator would be bypassed and "adaptation time"
+would measure the harness rather than the system. Choosing rates is M3's job,
+after M2 has detected a change from counters alone.
+
+Child *ceil* is a different matter, and getting it wrong cost every `--drop-at`
+run taken before 2026-10-10. The parent rate alone does not cap a subtree: a
+class borrows past its parent's rate up to its own ceil, and `build_plan` gives
+every child a ceil equal to the capacity at plan time. Dropping the parent to
+10 Mbps left the children at ceil 100, so the link kept passing traffic. Measured
+in `data/leaseB4`:
+
+    t=19.50  parent counter  4.67 Mbps
+    t=25.66  parent counter 24.68 Mbps    <- the "10 Mbps" link
+
+Clamping ceil to C restores the invariant gate check 6 asserts --
+`max(child ceil) <= capacity` -- and it does so without making a policy
+decision. It also makes saturation *visible*: with the link genuinely capped,
+M2 has an oversubscribed link to measure, which it never had before.
+
+The earlier version of this docstring said `set_capacity` changes "ONLY class
+1:1" and treated the parent-only change as correct. That claim was measured
+wrong, and it is the reason six experiments reported a link state they never
+reached.
 
 Capacity is therefore delivered three ways, all from this module:
 
@@ -171,6 +190,16 @@ def baseline_tree(system: SystemSpec, capacity_mbps: float):
     )
 
 
+def _class_ids_of(plan) -> dict:
+    """TrafficClass -> "1:NN" for the classes in `plan`, so their ceil can be
+    clamped alongside the parent. Empty when no plan has been built yet, which
+    makes set_capacity a parent-only change -- the old behaviour, and the bug."""
+    from .tc import CLASS_IDS
+    if plan is None:
+        return {}
+    return {c: CLASS_IDS[c] for c in plan.rates}
+
+
 class Harness:
     """Orchestrates runs. Needs root for tc; the control logic is testable
     without it because the runner and collector are injected."""
@@ -311,31 +340,57 @@ class Harness:
     _configured_capacity: float = 100.0
 
     # ---------------- the invariant ----------------
-    def set_capacity(self, capacity_mbps: float) -> tuple[str, ...]:
-        """Change the emulated link capacity. ONLY class 1:1.
+    def set_capacity(self, capacity_mbps: float) -> tuple[tuple[str, ...], ...]:
+        """Change the emulated link capacity: class 1:1, and the children's ceil.
 
-        Deliberately a single tc call. Rescaling children here would bypass M2
-        and M3 entirely, which is the mistake gate run 1 exposed.
+        **The parent alone does not bound the link.** HTB lets a child borrow up
+        to its own ceil, and `build_plan` sets every child ceil to the capacity at
+        plan time. Changing only the parent left the children at ceil 100 under a
+        10 Mbps parent, so the link kept passing 25 Mbps and the drop did
+        nothing. Measured in `data/leaseB4`:
+
+            t=19.50  parent rate  4.67 Mbps
+            t=25.66  parent rate 24.68 Mbps   <- the "10 Mbps" link
+
+        Gate check 6 is the evidence that both are required: it drops the parent
+        *and* rescales the children's ceil, then asserts
+        `max(child ceil) <= capacity`. This now does the same.
+
+        **Ceil only. Child rates are still M3's business.** Clamping ceil is a
+        safety clamp that restores the documented invariant
+        `max(child ceil) <= capacity`; choosing rates is policy, and doing it here
+        would bypass M2 and M3 exactly as the original comment warned. The
+        `set_capacity` docstring's claim that it "touches ONLY class 1:1" was the
+        bug, not the design -- the invariant it left violated was the one it
+        claimed to be protecting.
         """
         pre = ("ip", "netns", "exec", self.ns)
-        argv = pre + (
+        cmds = [pre + (
             "tc", "class", "change", "dev", self.dev,
             "parent", BARE_CLASS_ID, "classid", ROOT_CLASS_ID, "htb",
             "rate", f"{capacity_mbps:.4f}mbit", "ceil", f"{capacity_mbps:.4f}mbit",
-        )
-        rc, _out, err = self.runner.run(argv)
-        # The return code was discarded, so a drop that tc refused looked exactly
-        # like a drop that worked. Every `--drop-at` run since has reported
-        # `link_end_mbps` from the *argument* while the parent counter showed the
-        # link never changed: 25 Mbps sustained on a "10 Mbps" link.
-        self._capacity_change_ok = (rc == 0)
-        self._capacity_change_error = "" if rc == 0 else err.strip() or f"exit {rc}"
-        if rc != 0:
-            # Do NOT record it as the new capacity. Pretending a refused change
-            # took effect is how a run ends up reporting a link state it never had.
-            return argv
-        self._configured_capacity = capacity_mbps
-        return argv
+        )]
+        for cls, cid in sorted(_class_ids_of(self._current_plan).items(),
+                               key=lambda kv: kv[1]):
+            cmds.append(pre + (
+                "tc", "class", "change", "dev", self.dev,
+                "parent", ROOT_CLASS_ID, "classid", cid, "htb",
+                "ceil", f"{capacity_mbps:.4f}mbit",
+            ))
+
+        failures = []
+        for argv in cmds:
+            rc, _out, err = self.runner.run(argv)
+            if rc != 0:
+                failures.append(f"{' '.join(argv[-8:])} -> {err.strip() or rc}")
+        # The return code used to be discarded entirely, so a refused change
+        # looked exactly like a successful one and `link_end_mbps` reported the
+        # value that was asked for rather than one the link ever reached.
+        self._capacity_change_ok = not failures
+        self._capacity_change_error = "; ".join(failures)
+        if not failures:
+            self._configured_capacity = capacity_mbps
+        return tuple(cmds)
 
     #: Whether the last `set_capacity` actually took effect.
     _capacity_change_ok: bool = True
@@ -348,6 +403,12 @@ class Harness:
         self._configured_capacity = capacity_mbps
         if system is SystemSpec.ACIQ:
             plan = self._current_plan or build_plan(capacity_mbps, self._lease)
+            # Record the plan that was applied. `apply_system` built it, handed it
+            # to the transaction manager and then forgot it, so `_current_plan`
+            # stayed None and anything asking which classes exist found nothing --
+            # including set_capacity, which needs the class list to clamp their
+            # ceil. The plan is the harness's own record of what it configured.
+            self._current_plan = plan
             self.txn.remember_capacity(capacity_mbps)
             return self.txn.apply(plan).ok
         tree = baseline_tree(system, capacity_mbps)

@@ -36,27 +36,48 @@ def saturating(now, rx, over_before, over_after):
 class TestCapacityInvariant(unittest.TestCase):
     """The reason this module exists."""
 
-    def test_set_capacity_is_exactly_one_command(self):
+    def test_set_capacity_changes_the_parent_first(self):
         h = harness()
-        h.set_capacity(20.0)
-        self.assertEqual(len(h.runner.commands), 1)
-
-    def test_set_capacity_touches_only_the_parent_class(self):
-        h = harness()
-        argv = h.set_capacity(20.0)
+        cmds = h.set_capacity(20.0)
+        argv = cmds[0]
         self.assertEqual(argv[argv.index("classid") + 1], ROOT_CLASS_ID)
         self.assertEqual(argv[argv.index("parent") + 1], "1:")
 
-    def test_set_capacity_never_rescales_children(self):
+    def test_set_capacity_clamps_each_childs_ceil(self):
+        """The fix. The parent rate alone does not cap a subtree: a class borrows
+        past its parent's rate up to its own ceil, and build_plan sets every child
+        ceil to the capacity at plan time. Six `--drop-at` experiments reported a
+        link state they never reached because this clamp was missing -- measured
+        24.68 Mbps through a "10 Mbps" parent in data/leaseB4.
+
+        Gate check 6 is the evidence both are needed: it drops the parent *and*
+        rescales child ceil, then asserts max(child ceil) <= capacity.
+        """
         h = harness()
         h.apply_system(SystemSpec.ACIQ, 100.0)
         before = len(h.runner.commands)
-        h.set_capacity(20.0)
+        h.set_capacity(10.0)
         added = [" ".join(c) for c in h.runner.commands[before:]]
-        for cmd in added:
-            self.assertNotIn("1:10", cmd)
-            self.assertNotIn("1:20", cmd)
-            self.assertNotIn("1:30", cmd)
+        children = [c for c in added if "parent 1:1 classid" in c]
+        clamped = sorted(c.split("classid ")[1].split(" ")[0] for c in children)
+        self.assertEqual(clamped, ["1:10", "1:20", "1:30"],
+                         "every child ceil must be clamped, one command each")
+        for cmd in children:
+            self.assertIn("ceil 10.0000mbit", cmd)
+
+    def test_set_capacity_never_rescales_child_rates(self):
+        """Ceil is a safety clamp; rates are policy and belong to M3. If the
+        harness rescaled rates it would bypass M2, and "adaptation time" would
+        measure the harness rather than the system."""
+        h = harness()
+        h.apply_system(SystemSpec.ACIQ, 100.0)
+        before = len(h.runner.commands)
+        h.set_capacity(10.0)
+        for cmd in h.runner.commands[before:]:
+            text = " ".join(cmd)
+            if "classid 1:" in text and " 1:1 " in text:
+                continue
+            self.assertNotIn(" rate ", f" {text} ", f"child rate changed: {text}")
 
     def test_set_capacity_emits_no_qdisc_command(self):
         h = harness()
@@ -65,8 +86,8 @@ class TestCapacityInvariant(unittest.TestCase):
 
     def test_capacity_value_reaches_the_command(self):
         h = harness()
-        argv = h.set_capacity(19.5)
-        self.assertIn("19.5000mbit", argv)
+        cmds = h.set_capacity(19.5)
+        self.assertIn("19.5000mbit", " ".join(cmds[0]))
 
 
 class TestBaselineTrees(unittest.TestCase):
