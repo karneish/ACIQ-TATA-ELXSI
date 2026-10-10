@@ -514,10 +514,54 @@ t= 12.77    9.31 Mbps
 t= 20.16    4.66 Mbps     <- where the drop actually landed
 ```
 
-So M2 is not broken and no probe is needed. The experiment was mistimed.
-Dropping during the high-demand phase is what makes a capacity change observable
-at all, and that is a property of the testbed worth stating plainly: **this
-system cannot detect a capacity drop that it is not already congested by.**
+### That explanation was also wrong. Measured.
+
+`dropcheck5`, `--drop 10 --drop-at 5`, dropped while demand was 24.16 Mbps against
+the new 10 Mbps cap -- genuinely oversubscribed, goodput clipped 24 -> 10. M2
+still reported nothing, and it was still not broken:
+
+```
+   t   parent overlim/s   drop/s   rx Mbps   goodput
+ 1.02                1647        0     24.82      24.76    demand 24 of 100: not congested
+ 5.14                1442        0     24.17      24.16
+ 6.17                  19        0     10.11      10.10    demand 24 of 10: CONGESTED
+ 7.21                   0        0     10.21      10.21
+10.26                   0        0     10.00      10.00
+```
+
+**A congested link with zero drops and zero overlimits.** HTB is a shaper: it
+holds packets in the queue and delays them rather than overrunning, so with paced
+TCP senders there is nothing for the drop/overlimit signal to read. Congestion is
+real -- goodput is clipped from 24 to 10 -- but it is invisible to the counters
+M2 was built on.
+
+The gate check 12 calibration (24803-65101 overlimits/s on a saturated 20 Mbps
+link) came from a source that was not paced, and does not transfer to this
+workload.
+
+**Shaper backlog does carry the signal**, and separates the two regimes exactly:
+
+```
+   t   parent backlog   children   goodput   demand vs cap
+ 1.02          0            0       24.76     24 of 100
+ 6.17          0        18168       10.10     24 of 10     <- queue full
+12.30          0        22710       10.04     24 of 10
+17.39          0            0        8.13      4.7 of 10   <- demand fell, queue drains
+20.47          0            0        4.73      4.7 of 10
+24.54          0        16654      10.03     >10 of 10     <- queue full again
+```
+
+Non-zero backlog appears when and only when offered load exceeds capacity. The
+parent's own backlog stays 0 throughout -- the queue lives in the children -- so
+this would have to be read as a sum over children, which is the same pattern that
+previously produced a measured capacity death spiral when applied to overlimits.
+Backlog differs in that being non-empty means the shaper is actually holding
+packets, but that is a claim to be tested, not assumed.
+
+**Status: M2's saturation detector does not work against this workload.** Three
+predictions were made and all three were wrong, each time for a different reason
+that only the artefacts could have shown. The capacity drop itself works
+(`dropcheck4`, `dropcheck5`); estimating capacity from it does not.
 
 Until that is settled, treat every result involving `--drop` as an undropped run.
 
