@@ -195,6 +195,18 @@ def baseline_tree(system: SystemSpec, capacity_mbps: float):
     )
 
 
+def _rate_of(plan, cls) -> float:
+    """A class's configured rate, falling back to something safe.
+
+    The fallback matters more than it looks: emitting `rate 0` would look
+    authoritative and would be honoured by the kernel, quietly deleting the
+    bandwidth M3 had allocated.
+    """
+    if plan is not None and cls in plan.rates:
+        return float(plan.rates[cls])
+    return 0.0
+
+
 def _class_ids_of(plan) -> dict:
     """TrafficClass -> "1:NN" for the classes in `plan`, so their ceil can be
     clamped alongside the parent. Empty when no plan has been built yet, which
@@ -377,9 +389,21 @@ class Harness:
         )]
         for cls, cid in sorted(_class_ids_of(self._current_plan).items(),
                                key=lambda kv: kv[1]):
+            # `rate` is passed through unchanged and is not optional. tc refuses
+            # a bare `class change ... htb ceil X` with `"rate" is required`, so
+            # the clamp cannot be expressed on its own. Passing each child's
+            # *existing* rate back satisfies tc without making a policy
+            # decision -- only ceil moves, and only downward.
+            # Clamped down, never up. HTB requires rate <= ceil, so lowering the
+            # ceil below a child's existing rate would leave an invalid class --
+            # and `min` is the only safe direction: a raise would hand M3's
+            # bandwidth to someone. The *proportions* are still M3's to decide;
+            # this only stops the config being illegal.
+            child_rate = min(_rate_of(self._current_plan, cls), capacity_mbps)
             cmds.append(pre + (
                 "tc", "class", "change", "dev", self.dev,
                 "parent", ROOT_CLASS_ID, "classid", cid, "htb",
+                "rate", f"{child_rate:.4f}mbit",
                 "ceil", f"{capacity_mbps:.4f}mbit",
             ))
 

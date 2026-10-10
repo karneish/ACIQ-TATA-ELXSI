@@ -65,6 +65,55 @@ class TestCapacityInvariant(unittest.TestCase):
         for cmd in children:
             self.assertIn("ceil 10.0000mbit", cmd)
 
+    def test_every_child_command_carries_a_rate(self):
+        """tc refuses `class change ... htb ceil X` with `"rate" is required`.
+
+        Measured: dropcheck3 reported capacity_change_applied False with
+
+            classid 1:10 htb ceil 10.0000mbit -> "rate" is required.
+
+        The clamp cannot be expressed on its own, which is why this looked like a
+        mysterious refusal until the error text was finally surfaced into the
+        artefact.
+        """
+        h = harness()
+        h.apply_system(SystemSpec.ACIQ, 100.0)
+        for cmd in h.set_capacity(10.0):
+            if "parent 1:1 classid" in " ".join(cmd):
+                self.assertIn(" rate ", f" {' '.join(cmd)} ")
+
+    def test_no_child_rate_ever_exceeds_its_clamped_ceil(self):
+        """HTB requires rate <= ceil. Lowering the ceil under a child's existing
+        rate would leave an invalid class, and `rate 0` would be honoured by the
+        kernel and silently delete M3's bandwidth."""
+        h = harness()
+        h.apply_system(SystemSpec.ACIQ, 100.0)
+        for cmd in h.set_capacity(10.0):
+            text = " ".join(cmd)
+            if " rate " not in f" {text} ":
+                continue
+            rate = float(text.split(" rate ")[1].split("mbit")[0])
+            ceil = float(text.split(" ceil ")[1].split("mbit")[0])
+            self.assertLessEqual(rate, ceil, f"invalid HTB class: {text}")
+
+    def test_a_clamp_never_raises_a_child_rate(self):
+        """min() only. Raising one would hand M3's bandwidth to someone."""
+        h = harness()
+        h.apply_system(SystemSpec.ACIQ, 100.0)
+        before = {}
+        for c in h.runner.commands:
+            t = " ".join(c)
+            if "classid" in t and " rate " in f" {t} ":
+                before[t.split("classid ")[1].split(" ")[0]] = float(
+                    t.split(" rate ")[1].split("mbit")[0])
+        for cmd in h.set_capacity(10.0):
+            text = " ".join(cmd)
+            if "parent 1:1 classid" not in text:
+                continue
+            cid = text.split("classid ")[1].split(" ")[0]
+            rate = float(text.split(" rate ")[1].split("mbit")[0])
+            self.assertLessEqual(rate, before.get(cid, rate) + 1e-9)
+
     def test_set_capacity_never_rescales_child_rates(self):
         """Ceil is a safety clamp; rates are policy and belong to M3. If the
         harness rescaled rates it would bypass M2, and "adaptation time" would

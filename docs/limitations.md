@@ -461,10 +461,27 @@ Cause, in two parts:
    never measured in any of these runs. So the parent's rate change alone does not
    bound the link, and nothing in the loop notices.
 
-Part 1 is done. **Part 2 is not**, and it is the real one: it needs either the
-children rescaled at drop time, or M2 given a way to measure a link that is not
-oversubscribed. Until then, treat every result involving `--drop` as an undropped
-run.
+Part 1 is done, and part 2 turned out to be two bugs rather than a design
+question:
+
+**The clamp could not be expressed.** `tc class change ... htb ceil X` is refused
+with `"rate" is required`. So a bare ceil clamp never worked, and the first
+attempt at it was rejected by the kernel for every child -- which is why
+`dropcheck3` reported `capacity_change_applied: False`. Each child now passes its
+existing `rate` back unchanged alongside the clamped `ceil`.
+
+**And HTB requires `rate <= ceil`.** Clamping the ceil to 10 under a child whose
+rate was 53.57 would leave an invalid class, so the rate is clamped down with
+`min()` -- never up, because a raise would hand M3's bandwidth to someone. The
+*proportions* remain M3's to decide; this only stops the configuration being
+illegal.
+
+What remains open: **M2 has still never measured a link in any run.** Whether it
+will now that the link genuinely caps is untested. If `estimator_mbps` is still
+`None` after a confirmed drop, M2 needs an active probe -- gate check 12 already
+validated one, and it would become the fix.
+
+Until that is settled, treat every result involving `--drop` as an undropped run.
 
 ## 6. There is no per-user or per-device fairness
 
