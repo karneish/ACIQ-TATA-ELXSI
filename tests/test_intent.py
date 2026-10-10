@@ -1361,3 +1361,100 @@ class _Loop:
 
     def __init__(self, bridge):
         self.bridge = bridge
+
+
+class TestACapacityChangeIsNotTakenOnTrust(unittest.TestCase):
+    """`--drop-at` never actually dropped anything, and every report said it did.
+
+    `set_capacity` discarded tc's return code, so a refused change looked exactly
+    like a successful one. `result.json` then reported `link_end_mbps` from the
+    *argument*. The parent counter settled the question: 25 Mbps sustained on a
+    "10 Mbps" link, in every `--drop` run taken so far.
+
+    data/leaseB4 measured, across the drop at t=20:
+
+        t=19.50  parent rate  4.67 Mbps
+        t=23.61  parent rate 14.23 Mbps
+        t=25.66  parent rate 24.68 Mbps   <- the "10 Mbps" link
+
+    The mechanism is not identified; what matters here is that the run cannot now
+    claim a drop it did not make.
+    """
+
+    def test_a_refused_change_is_recorded_as_refused(self):
+        from aciq.harness import Harness
+
+        class Refusing(FakeRunner):
+            # `run`, not `__call__`: FakeRunner implements run(). Overriding the
+            # wrong one made these refusals silently never fire, which is how the
+            # first version of this test passed against code that refused nothing.
+            def run(self, argv, **kw):
+                if "class" in argv and "change" in argv:
+                    return 1, "", "RTNETLINK answers: Invalid argument"
+                return super().run(argv, **kw)
+
+        h = Harness(runner=Refusing(auto_readback=True), clock=lambda: 0.0)
+        h.set_capacity(100.0)
+        h.set_capacity(10.0)
+        self.assertFalse(h._capacity_change_ok)
+        self.assertIn("Invalid", h._capacity_change_error)
+
+    def test_a_refused_change_does_not_become_the_configured_capacity(self):
+        from aciq.harness import Harness
+
+        class Refusing(FakeRunner):
+            def run(self, argv, **kw):
+                if "class" in argv and "change" in argv:
+                    return 1, "", "nope"
+                return super().run(argv, **kw)
+
+        h = Harness(runner=Refusing(auto_readback=True), clock=lambda: 0.0)
+        h.set_capacity(100.0)
+        h.set_capacity(10.0)
+        self.assertEqual(h._configured_capacity, 100.0,
+                         "a refused change was recorded as the new capacity")
+
+    def test_a_successful_change_is_recorded(self):
+        from aciq.harness import Harness
+        h = Harness(runner=FakeRunner(auto_readback=True), clock=lambda: 0.0)
+        h.set_capacity(100.0)
+        h.set_capacity(10.0)
+        self.assertTrue(h._capacity_change_ok)
+        self.assertEqual(h._configured_capacity, 10.0)
+
+    def test_the_run_note_says_the_link_was_not_changed(self):
+        r = ExperimentRunner(
+            launcher=_LiveishLauncher(),
+            harness=Harness(runner=FakeRunner(auto_readback=True), clock=lambda: 0.0),
+            results_dir=Path("/tmp"), real_time=False, tick_s=1.0,
+            bridge_executor=_Exec())
+        r._capacity_change_failed = True
+        r._capacity_change_error = "Invalid argument"
+        note = r._capacity_note()
+        self.assertIn("REFUSED", note)
+        self.assertIn("link_end_mbps", note)
+
+    def test_result_json_carries_the_flag(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = ExperimentRunner(
+                launcher=_LiveishLauncher(),
+                harness=Harness(runner=FakeRunner(auto_readback=True),
+                                clock=lambda: 0.0),
+                results_dir=Path(d), real_time=False, tick_s=1.0,
+                bridge_executor=_Exec())
+            res = r.run("s3_tv_and_gaming", ACIQ, enforce=True)
+            self.assertTrue(res.capacity_change_applied,
+                            "no drop requested, so nothing to refuse")
+
+    def test_the_report_marks_a_refused_drop(self):
+        with tempfile.TemporaryDirectory() as d:
+            run = Path(d) / "r__aciq__adaptive__seed42"
+            run.mkdir(parents=True)
+            (run / "result.json").write_text(json.dumps(
+                {"scenario": "s", "system": "aciq", "capacity_mode": "adaptive",
+                 "seed": 42, "link_start_mbps": 100.0, "link_end_mbps": 10.0,
+                 "capacity_change_applied": False, "estimator_mbps": None,
+                 "policy_changes": 0}))
+            (run / "workloads.json").write_text("{}")
+            from aciq.report import build_report
+            self.assertIn("(REFUSED)", build_report(Path(d)))

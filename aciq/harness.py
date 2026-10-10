@@ -133,6 +133,11 @@ class RunResult:
     seed: int
     link_start_mbps: float
     link_end_mbps: float
+    #: False when tc refused the requested capacity change, which makes
+    #: `link_end_mbps` the value that was *asked for* rather than one the link
+    #: ever reached. Every `--drop-at` run before this reported 10 or 20 Mbps on
+    #: a link whose parent counter showed 25 Mbps sustained.
+    capacity_change_applied: bool = True
     estimator_mbps: float | None = None
     samples: list[dict] = field(default_factory=list)
     policy_changes: int = 0
@@ -318,9 +323,23 @@ class Harness:
             "parent", BARE_CLASS_ID, "classid", ROOT_CLASS_ID, "htb",
             "rate", f"{capacity_mbps:.4f}mbit", "ceil", f"{capacity_mbps:.4f}mbit",
         )
-        self.runner.run(argv)
+        rc, _out, err = self.runner.run(argv)
+        # The return code was discarded, so a drop that tc refused looked exactly
+        # like a drop that worked. Every `--drop-at` run since has reported
+        # `link_end_mbps` from the *argument* while the parent counter showed the
+        # link never changed: 25 Mbps sustained on a "10 Mbps" link.
+        self._capacity_change_ok = (rc == 0)
+        self._capacity_change_error = "" if rc == 0 else err.strip() or f"exit {rc}"
+        if rc != 0:
+            # Do NOT record it as the new capacity. Pretending a refused change
+            # took effect is how a run ends up reporting a link state it never had.
+            return argv
         self._configured_capacity = capacity_mbps
         return argv
+
+    #: Whether the last `set_capacity` actually took effect.
+    _capacity_change_ok: bool = True
+    _capacity_change_error: str = ""
 
     # ---------------- system setup ----------------
     def apply_system(self, system: SystemSpec, capacity_mbps: float) -> bool:

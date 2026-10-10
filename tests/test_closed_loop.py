@@ -17,6 +17,7 @@ from aciq.corrections import CorrectionStore
 from aciq.closedloop import CLASS_ID_OF, Enforcer, key_of
 from aciq.harness import Harness, SystemSpec
 from aciq.model import Flow, TrafficClass
+from aciq.txn import FakeRunner
 from aciq import tc
 
 CAP = 100.0
@@ -251,7 +252,12 @@ class TestCapacityIsMeasured(unittest.TestCase):
         """Pushed on the next enforce(), not on set_capacity(): capacity is
         pushed where a verdict is actually produced, so a run that measures
         capacity but classifies no flows does no redundant work."""
-        h = Harness()
+        # A FakeRunner, because set_capacity now *checks* tc's return code and
+        # these tests have no tc to check. With a real Runner and no root, `ip` is
+        # missing, the change is (correctly) refused, and the configured capacity
+        # stays at its default -- which would make these tests pass or fail for a
+        # reason that has nothing to do with what they assert.
+        h = Harness(runner=FakeRunner(auto_readback=True))
         h.enable_enforcement(executor=FakeExec())
         h._enforcer.capacity_mbps = 999.0
         h.set_capacity(37.5)
@@ -262,7 +268,7 @@ class TestCapacityIsMeasured(unittest.TestCase):
         """The invariant the whole of M2 exists for. `tc class change ... rate
         20mbit` followed by a link that still measures 18.6 means classifying
         against 20 would reason about a link that is not there."""
-        h = Harness()
+        h = Harness(runner=FakeRunner(auto_readback=True))
         h.enable_enforcement(executor=FakeExec())
         h.set_capacity(20.0)
         h.enforce(mature())

@@ -428,6 +428,44 @@ demonstration.
 The log itself is gitignored (`.gitignore` line 10, `testbed/logs/`), so this
 note is the record.
 
+## 5k. `--drop-at` never actually dropped anything (2026-10-10)
+
+Found while analysing `data/leaseB4`. The parent class counter, across the drop at
+t=20 on a link requested at 10 Mbps:
+
+    t=19.50  parent rate  4.67 Mbps
+    t=23.61  parent rate 14.23 Mbps
+    t=25.66  parent rate 24.68 Mbps   <- the "10 Mbps" link
+
+Traffic peaks at 24.9 Mbps *after* the drop, in both arms. And `result.json`
+reported `link_end_mbps: 10.0` throughout, because it is the **argument**, not a
+measurement.
+
+**Every `--drop-at` run taken so far — `data/matrix6`, `leaseA`, `leaseB`,
+`fixcheck`, `leaseA2`, `leaseB4` — ran against a link that never got slower.**
+So `--drop-at` has never been tested in a real run, and neither has anything that
+depends on a genuine capacity drop.
+
+Cause, in two parts:
+
+1. **`set_capacity` discarded tc's return code.** A refused change looked
+   identical to a successful one. It now records success, refuses to record a
+   refused value as the configured capacity, and the run carries a
+   `CAPACITY CHANGE REFUSED` note plus `capacity_change_applied: false`, which
+   the report renders as `10.0 (REFUSED)`.
+2. **Not yet fixed: why the change does not constrain.** `set_capacity` changes
+   **only** class `1:1`, deliberately, so that rescaling children stays M3's job.
+   Gate check 6 shows the two must happen together — it rescales the children's
+   ceil explicitly, because a child with ceil 100 under a 10 Mbps parent keeps
+   borrowing. M3 only rescales when M2 has measured a new capacity, and M2 has
+   never measured in any of these runs. So the parent's rate change alone does not
+   bound the link, and nothing in the loop notices.
+
+Part 1 is done. **Part 2 is not**, and it is the real one: it needs either the
+children rescaled at drop time, or M2 given a way to measure a link that is not
+oversubscribed. Until then, treat every result involving `--drop` as an undropped
+run.
+
 ## 6. There is no per-user or per-device fairness
 
 `8:4:2` allocates bandwidth **per class**. Fairness within a class is delegated

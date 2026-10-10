@@ -353,9 +353,15 @@ def build_report(results_dir: Path, title: str = "ACIQ+ experiment report") -> s
     ]
     for r in runs:
         est = "n/a" if r.get("estimator_mbps") is None else f"{r['estimator_mbps']:.1f} Mbps"
+        # The requested capacity, marked when tc refused it. Printing 10.0 beside
+        # a link that never changed is the same class of error as printing a
+        # verdict for a run that steered nothing.
+        end = r.get("link_end_mbps")
+        if r.get("capacity_change_applied") is False and r.get("link_start_mbps") != end:
+            end = f"{end} (REFUSED)"
         lines.append(
             f"| {r.get('scenario')} | {r.get('system')} | {r.get('capacity_mode')} "
-            f"| {r.get('seed')} | {r.get('link_start_mbps')} | {r.get('link_end_mbps')} "
+            f"| {r.get('seed')} | {r.get('link_start_mbps')} | {end} "
             f"| {est} | {r.get('policy_changes', 0)} |")
 
     table = latency_table(results_dir)

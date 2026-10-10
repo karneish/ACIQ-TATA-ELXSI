@@ -207,6 +207,10 @@ class ExperimentRunner:
         self._enf_filters_n = -1
         self._enf_filters_seen_max = 0
         self._last_filter_reads: tuple[int, int] = (-1, -1)
+        #: Set when `tc` refused the capacity change. Carried into result.json,
+        #: because otherwise the run reports a link state it never reached.
+        self._capacity_change_failed = False
+        self._capacity_change_error = ""
 
     def run_paths(self, scenario: str, system: SystemSpec, mode: CapacityMode,
                   seed: int) -> RunPaths:
@@ -289,6 +293,10 @@ class ExperimentRunner:
         self._enf_filters_n = -1
         self._enf_filters_seen_max = 0
         self._last_filter_reads: tuple[int, int] = (-1, -1)
+        #: Set when `tc` refused the capacity change. Carried into result.json,
+        #: because otherwise the run reports a link state it never reached.
+        self._capacity_change_failed = False
+        self._capacity_change_error = ""
         #: When M2 last produced a *new* reading, and when the link was last
         #: reconfigured. Their comparison decides whether the final estimate
         #: describes the end of the run or a moment before it changed.
@@ -489,6 +497,10 @@ class ExperimentRunner:
                 # Only the link changes. Baselines are not told; ACIQ must
                 # notice from counters alone.
                 self.harness.set_capacity(drop_mbps)
+                if not self.harness._capacity_change_ok:
+                    self._capacity_change_failed = True
+                    self._capacity_change_error = \
+                        self.harness._capacity_change_error
                 if mode is CapacityMode.INFORMED:
                     # the oracle variant is handed the new capacity outright
                     self.harness.apply_system(system, drop_mbps)
@@ -560,6 +572,7 @@ class ExperimentRunner:
             scenario=sc.name, system=system.value, capacity_mode=mode.value,
             seed=seed, link_start_mbps=link_mbps,
             link_end_mbps=drop_mbps if dropped else link_mbps,
+            capacity_change_applied=not self._capacity_change_failed,
             estimator_mbps=round(est, 2) if est else None,
             samples=samples[-3:],
             policy_changes=self.harness.policy_changes,
@@ -672,6 +685,13 @@ class ExperimentRunner:
             if self._enf_first_steer is None:
                 self._enf_first_steer = (len(out), self._count_filters())
         return out
+
+    def _capacity_note(self) -> str:
+        """Loud, because `link_end_mbps` still reports the requested value."""
+        return (f"CAPACITY CHANGE REFUSED by tc ({self._capacity_change_error}) -- "
+                f"the link was NOT changed. result.json still shows "
+                f"link_end_mbps as the value that was requested, not one that was "
+                f"measured; treat every result from this run as an undropped run")
 
     def _stale_note(self, est: float | None) -> str:
         """Say when the final estimate predates the last capacity change.
