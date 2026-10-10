@@ -573,14 +573,15 @@ class ExperimentRunner:
             seed=seed, link_start_mbps=link_mbps,
             link_end_mbps=drop_mbps if dropped else link_mbps,
             capacity_change_applied=not self._capacity_change_failed,
+            capacity_change_error=self.harness._capacity_change_error,
             estimator_mbps=round(est, 2) if est else None,
             samples=samples[-3:],
             policy_changes=self.harness.policy_changes,
-            notes=(([] if dropped else ["no capacity drop in this run"])
+notes=(([] if dropped else ["no capacity drop in this run"])
                    + ([stale_note] if stale_note else [])
                    + [enforcement_note]
-                  + ([f"leases held for {', '.join(self._lease_ips)} "
-                      f"(weight {self._lease_weight:.2f})"] if lease_note else [])),
+                   + ([_lease_note] if lease_note else [])
+                   + ([self._capacity_note()] if self._capacity_change_failed else [])),
         )
         paths.write_json("result.json", json.loads(res.to_json()))
         return res

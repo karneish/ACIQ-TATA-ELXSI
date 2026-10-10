@@ -157,6 +157,11 @@ class RunResult:
     #: ever reached. Every `--drop-at` run before this reported 10 or 20 Mbps on
     #: a link whose parent counter showed 25 Mbps sustained.
     capacity_change_applied: bool = True
+    #: Why, when it was refused. A field rather than only a note, because a note
+    #: is prose and this is the evidence: `dropcheck2` reported
+    #: capacity_change_applied False with no reason anywhere, which sent me
+    #: looking in the wrong place twice.
+    capacity_change_error: str = ""
     estimator_mbps: float | None = None
     samples: list[dict] = field(default_factory=list)
     policy_changes: int = 0

@@ -942,16 +942,25 @@ class TestLeasesInARun(unittest.TestCase):
                  / "config.json").read_text())
             self.assertEqual(cfg["lease_ttl_s"], 5.0)
 
-    def test_the_run_says_it_held_leases(self):
+    def test_the_run_says_whether_the_lease_was_installed(self):
         """A lease held but never reported is the same failure as a lease held
-        and never applied: the reader cannot tell them apart."""
+        and never applied: the reader cannot tell them apart.
+
+        Either wording is acceptable -- what is not acceptable is silence. Here
+        the fake transaction manager refuses the lease plan, so the accurate
+        answer is the NOT INSTALLED one.
+        """
         with tempfile.TemporaryDirectory() as d:
             r = self._runner(d)
             r.run("s3_tv_and_gaming", ACIQ, enforce=True, lease_ips=["10.0.1.2"])
             res = json.loads(
                 (Path(d) / "s3_tv_and_gaming__aciq__adaptive__seed42"
                  / "result.json").read_text())
-            self.assertIn("leases held for 10.0.1.2", " ".join(res["notes"]))
+            notes = " ".join(res["notes"])
+            self.assertIn("10.0.1.2", notes, "the lease was never mentioned")
+            self.assertTrue("NOT INSTALLED" in notes
+                            or "leases held for" in notes,
+                            f"neither wording present: {notes}")
 
     def test_a_run_without_leases_records_none(self):
         with tempfile.TemporaryDirectory() as d:
@@ -1458,3 +1467,57 @@ class TestACapacityChangeIsNotTakenOnTrust(unittest.TestCase):
             (run / "workloads.json").write_text("{}")
             from aciq.report import build_report
             self.assertIn("(REFUSED)", build_report(Path(d)))
+
+
+class TestARefusalSaysWhy(unittest.TestCase):
+    """dropcheck2 reported capacity_change_applied False and no reason anywhere.
+
+    The harness had captured tc's stderr in `_capacity_change_error` and the run
+    never put it in the artefact, so the one piece of evidence that would have
+    answered the question was sitting in memory. Three edits had failed to apply
+    silently in a row before this, which is why the omission survived several
+    rounds of looking.
+    """
+
+    def test_the_note_carries_the_tc_error(self):
+        r = ExperimentRunner(
+            launcher=_LiveishLauncher(),
+            harness=Harness(runner=FakeRunner(auto_readback=True), clock=lambda: 0.0),
+            results_dir=Path("/tmp"), real_time=False, tick_s=1.0,
+            bridge_executor=_Exec())
+        r._capacity_change_failed = True
+        r._capacity_change_error = "RTNETLINK answers: Invalid argument"
+        note = r._capacity_note()
+        self.assertIn("REFUSED", note)
+        self.assertIn("RTNETLINK", note)
+
+    def test_result_json_carries_the_error_as_a_field(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = ExperimentRunner(
+                launcher=_LiveishLauncher(),
+                harness=Harness(runner=FakeRunner(auto_readback=True),
+                                clock=lambda: 0.0),
+                results_dir=Path(d), real_time=False, tick_s=1.0,
+                bridge_executor=_Exec())
+            r.run("s3_tv_and_gaming", ACIQ, enforce=True)
+            res = json.loads(
+                (Path(d) / "s3_tv_and_gaming__aciq__adaptive__seed42"
+                 / "result.json").read_text())
+            self.assertIn("capacity_change_error", res,
+                          "a refusal with no reason anywhere in the artefact")
+            self.assertIn("capacity_change_applied", res)
+
+    def test_a_clean_run_reports_no_error(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = ExperimentRunner(
+                launcher=_LiveishLauncher(),
+                harness=Harness(runner=FakeRunner(auto_readback=True),
+                                clock=lambda: 0.0),
+                results_dir=Path(d), real_time=False, tick_s=1.0,
+                bridge_executor=_Exec())
+            r.run("s3_tv_and_gaming", ACIQ, enforce=True)
+            res = json.loads(
+                (Path(d) / "s3_tv_and_gaming__aciq__adaptive__seed42"
+                 / "result.json").read_text())
+            self.assertTrue(res["capacity_change_applied"])
+            self.assertEqual(res["capacity_change_error"], "")
