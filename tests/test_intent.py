@@ -1074,7 +1074,72 @@ class TestALeaseThatNeverLands(unittest.TestCase):
         runner.harness.enable_enforcement(executor=_RAISER)
         runner.harness._lease_book = _NoLeases()
         runner.harness._lease_book.for_flow = lambda *a, **k: None
-        out = runner._enforcement_step([("tv1", 7001, None)], 3.0)
+        out, n = runner._enforcement_step([("tv1", 7001, None)], 3.0)
         self.assertEqual(out, {})
+        self.assertEqual(n, -1, "a failed tick must not report a filter count of 0")
         self.assertEqual(runner._enf_errors, 1)
         self.assertIn("Boom", runner._enf_last_error)
+
+
+class TestMissingFiltersAreReported(unittest.TestCase):
+    """The lease A/B run could not be diagnosed from its own artefacts.
+
+    B's filters matched for three ticks and then never again. The verdict stayed
+    `adaptive`, no tick reported a filter change, and no error was recorded -- so
+    "the filter was removed" and "it is installed and not matching" looked
+    identical. Every sample now records the filter count, and the run says so in
+    words if they vanish.
+    """
+
+    def _runner(self, tmp):
+        return ExperimentRunner(
+            launcher=_LiveishLauncher(),
+            harness=Harness(runner=FakeRunner(auto_readback=True), clock=lambda: 0.0),
+            results_dir=Path(tmp), real_time=False, tick_s=1.0,
+            bridge_executor=_Exec())
+
+    def test_no_note_when_the_filters_are_still_there(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r._enf_first_steer = (4, 4)
+            r._enf_filters_n, r._enf_filters_seen_max = 4, 4
+            self.assertEqual(r._filter_loss_note(4), "")
+
+    def test_it_names_how_many_vanished_when_they_do(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r._enf_first_steer = (4, 4)
+            r._enf_filters_n, r._enf_filters_seen_max = 0, 4
+            note = r._filter_loss_note(0)
+            self.assertIn("all 4", note)
+            self.assertIn("GONE", note)
+            self.assertIn("filters_installed", note)
+
+    def test_a_run_that_never_installed_any_is_not_reported_as_loss(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r._enf_first_steer = None
+            self.assertEqual(r._filter_loss_note(0), "")
+
+    def test_unreadable_is_not_zero(self):
+        """-1, deliberately: "the filters are gone" and "I could not read the
+        device" must not print the same thing, or this note fires on a permissions
+        problem and blames the filters."""
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r._enf_first_steer = (4, 4)
+            r._enf_filters_seen_max = 4
+            self.assertEqual(r._filter_loss_note(-1), "")
+
+    def test_every_sample_records_the_filter_count(self):
+        from aciq.experiment import ExperimentRunner as R
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            r.run("s3_tv_and_gaming", ACIQ, enforce=True)
+            rows = [json.loads(l) for l in
+                    (Path(d) / "s3_tv_and_gaming__aciq__adaptive__seed42"
+                     / "samples.jsonl").read_text().splitlines()]
+            self.assertIn("filters_installed", rows[0])
+            # -1 because the fake executor answers tc -j with an empty device and
+            # _LiveishLauncher spawns nothing; the point is the key is present.
+            self.assertTrue(all("filters_installed" in q for q in rows))

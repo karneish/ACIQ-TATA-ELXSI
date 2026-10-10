@@ -28,6 +28,7 @@ from typing import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .bridge import enumerate_flow_filters
 from .flowtrack import ConntrackSource, FlowTracker
 from .intent import IntentError, LeaseBook
 from .harness import SCENARIOS, CapacityMode, Harness, RunResult, SystemSpec
@@ -195,6 +196,16 @@ class ExperimentRunner:
         #: something and the sample's empty verdicts are a failure, not an absence.
         self._enf_errors = 0
         self._enf_last_error: str | None = None
+        #: (verdicts_seen, filters_installed) on the first tick that produced a
+        #: verdict but installed nothing. Captured so a later drop to zero can be
+        #: reported as "4 filters vanished" rather than inferred from a reader
+        #: comparing two numbers.
+        self._enf_first_steer: tuple[int, int] | None = None
+        #: Last observed filter count, and the high-water mark. Run state rather
+        #: than a loop local, so the note at the end of the run can see it even
+        #: when the loop was skipped entirely.
+        self._enf_filters_n = -1
+        self._enf_filters_seen_max = 0
 
     def run_paths(self, scenario: str, system: SystemSpec, mode: CapacityMode,
                   seed: int) -> RunPaths:
@@ -266,6 +277,16 @@ class ExperimentRunner:
         #: something and the sample's empty verdicts are a failure, not an absence.
         self._enf_errors = 0
         self._enf_last_error: str | None = None
+        #: (verdicts_seen, filters_installed) on the first tick that produced a
+        #: verdict but installed nothing. Captured so a later drop to zero can be
+        #: reported as "4 filters vanished" rather than inferred from a reader
+        #: comparing two numbers.
+        self._enf_first_steer: tuple[int, int] | None = None
+        #: Last observed filter count, and the high-water mark. Run state rather
+        #: than a loop local, so the note at the end of the run can see it even
+        #: when the loop was skipped entirely.
+        self._enf_filters_n = -1
+        self._enf_filters_seen_max = 0
         #: When M2 last produced a *new* reading, and when the link was last
         #: reconfigured. Their comparison decides whether the final estimate
         #: describes the end of the run or a moment before it changed.
@@ -406,8 +427,14 @@ class ExperimentRunner:
             # the estimate stayed 0.0 for the whole run.
             if mode is CapacityMode.ADAPTIVE:
                 self._closed_loop_step(collector, self.tick_s, t0 + elapsed)
-            verdicts = (self._enforcement_step(ports, t0 + elapsed)
-                        if enforcement_on else {})
+            if enforcement_on:
+                verdicts, filters_n = self._enforcement_step(ports, t0 + elapsed)
+                self._enf_filters_n = filters_n
+                if filters_n > 0:
+                    self._enf_filters_seen_max = max(self._enf_filters_seen_max,
+                                                     filters_n)
+            else:
+                verdicts, filters_n = {}, 0
             # Note when M2 last moved. A run whose only reading predates the drop
             # reports that pre-drop number as "the estimator" alongside
             # link_end=20 -- the matrix showed 102.77 Mbps for a 20 Mbps link.
@@ -437,6 +464,12 @@ class ExperimentRunner:
                 # Whether a lease covered any flow this tick. Sampled, not
                 # assumed, so a lease that never matched anything is visible.
                 "lease_active": bool(self._lease_book.active()) if self._lease_book else False,
+                # How many of our filters the device still has. This is the
+                # discriminator the lease A/B run lacked: with the count you can
+                # tell "the filter was removed" from "it is installed and not
+                # matching", which look identical in the verdicts alone. It is
+                # what turned a healthy-looking run into an unanswerable one.
+                "filters_installed": filters_n,
             })
 
             # the drop: the link changes, and only the link changes
@@ -475,6 +508,9 @@ class ExperimentRunner:
         if self._enf_errors:
             enforcement_note += (f"; {self._enf_errors} tick(s) raised during "
                                  f"enforcement, last: {self._enf_last_error}")
+        loss = self._filter_loss_note(self._enf_filters_n)
+        if loss:
+            enforcement_note += "; " + loss
         lease_note = bool(self._lease_ips) and enforcement_on
         # The distinction that was missing when this was first written: a lease
         # that is *held* and a lease that is *installed* are different states.
@@ -522,8 +558,10 @@ class ExperimentRunner:
         paths.write_json("result.json", json.loads(res.to_json()))
         return res
 
-    def _enforcement_step(self, ports, now: float) -> dict[str, dict]:
+    def _enforcement_step(self, ports, now: float) -> tuple[dict[str, dict], int]:
         """One enforcement tick: observe flows, classify, steer.
+
+        Returns (verdicts, filters_still_installed).
 
         Reads conntrack rather than anything the workload knows about itself, so
         the decision rests on observed counters. The workload labels are used
@@ -543,9 +581,10 @@ class ExperimentRunner:
             # the kernel rejected looked exactly like a tick that found no flows,
             # and the run reported verdicts while steering nothing.
             self._enf_errors += 1
-            return {}
+            return {}, -1
         try:
-            return self._steer(ports, now, text)
+            verdicts = self._steer(ports, now, text)
+            return verdicts, self._count_filters()
         except Exception as e:
             # Recorded rather than raised: a run must finish so that its
             # artefacts exist, but the failure has to be visible in them. A tick
@@ -553,7 +592,19 @@ class ExperimentRunner:
             # healthy while the kernel refused every filter install.
             self._enf_errors += 1
             self._enf_last_error = f"{type(e).__name__}: {e}"
-            return {}
+            return {}, -1
+
+    def _count_filters(self) -> int:
+        """How many of our flower filters the device still has.
+
+        -1 when it cannot be read, which is deliberately not 0: "the filters are
+        gone" and "I could not tell" must not look the same in the artefact, or
+        the check below fires on a permissions problem and blames the filters.
+        """
+        try:
+            return len(enumerate_flow_filters(self.harness.dev, self.harness.ns))
+        except Exception:
+            return -1
 
     def _steer(self, ports, now: float, text: str) -> dict:
         """One tick's work: classify every flow this run owns and steer it."""
@@ -582,6 +633,8 @@ class ExperimentRunner:
             }
         if any(v["changed"] for v in out.values()):
             self._enf_steered += 1
+            if self._enf_first_steer is None:
+                self._enf_first_steer = (len(out), self._count_filters())
         return out
 
     def _stale_note(self, est: float | None) -> str:
@@ -627,6 +680,32 @@ class ExperimentRunner:
             return (f"per-flow enforcement ON ({self._enf_steered}/{self._enf_ticks} "
                     f"ticks changed a filter)")
         return "per-flow enforcement ON"
+
+    def _filter_loss_note(self, filters_n: int) -> str:
+        """Say it if our filters went missing, and say how they went.
+
+        This is the note the lease A/B run needed and did not have. B's filters
+        matched for three ticks and then never again, with the verdict steady at
+        `adaptive` and no error anywhere -- so "the filter was removed" and "it
+        is installed and not matching" were indistinguishable, and the run could
+        not be diagnosed from its own artefacts.
+
+        Reported only on a clean fall to zero. A count that flickers between 0 and
+        N is usually the enumeration losing a race, not filters being deleted, and
+        claiming otherwise would send someone hunting a bug that is not there.
+        """
+        if filters_n != 0 or self._enf_first_steer is None:
+            return ""
+        if self._enf_filters_seen_max <= 0:
+            # Never saw any, so nothing went missing -- the run installed none.
+            return ""
+        expected, _seen = self._enf_first_steer
+        return (f"all {expected} per-flow filters are GONE from the device while "
+                f"the classifier still reports verdicts for them -- something "
+                f"removed them. filters_installed is in every sample: 0 means "
+                f"removed, a non-zero count means they are installed and not "
+                f"matching. Compare with data/leaseB, where the count was not "
+                f"recorded and this could not be told apart")
 
     def _settle(self, paths: RunPaths, ports, sc, settle_s: float) -> None:
         """Run interactive workloads only, and record nothing.

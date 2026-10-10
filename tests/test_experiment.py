@@ -593,7 +593,7 @@ class TestEnforcementWiring(unittest.TestCase):
             tracker.observe(self.CT.replace("4000000", "4400000")
                             .replace("800000", "880000"), 1.0)
             r.harness.enable_enforcement(executor=_Exec())
-            out = r._enforcement_step(ports, 2.0)
+            out, _n = r._enforcement_step(ports, 2.0)
             self.assertEqual(set(out), {"video", "gaming"})
             for label, v in out.items():
                 self.assertIn("class", v)
@@ -614,7 +614,7 @@ class TestEnforcementWiring(unittest.TestCase):
                             .replace("800000", "880000"), 1.0)
             r.harness.enable_enforcement(executor=_Exec())
             # The run owns 7001 only; 7002 and the loopback traffic are not ours.
-            out = r._enforcement_step([("video", 7001, None)], 2.0)
+            out, _n = r._enforcement_step([("video", 7001, None)], 2.0)
             self.assertEqual(set(out), {"video"})
 
     def test_one_failed_conntrack_read_does_not_kill_the_run(self):
@@ -625,7 +625,7 @@ class TestEnforcementWiring(unittest.TestCase):
             r = self._runner(d)
             r._ct = Boom()
             r._tracker = object()
-            self.assertEqual(r._enforcement_step([("v", 7001, None)], 1.0), {})
+            self.assertEqual(r._enforcement_step([("v", 7001, None)], 1.0)[0], {})
 
 
 class _LiveishLauncher:
@@ -752,7 +752,7 @@ class TestSilentEnforcementIsCalledOut(unittest.TestCase):
             r._tracker = FlowTracker()
             r.harness.enable_enforcement(executor=_Exec())
             r._enf_ticks = r._enf_steered = 0
-            out = r._enforcement_step([("video", 7001, None)], 1.0)
+            out, _n = r._enforcement_step([("video", 7001, None)], 1.0)
             self.assertEqual(set(out), {"video"}, "the flow should have been seen")
             self.assertFalse(out["video"]["changed"], "but declined: age 0")
             self.assertEqual(r._enf_steered, 0, "seeing a flow counted as steering")
