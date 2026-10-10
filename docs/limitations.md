@@ -634,3 +634,41 @@ p99 against cake's 1.5 ms is unexplained and is the weakest number here.
 One run — `s3_tv_and_gaming__aciq__adaptive__seed42` — has no `result.json`:
 its workloads all completed, but the run died before artefact collection. It
 contributes no metrics.
+
+## M7 leases cannot be measured in this testbed as built
+
+Both lease comparisons are void, and for the same structural reason rather than
+a coincidence.
+
+`ab_lease` leased `10.0.1.2` and `dev_lease` leased `203.0.113.2` -- the two
+endpoints available. Both produced the same result:
+
+```
+   no-lease  total=304.54 Mb   adaptive_video=190.0  bulk_transfer=113.2  realtime=1.4
+  lease      total=303.79 Mb   leased_flow=303.8    adaptive_video=0.0  bulk=0.0  realtime=0.0
+```
+
+The verdicts say why. At t=0, with a lease held for `203.0.113.2`:
+
+```
+  {"game": {"class": "leased", "confidence": 1.0}, "tv2": {... "leased" ...},
+   "tv1": {... "leased" ...}, "tv3": {... "leased" ...}}
+```
+
+Every workload is leased. Because **the testbed has exactly one address per
+side**: `wan` holds `203.0.113.2/24` and `client` holds `10.0.1.2/24`, and all
+four workloads are spawned from `wan`, separated only by `dst_port`. So a lease
+for either address matches every flow in the run, and every byte is steered to
+class 1:40. The lease class then takes the whole link regardless of its rate,
+which is what the 100% share is.
+
+The consequence for what can be claimed: a lease matching all traffic capturing
+all traffic is not evidence that leases work. It is evidence that steering works,
+which `matrix6` and gate checks 15-19 already establish. M7's actual claim --
+that leasing one device raises *its* share at the expense of others -- is not
+testable until the testbed has more than one device address.
+
+`docs/WIRING_AUDIT.md` flags this trap at line 256 ("key device/lease rules on
+the DESTINATION address"); the wider version of it -- that there is only one
+destination and one source to choose from -- is a topology limitation, not a
+wiring bug.
