@@ -353,3 +353,71 @@ class TestCusum(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTheEstimatorReactsToARealDrop(unittest.TestCase):
+    """Does M2 do anything once --drop-at actually caps the link?
+
+    Every run so far reported estimator_mbps None, and the reason was correct
+    rather than broken: at 100 Mbps with ~25 Mbps offered the link is only a
+    quarter loaded, so it is not saturated, so there is no capacity information
+    to read. That is the documented behaviour working.
+
+    This asks the question that the drop was supposed to answer, without needing
+    the testbed: replay the tick sequence a confirmed drop would produce and
+    check the estimator converges.
+    """
+
+    def _replay(self, offered=25.0, before=100.0, after=10.0,
+                drop_at=20.0, horizon=41.0):
+        est = CapacityEstimator(initial_mbps=before)
+        changes = []
+        t = 1.0
+        while t <= horizon:
+            capped = min(offered, before) if t < drop_at else min(offered, after)
+            # Saturated only once the link is genuinely oversubscribed: the
+            # parent's overlimit rate is what separates the two populations.
+            oversubscribed = offered > (before if t < drop_at else after)
+            m = Measurement(
+                t=t,
+                goodput_mbps=capped,
+                drop_rate_per_s=40000.0 if oversubscribed else 0.0,
+                overlimit_rate_per_s=5000.0 if oversubscribed else 100.0,
+                link_drop_rate_per_s=40000.0 if oversubscribed else 0.0,
+                link_overlimit_rate_per_s=5000.0 if oversubscribed else 100.0,
+            )
+            c = est.observe(m)
+            if c.changed:
+                changes.append((t, c.mbps))
+            t += 1.0
+        return est.current, changes
+
+    def test_nothing_is_reported_before_the_drop(self):
+        """Confirms the null results so far were correct, not a dead estimator."""
+        est = CapacityEstimator(initial_mbps=100.0)
+        for t in range(1, 21):
+            c = est.observe(Measurement(
+                t=float(t), goodput_mbps=25.0,
+                link_overlimit_rate_per_s=100.0, link_drop_rate_per_s=0.0))
+            self.assertFalse(c.changed,
+                             "an unsaturated link must never move the estimate")
+
+    def test_the_estimate_moves_toward_the_capped_link(self):
+        cur, changes = self._replay()
+        self.assertTrue(changes, "the drop produced no estimate at all")
+        after_drop = [mbps for t, mbps in changes if t >= 20.0]
+        self.assertTrue(after_drop, "no change after the drop")
+        self.assertLess(cur.mbps, 100.0, "capacity never came down")
+        # The run is short and MIN_DWELL_S throttles the walk down, so demanding
+        # convergence on the exact number would be demanding something the
+        # design deliberately trades away.
+        self.assertLess(cur.mbps, 30.0,
+                        f"converged too slowly to be useful: {cur.mbps}")
+
+    def test_the_walk_down_is_monotone(self):
+        """ALPHA_DOWN is 0.6 so capacity falls fast; it must not overshoot
+        upward past the true value on the way down."""
+        _, changes = self._replay()
+        vals = [mbps for t, mbps in changes if t >= 20.0]
+        self.assertEqual(vals, sorted(vals, reverse=True),
+                         f"capacity wobbled upward on the way down: {vals}")
