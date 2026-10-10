@@ -476,10 +476,48 @@ rate was 53.57 would leave an invalid class, so the rate is clamped down with
 *proportions* remain M3's to decide; this only stops the configuration being
 illegal.
 
-What remains open: **M2 has still never measured a link in any run.** Whether it
-will now that the link genuinely caps is untested. If `estimator_mbps` is still
-`None` after a confirmed drop, M2 needs an active probe -- gate check 12 already
-validated one, and it would become the fix.
+### The drop works. Measured.
+
+`dropcheck4`, `--drop 10 --drop-at 20`:
+
+```
+capacity_change_applied: True
+capacity_change_error  : ''
+parent rate: 24.5 Mbps before the drop, 10.0 Mbps from t=24 onward
+```
+
+The link was genuinely capped for the first time in this project.
+
+### And M2 still reported nothing -- correctly.
+
+`estimator_saturated` is False on every one of 41 samples, and `capacity_mbps`
+never leaves 0.0. The cause is visible in the artefacts rather than inferred:
+
+```
+parent overlimits/sec:  1643 at t=1 (demand 24 Mbps on a 100 Mbps link)
+                         289 at t=20
+                           0 from t=24 onward
+```
+
+Neither regime is congestion. At t=1 the link carried 24 Mbps of 100 -- a
+quarter loaded, so the parent is correctly not saturated. At t=20 the workload
+had decayed to 4.66 Mbps, *below* the new 10 Mbps cap, so the link shaped
+cleanly with zero overlimits and zero drops.
+
+**The generators are paced, so a capacity drop creates no congestion signal
+unless offered load exceeds the new capacity.** The drop was applied at t=20,
+in the quiet phase of the workload ramp, where demand was 4.66 Mbps:
+
+```
+t=  4.32   24.62 Mbps     <- demand here would overwhelm a 10 Mbps cap
+t= 12.77    9.31 Mbps
+t= 20.16    4.66 Mbps     <- where the drop actually landed
+```
+
+So M2 is not broken and no probe is needed. The experiment was mistimed.
+Dropping during the high-demand phase is what makes a capacity change observable
+at all, and that is a property of the testbed worth stating plainly: **this
+system cannot detect a capacity drop that it is not already congested by.**
 
 Until that is settled, treat every result involving `--drop` as an undropped run.
 
