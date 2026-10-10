@@ -343,14 +343,62 @@ the other half of M7's success condition -- that the lease **visibly raises
 throughput**. This run had no capacity drop, so the link carried ~14 Mbps of
 100 and nothing was contended; a lease cannot raise throughput on a link that was
 never the constraint. That needs a `--drop-at` run with and without `--lease`,
-compared. Not yet done.**
+compared. Not yet done.
 
 The default TTL is the whole run, so the measurement is of the effect rather than
 of the expiry; `--lease-ttl-s` makes a shorter lease if the expiry is what you
 want to watch.
 
-Device-scope leases match on IP and ignore the source port, because a reconnect
-changes the source port and a port-sensitive request would silently stop applying.
+Device-scope leases match on IP **and on the destination**, because traffic runs
+internet -> device. Matching the source alone -- the original behaviour -- meant
+a lease for the client's own address matched nothing at all, while the run
+reported the lease as held. See `data/leaseA/README.md` and the "The first
+attempt at that command failed" note below.
+
+## 5i. WITHDRAWN: the lease A/B comparison measured our own bug
+
+The A/B in `data/leaseA` vs `data/leaseB` reported a lease holding its flow in a
+guaranteed class **93% of ticks against 7% for an un-leased flow**. **Do not use
+that number.**
+
+Both arms ran against code that rebuilt the qdisc every five seconds, destroying
+the per-flow filters. The bug hit the two arms unequally:
+
+* **B (no lease)** — `sync_lease(None)` never settled, rebuilt every 5 s for the
+  whole run, ten commits. B's filters were gone by t=5.19 and never returned, so
+  B's 7% was *our bug*, not a property of running un-leased.
+* **A (leased)** — the lease landed, `_lease_in_effect` became True, and
+  `sync_lease` returned early thereafter. A stopped rebuilding. A kept working
+  and B did not.
+
+So the gap measured **a bug in one arm**, not the lease.
+
+What survives: the expiry mechanism is sound (`data/leaseA` shows all four
+verdicts flipping back at t=39.66 with `leased_flow` going to zero), and the
+throughput question was open then too -- 14.4 Mbps offered on a 20 Mbps link is
+72% utilisation, so nothing was contended.
+
+**Both arms need re-running.** And the experiment needs `--drop 10` for the link
+to be the constraint at all.
+
+## 5j. The rebuild loop, fixed and verified (2026-10-10)
+
+`data/fixcheck/` — one run, `--enforce --drop 20 --drop-at 20`, seed 42:
+
+| | before | after |
+|---|---|---|
+| commits in the audit | 10 | **1** |
+| filters after t=3 | 1 | **5, every tick** |
+| adaptive_video share | 7% | **88%** |
+| adaptive_video mean | 1.75 Mbps | **12.40 Mbps** |
+| bulk_transfer share | 66% | **7%** |
+
+Generators sent 72,000,000 B over 40 s = 14.40 Mbps; the adaptive class carried
+12.40 Mbps mean. Game: 1200/1200 packets, zero loss, p50 0.237 ms.
+
+Per-flow enforcement now survives an entire run. This is the first run where
+"classified" and "steered" are the same statement for the whole duration rather
+than for the first three seconds.
 
 ## 5f. M8 dashboard — read-only by construction, not by discipline
 
