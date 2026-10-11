@@ -263,6 +263,21 @@ class TestCitationTraceability(unittest.TestCase):
                        "see `test_this_definitely_does_not_exist`"),
             ["test_this_definitely_does_not_exist"])
 
+    def test_a_correction_note_may_name_a_nonexistent_test(self):
+        """Documenting a fix must not trip the check that enforces it.
+
+        Without this exemption the audit failed its own documentation, which is
+        a good way to teach everyone to ignore it.
+        """
+        import re as _re
+        from pathlib import Path as _P
+        exempt = _re.compile(r"never existed|does not exist|do not exist|"
+                             r"not a real test|invented|was wrong", _re.I)
+        line = ("6. Correcting those names revealed that a test named "
+                "test_two_thousand_flows_still_sum_to_capacity **never existed**")
+        self.assertTrue(exempt.search(line))
+        self.assertIn("test_two_thousand_flows_still_sum_to_capacity", line)
+
     def test_drift_reaches_the_audit_exit_code(self):
         """Reported-and-exited-0 would make the check decorative."""
         import inspect

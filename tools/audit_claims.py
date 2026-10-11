@@ -114,10 +114,19 @@ def check_cited_tests() -> list[dict]:
     defined: set[str] = set()
     for f in sorted(tests.glob("test_*.py")):
         defined |= set(_re.findall(r"def (test_\w+)", f.read_text()))
+    # A correction note has to be able to name the bad name it is correcting.
+    # Lines that say so are exempt -- otherwise documenting a fix trips the very
+    # check the fix introduced, which is how this file ended up failing its own
+    # audit after being written to pass it.
+    exempt = _re.compile(r"never existed|does not exist|do not exist|"
+                         r"not a real test|invented|was wrong", _re.I)
     cited: dict[str, list[str]] = {}
     for doc in sorted((ROOT / "docs" / "gap-closure").glob("*.md")):
-        for name in _re.findall(r"`(test_[A-Za-z0-9_]+)`", doc.read_text()):
-            cited.setdefault(name, []).append(doc.name)
+        for line in doc.read_text().splitlines():
+            if exempt.search(line):
+                continue
+            for name in _re.findall(r"`(test_[A-Za-z0-9_]+)`", line):
+                cited.setdefault(name, []).append(doc.name)
     out = []
     for name, where in sorted(cited.items()):
         # a trailing `*` is a deliberate wildcard, e.g. `test_missing_*`

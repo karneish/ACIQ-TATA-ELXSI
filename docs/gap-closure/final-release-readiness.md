@@ -176,8 +176,8 @@ python3 tools/audit_claims.py     # exit 0
    `test_*` citation in `docs/gap-closure/` against the real test sources, and
    an unresolvable citation reaches the exit code — reporting DRIFT and exiting
    0 would make the check decorative, the third instance of that shape here.
-6. Correcting those names revealed that **`test_two_thousand_flows_still_sum_to_capacity`
-   never existed**, so "degradation over many flows: yes (2000 flows)" was
+6. Correcting those names revealed that a test named
+   test_two_thousand_flows_still_sum_to_capacity **never existed**, so "degradation over many flows: yes (2000 flows)" was
    wrong. `build_plan` splits per *class*, so flow count is not an input to the
    arithmetic. Per-flow fairness is unasked and untested.
 
