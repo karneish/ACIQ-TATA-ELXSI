@@ -184,24 +184,48 @@ def cmd_serve(a) -> int:
     # that a lease can be requested while looking at the traffic it affects.
     # Rendering an empty dashboard instead would look like a broken page rather
     # than an honest "no samples given".
-    rows = []
     src = Path(a.samples) if a.samples else None
-    if src is not None and src.is_file():
-        rows = [json.loads(line) for line in
-                src.read_text().splitlines() if line.strip()]
-    elif src is not None:
+    if src is not None and not src.is_file():
         print(f"error: no such file: {src}", file=sys.stderr)
         return 2
 
+    def read_rows() -> list:
+        """Re-read on every request, so the page tracks a run in progress.
+
+        Read once at startup instead, the server pinned the samples it saw when
+        it launched and every browser refresh re-rendered the same stale view --
+        which looks exactly like a dashboard that is not live, and is how it
+        behaved.
+
+        A run appends to samples.jsonl while this reads, so the final line can be
+        observed mid-write. An unparseable line is skipped rather than fatal: a
+        torn read is normal here and must not take the server down.
+        """
+        if src is None:
+            return []
+        rows = []
+        for line in src.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        return rows
+
     def dashboard():
         return build_from_samples(
-            rows, subtitle=(f"source: {src.name}" if src else "no samples"),
-            refresh_s=a.refresh)
+            read_rows(),
+            subtitle=(f"source: {src.name}" if src else "no samples"),
+            # Live by construction: the rows are re-read per request, so a
+            # refresh interval is what turns it from a snapshot into a view of
+            # a run in progress.
+            refresh_s=(a.refresh or (2 if a.watch else 0)))
 
     def status():
-        st = {"samples": len(rows),
-              "sample_source": str(src) if src else None}
-        return st
+        return {"samples": len(read_rows()),
+                "sample_source": str(src) if src else None}
 
     book = load(a.leases_file)
     httpd = serve(book, host=a.host, port=a.port,
@@ -282,6 +306,9 @@ def build_parser() -> argparse.ArgumentParser:
                     help="samples.jsonl to chart on the dashboard")
     sv.add_argument("--leases-file", default=str(DEFAULT_LEASES_PATH),
                     dest="leases_file")
+    sv.add_argument("--watch", action="store_true",
+                    help="follow a run in progress: re-read samples.jsonl on "
+                         "every request (implied by --refresh > 0)")
     sv.set_defaults(func=cmd_serve)
     flow_args(ck)
     ck.set_defaults(func=cmd_check)

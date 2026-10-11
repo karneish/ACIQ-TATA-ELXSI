@@ -9,9 +9,28 @@ saturated 20 Mbit link and found:
   unmarked probe 0.051 -> 0.405 ms (~8x)  <- works, but unnecessary
   backlog      0 throughout             <- carries no information
 
-So this estimator reads **drop rate and overlimit rate only**. No probe traffic,
-which means no probe overhead to account for in the CPU numbers and no extra
-privilege.
+So this estimator reads **drop rate, overlimit rate and shaper backlog**. No
+probe traffic, which means no probe overhead to account for in the CPU numbers
+and no extra privilege.
+
+Backlog was not in the original design, and adding it is a reversal of the
+"counters only" decision rather than an extension of it. Measured, on the real
+runs:
+
+  t=0.0 - 4.2   child backlog 0        link 24.9 Mbps   (25 offered of 100)
+  t=5.2 - 17.5  child backlog 5-22 kB  link ~10 Mbps    (25 offered of 10)
+  t=18.5 - 22.6 child backlog 0        link  4.7 Mbps   (demand fell below cap)
+
+HTB is a shaper: it holds packets in a child's queue and delays them rather than
+overrunning, so against *paced* TCP senders a congested link reports `dropped 0,
+overlimits 0`. The gate check 12 calibration that justified counters-only was
+taken on an unpaced source and does not transfer.
+
+Backlog carries the signal because a child's queue is non-empty precisely when
+it wants more than the link can send it: while the parent has tokens to lend, a
+child over its guarantee borrows instead of queueing. That is a semantic
+argument, not a fitted threshold, and it is the reason this is defensible where
+the overlimit signal was not.
 
 Two facts shaped the algorithm, both measured:
 
@@ -43,6 +62,15 @@ MIN_DWELL_S = 5.0
 #: Consecutive saturated samples required before trusting an observation. One
 #: burst is not a capacity reading.
 SAT_STREAK_REQUIRED = 2
+
+#: Shaper backlog above which the link counts as saturated.
+#:
+#: Observed across the real runs: 0 whenever the link was not the constraint,
+#: and 1840-22710 bytes whenever it was. The threshold is far below the smallest
+#: value ever seen non-zero, so it is effectively "the queue is not empty" --
+#: deliberately not tuned, because a fitted threshold on one run is how the
+#: overlimit threshold became wrong.
+BACKLOG_MIN_BYTES = 1024
 
 #: overlimits/sec above which the link counts as saturated.
 #:
@@ -82,6 +110,10 @@ class Measurement:
     #: safe direction, because guessing saturate shrinks capacity.
     link_drop_rate_per_s: float | None = None
     link_overlimit_rate_per_s: float | None = None
+    #: Summed backlog across the children of the link. Read only as "is any
+    #: shaper queue non-empty", never as a magnitude: the parent's own backlog
+    #: is 0 throughout, because the queue lives in the children.
+    child_backlog_bytes: int = 0
 
     @property
     def saturated(self) -> bool:
@@ -93,7 +125,14 @@ class Measurement:
             return False
         if (ld or 0.0) > 0.0:
             return True
-        return (lo or 0.0) >= SAT_OVERLIMIT_MIN
+        if (lo or 0.0) >= SAT_OVERLIMIT_MIN:
+            return True
+        # A child queue that is not empty means the shaper wanted to send and
+        # could not. Note this is consulted *after* the parent counters, so a
+        # reader that cannot see the parent still refuses to declare saturation
+        # from backlog alone -- assuming saturation without evidence is what
+        # shrank capacity to 7.2 Mbps once.
+        return self.child_backlog_bytes >= BACKLOG_MIN_BYTES
 
 
 @dataclass(frozen=True)

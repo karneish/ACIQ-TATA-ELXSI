@@ -38,12 +38,18 @@ Read this before quoting a number.
    beat a well-tuned cake.
 2. **`p = 0.0312` is the floor at n = 6** (2/64). It clears 0.05 barely, and
    nothing finer is reachable without more seeds.
-3. **M2 cannot see a capacity drop the workload adapts to.** After a drop, the
-   workload's own rate falls with the capacity, so the link stops being
-   oversubscribed and the estimator's only trigger stops firing. 12 of 18 ACIQ
-   runs in `data/matrix6/` carry a **stale** estimate; each `result.json` says so.
-4. **Scenario 3 never exercises M2 at all** — ~14.3 Mbps on a 20 Mbps link is
-   71% utilisation, so those runs report `estimator=None, policy_changes=0`.
+3. **M2's saturation signal was wrong for this workload and has been
+   corrected.** It originally read drops and overlimits, chosen from gate check
+   12 — which was measured on an *unpaced* source. HTB shapes paced TCP rather
+   than dropping it, so a congested link reported `dropped 0, overlimits 0` and
+   M2 reported nothing in every run. Shaper backlog now carries the signal, and
+   replaying a recorded run through the revised estimator converges
+   100 -> 45.97 -> 24.38 -> 15.41 -> 12.15 -> **10.86 Mbps** against a true
+   capacity of 10, monotone and never collapsing. **Not yet verified on the live
+   testbed** — that needs a run reporting `estimator_mbps` non-null.
+4. **Scenario 3 still does not exercise M2 at 20 Mbps** — ~14.3 Mbps on a
+   20 Mbps link is 71% utilisation, not congestion, so the estimator correctly
+   reports nothing. The runs that do exercise it are the dropped-capacity ones.
 5. **A lease routes the leased device's flows to class `1:40`; that it improves
    that device's outcome is unmeasured, and an earlier positive-sounding number
    is withdrawn.** An earlier version of this file reported "12.92 Mbps mean in
@@ -58,8 +64,10 @@ Read this before quoting a number.
    seven differences in the same direction. The three-device total moves by
    -0.10%, confirming the link redistributes rather than adds, and the ceiling
    held at 10.04-10.19 Mbps across all fourteen runs. Measured by the senders,
-   not by our own class accounting. M2 is still dead, so this is the lease
-   mechanism working on a correct plan, not adaptation working.
+   not by our own class accounting. The plan came from the requested drop rather
+   than from a measurement, so this is the lease mechanism working on a correct
+   plan -- not adaptation working. M2 can now measure capacity, but these runs
+   predate that.
 6. **Classification accuracy is measured on self-generated traffic**, and the
    link is an HTB token-bucket emulation rather than real access hardware.
 

@@ -9,6 +9,7 @@ import unittest
 
 from aciq.capacity import (
     ALPHA_DOWN,
+    BACKLOG_MIN_BYTES,
     SAT_OVERLIMIT_MIN,
     HYSTERESIS,
     MIN_DWELL_S,
@@ -421,3 +422,128 @@ class TestTheEstimatorReactsToARealDrop(unittest.TestCase):
         vals = [mbps for t, mbps in changes if t >= 20.0]
         self.assertEqual(vals, sorted(vals, reverse=True),
                          f"capacity wobbled upward on the way down: {vals}")
+
+
+#: A real recorded run, not a constructed one. Source:
+#: `data/ab_lease_42/*/samples.jsonl` -- scenario s3_tv_and_gaming, seed 42,
+#: --drop 10 --drop-at 5, lease on 203.0.113.4. The link is genuinely capped
+#: from t=5; the parent delivered 24.9 Mbps before and ~10.0 after.
+#:
+#: Tuples are (t, aggregate goodput Mbps, summed child backlog bytes). Replaying
+#: this is what established that backlog is a usable saturation signal; a
+#: synthetic trace would only have tested the code against its own assumptions.
+LEASE_TRACE = [
+    (0.0, 0.0, 0),
+    (1.08, 0.0, 0),
+    (2.09, 24.71, 0),
+    (3.14, 24.56, 0),
+    (4.16, 24.69, 0),
+    (5.18, 23.9, 19600),
+    (6.21, 9.95, 19150),
+    (7.24, 9.98, 19150),
+    (8.29, 10.01, 16654),
+    (9.3, 10.0, 22178),
+    (10.32, 9.98, 13094),
+    (11.34, 9.99, 10598),
+    (12.36, 10.01, 8482),
+    (13.38, 9.98, 9736),
+    (14.4, 9.46, 16118),
+    (15.42, 9.34, 17632),
+    (16.44, 9.42, 8548),
+    (17.47, 7.71, 5788),
+    (18.49, 4.71, 0),
+    (19.51, 4.68, 0),
+    (20.53, 4.7, 0),
+    (21.55, 4.69, 0),
+    (22.56, 4.7, 0),
+    (23.58, 7.29, 19682),
+    (24.6, 9.99, 15140),
+    (25.62, 9.99, 19682),
+    (26.64, 10.0, 21196),
+    (27.66, 9.98, 19682),
+    (28.68, 10.03, 16654),
+    (29.7, 9.99, 20664),
+    (30.72, 10.0, 20664),
+    (31.74, 9.99, 14608),
+    (32.76, 10.02, 16122),
+    (33.78, 9.97, 16654),
+    (34.8, 9.99, 22178),
+    (35.82, 10.0, 12438),
+    (36.84, 10.01, 11250),
+    (37.85, 9.76, 0),
+    (38.87, 9.38, 17632),
+    (39.89, 1.72, 0),
+    (40.97, 0.0, 0),
+]
+
+
+class TestTheRecordedRunConverges(unittest.TestCase):
+    """The claim M2 exists to make, checked against a real trace.
+
+    Every earlier test fed the estimator numbers built to satisfy it. This one
+    replays a run that was recorded before M2 had a backlog signal at all, and
+    asks whether the estimator reaches the capacity that run actually had.
+    """
+
+    def _replay(self, trace, initial=100.0):
+        est = CapacityEstimator(initial_mbps=initial)
+        changes = []
+        for t, good, backlog in trace:
+            c = est.observe(Measurement(
+                t=t, goodput_mbps=good,
+                overlimit_rate_per_s=0.0, link_overlimit_rate_per_s=0.0,
+                child_backlog_bytes=backlog))
+            if c.changed:
+                changes.append((t, c.mbps))
+        return est, changes
+
+    def test_it_converges_on_the_capacity_that_run_actually_had(self):
+        est, _ = self._replay(LEASE_TRACE)
+        self.assertAlmostEqual(est.current.mbps, 10.0, delta=1.5)
+
+    def test_the_walk_down_is_monotone(self):
+        _, changes = self._replay(LEASE_TRACE)
+        vals = [m for _t, m in changes]
+        self.assertEqual(vals, sorted(vals, reverse=True),
+                         f"capacity wobbled upward on the way down: {changes}")
+
+    def test_it_never_collapses(self):
+        """The measured failure this project is guarding against: 100 Mbps
+        collapsed to 7.2 because a child counter was read as link congestion.
+        Every intermediate estimate must stay above the true capacity."""
+        _, changes = self._replay(LEASE_TRACE)
+        for t, m in changes:
+            self.assertGreaterEqual(m, 10.0,
+                                    f"estimate {m} at t={t} fell below the link")
+
+    def test_an_idle_link_is_never_taken_as_saturated(self):
+        """Backlog 0 throughout, so nothing is known and nothing moves -- the
+        confidence decay path, not the convergence path."""
+        idle = [(float(t), good, 0) for t, good, _b in LEASE_TRACE[:6]]
+        est, changes = self._replay(idle)
+        self.assertEqual(changes, [], "an unloaded link moved the estimate")
+        self.assertEqual(est.current.mbps, 100.0)
+
+    def test_backlog_below_the_threshold_is_not_congestion(self):
+        """A queue holding a handful of packets is scheduling noise, not a
+        saturated link. Measured non-zero backlogs run from 1840 bytes up."""
+        m = Measurement(t=1.0, goodput_mbps=2.0, overlimit_rate_per_s=0.0,
+                        link_overlimit_rate_per_s=0.0,
+                        child_backlog_bytes=BACKLOG_MIN_BYTES - 1)
+        self.assertFalse(m.saturated)
+
+    def test_a_non_empty_queue_is_congestion(self):
+        m = Measurement(t=1.0, goodput_mbps=10.0, overlimit_rate_per_s=0.0,
+                        link_overlimit_rate_per_s=0.0,
+                        child_backlog_bytes=BACKLOG_MIN_BYTES)
+        self.assertTrue(m.saturated)
+
+    def test_backlog_does_not_override_a_reader_that_cannot_see_the_parent(self):
+        """Assuming saturation without parent evidence is what shrank capacity
+        to 7.2 Mbps once. A backlog alone must not re-open that door."""
+        m = Measurement(t=1.0, goodput_mbps=10.0, overlimit_rate_per_s=0.0,
+                        link_overlimit_rate_per_s=None,
+                        link_drop_rate_per_s=None,
+                        child_backlog_bytes=10 ** 6)
+        self.assertFalse(m.saturated,
+                         "backlog declared saturation with no parent counters")

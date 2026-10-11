@@ -594,10 +594,15 @@ class Harness:
         self._prev_link = link
 
         from .capacity import Measurement
+        # The shaper queues live in the children: the parent's own backlog reads
+        # 0 throughout a congested run. Summed here rather than in the reader so
+        # the saturation test sees one number and the raw counters stay raw.
+        backlog = sum(counters[k].backlog_bytes for k in counters if k in prev)
         cap = self._estimator.observe(Measurement(
             t=now, goodput_mbps=gbps, drop_rate_per_s=drate,
             overlimit_rate_per_s=orate,
-            link_drop_rate_per_s=ldr, link_overlimit_rate_per_s=lor))
+            link_drop_rate_per_s=ldr, link_overlimit_rate_per_s=lor,
+            child_backlog_bytes=backlog))
         if not cap.changed:
             return None, False
 

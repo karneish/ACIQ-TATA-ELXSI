@@ -20,9 +20,10 @@ statistics, optional ML comparison).
 
 ## Status
 
-### GATE COMPLETE — 14/14 checks passing
+### GATE COMPLETE — 20 PASS, 1 MEASURED, 0 FAIL
 
 The testbed is proven. Every binary unknown is now **measured**, not assumed.
+Latest: `docs/evidence/gate-20261011-165455.log`.
 
 | Check | Measured result |
 |---|---|
@@ -113,13 +114,50 @@ Check 12, measured on a saturated 20 mbit link (idle baseline **0.051 ms**):
 | `dropped` | 0 → **252** | primary, corroborating |
 | Unmarked probe, class 1:30 | **0.051 → 0.405 ms (~8x)** | validated fallback, **not needed** |
 | **EF probe, class 1:10** | 0.051 → **0.070 ms** | **REJECTED** |
-| `backlog` | **0 throughout** | **REJECTED** |
+| `backlog` | **0 throughout** | rejected **then** — see the correction below |
 
 **The reviewer's HTB reasoning was correct and my EF-probe design was wrong.** A
 probe in the *protected* class reports how well the class is protected, not
 whether the link is saturated — it showed no signal at all. A probe in the bulk
 class would have worked, but the counters are better: they need no probe traffic,
 no probe overhead accounting, and no added privilege.
+
+#### Correction: this decision was right about probes and wrong about backlog
+
+The conclusion "no probe traffic" survived, and for the reason given. The
+conclusion "drops and overlimits are enough" did not, because check 12 used an
+**unpaced** source. Against the project's own paced TCP workloads HTB *shapes* —
+it holds packets in a child queue and delays them rather than overrunning — so a
+genuinely congested link reports:
+
+```
+t= 6.2 - 11.7   dropped 0   overlimits 0   delivered 15.2 Mbps on a 10 Mbit link
+```
+
+M2 therefore reported `estimator=None, policy_changes=0` in **every** run until
+backlog was added. That is not a bug in the estimator; it is a decision that had
+not met the workload it was written for.
+
+Child backlog, summed (the parent's own reads 0 throughout — the queue lives in
+the children), separates the regimes exactly, from the recorded runs:
+
+| window | backlog | delivered | offered vs cap |
+|---|---|---|---|
+| t=0–4.2 | **0** | 24.9 Mbps | 25 of 100 |
+| t=5.2–17.5 | **5.8–22 kB** | ~10 Mbps | 25 of 10 |
+| t=18.5–22.6 | **0** | 4.7 Mbps | demand fell below the cap |
+
+Replaying that recorded run through the revised estimator converges 100 → 45.97
+→ 24.38 → 15.41 → 12.15 → **10.86 Mbps** against a true capacity of 10:
+monotone, and never below the link. The argument for trusting it is semantic
+rather than fitted — a child queue is non-empty precisely when it wants more
+than the link will send, because a child with tokens left borrows instead of
+queueing.
+
+The lesson worth keeping: the threshold table above was measured, and measuring
+it once on a workload that does not resemble the real one produced a confident
+wrong answer. `backlog` was rejected from a single reading of "0 throughout"
+without asking what the workloads actually look like.
 
 **Consequence:** M2 ships on **drop rate + overlimit rate**, with goodput flat at
 a ceiling as corroboration. `backlog` is retained as a diagnostic only. The
@@ -145,15 +183,15 @@ end instead of being dropped.**
 | Phase | Work | Gate to proceed |
 |---|---|---|
 | **0** | Testbed gate, 14 checks | **Binary go/no-go.** If this fails, everything downstream is built on sand |
-| **0b** | ✅ `docs/architecture.md` + module contracts (M1/M2 **DRAFT**). `docs/setup.md` still to write | Before any code, in case Round 1 is design-only |
+| **0b** | ✅ `docs/architecture.md` + module contracts. **M1 and M2 contracts settled by measurement** (M2 revised — see below). `docs/setup.md` still to write | Before any code, in case Round 1 is design-only |
 | **1** | ✅ `model.py`, M3, generators — 38 checks, +4 invariant tests | — |
 | **2** | ✅ **M5 metrics collector** — 27 checks | — |
 | **3** | ✅ M1 classifier — conntrack, rules + statistics | **DONE, 28 tests** |
-| **4** | ✅ M2 estimator — counters only, no probe | **DONE, 27 tests** |
+| **4** | ✅ M2 estimator — passive signals only, no probe traffic. **Revised:** the original "counters only" reading of drops and overlimits does not work against a shaper with paced TCP; shaper backlog added. | **DONE, 34 tests** |
 | **5** | ✅ M4 enforcement + M9 transaction/shield — **vertical slice complete** | **DONE, 47 tests** |
-| **6** | ✅ M6 + M10 built. **s1 and s2 measured**; B0/B1 still failing to apply — diagnosing |
-| **7** | M7 + lease demo run | Contribution becomes visible |
-| **8** | M10 thin report → M8 thin dashboard | Phase 6 numbers exist |
+| **6** | ✅ M6 + M10 built and **measured**; B0/B1 apply cleanly |
+| **7** | ✅ M7 + lease measured — **7 paired seeds, exact Wilcoxon p = 0.015625** | Contribution is visible |
+| **8** | ✅ M10 report → M8 dashboard (inline SVG, no JS) | Phase 6 numbers exist |
 | **9** | Scenario 2 both variants, IPv6 run | — |
 | **10** | Multi-seed statistics, ≥6 seeds | — |
 | **11** | Should: B2, sweeps, `make demo`, CI. Could: CUSUM, ML, probe | — |
@@ -206,8 +244,19 @@ working on exactly the air-gapped host it would be demonstrated on. The
 trade-off is real: charts update by page reload rather than over a websocket.
 
 **Module contracts** (inputs / outputs / failure handling / success conditions)
-live in `docs/architecture.md`. The **M1 and M2 contracts are marked DRAFT** —
-they depend on gate results and must not be submitted as final text.
+live in `docs/architecture.md`. Both were settled by measurement and are no
+longer DRAFT.
+
+**M2's contract was revised, and the revision is the interesting part.** It was
+decided "counters only, no probe", on the strength of gate check 12, which found
+24803-65101 overlimits/s on a saturated 20 Mbps link. That check used an
+*unpaced* source. Against the real paced TCP workloads HTB shapes rather than
+drops, so a genuinely congested link reports `dropped 0, overlimits 0` and the
+threshold is never crossed -- M2 reported nothing in every run until backlog was
+added. Shaper backlog separates the regimes (non-zero exactly when offered load
+exceeds capacity, and zero again when demand falls back below it) and is
+validated by replaying a real recorded run: 100 -> 10.86 Mbps against a true
+capacity of 10, monotone, never collapsing.
 
 ---
 
@@ -497,8 +546,10 @@ from plan to evidence.
    sudo ./testbed/cleanup.sh
    ```
    Paste `testbed/logs/gate-*.log`, **checks 3, 11, 13 first**, then check 12.
-2. **Build phase 0b docs** — architecture and module contracts, M1/M2 marked DRAFT.
-3. ✅ **M5 built.** Next: `docs/setup.md`, then M1/M2 as soon as the gate log arrives.
+2. ✅ **Phase 0b docs built.** M1 and M2 contracts are settled by measurement; M2
+   was revised after its saturation signal was shown not to survive a shaper.
+3. ✅ **M5 built, gate log long since in.** Still outstanding: `docs/setup.md`.
+4. **Supply TELIPORT round dates** and fill the deadline marker.
 4. **Supply TELIPORT round dates** and fill the deadline marker.
 
 ### What would change the plan

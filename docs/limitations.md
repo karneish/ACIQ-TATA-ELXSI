@@ -853,3 +853,77 @@ constraint on this kernel.
 
 Recorded here rather than chased further: two plausible diagnoses were already
 wrong, and a third guess would have been a guess.
+
+
+## M2 works: shaper backlog as the saturation signal
+
+The one gap, now closed and validated against a recorded run rather than a
+constructed one.
+
+M2 looked for drops and overlimits. HTB shapes rather than drops, so against
+paced TCP a congested link reported `dropped 0, overlimits 0` and the detector
+never fired — in **every** run. That was not a bug in the estimator; it was the
+"counters only, no probe" decision, made from gate check 12, which had been
+measured on an *unpaced* source.
+
+Child backlog carries the signal. The parent's own backlog reads 0 throughout a
+congested run — the queue lives in the children — so it is summed across them:
+
+| window | backlog | delivered | offered vs cap |
+|---|---|---|---|
+| t=0–4.2 | 0 | 24.9 Mbps | 25 of 100 |
+| t=5.2–17.5 | 5.8–22 kB | ~10 Mbps | 25 of 10 |
+| t=18.5–22.6 | 0 | 4.7 Mbps | demand fell back below the cap |
+
+Backlog returns to zero when demand falls below the cap, which is the property
+that makes it a saturation signal rather than a load signal.
+
+Replaying the recorded run (`data/ab_lease_42`, captured before M2 had this
+signal) through the revised estimator:
+
+```
+100 -> 45.97 -> 24.38 -> 15.41 -> 12.15 -> 10.86 Mbps
+```
+
+against a true capacity of 10. Monotone, never below the link, and no death
+spiral — the failure mode this project is guarding against is a separate test
+here, replaying the same trace and asserting no intermediate estimate ever falls
+under the true capacity.
+
+Why this is defensible where the overlimit threshold was not: it is a semantic
+argument, not a fitted threshold. A child queue is non-empty precisely when it
+wants more than the link will send, because a child with tokens left to lend
+borrows rather than queues. The threshold (1024 bytes) sits far below the
+smallest non-zero value ever observed, and is deliberately not tuned — the
+overlimit threshold became wrong precisely by being calibrated once on a
+workload that did not resemble the real one.
+
+Backlog is still consulted *after* the parent counters, so a reader that cannot
+see the parent refuses to declare saturation from backlog alone. Assuming
+saturation without parent evidence is what collapsed capacity to 7.2 Mbps once.
+
+**Not yet verified on the live testbed.** The replay uses recorded counters; a
+real run with `estimator_mbps` non-null and `policy_changes > 0` is the
+remaining check.
+
+## M8 follows a run in progress
+
+`aciqctl serve` read `samples.jsonl` once, at startup, and every browser refresh
+re-rendered the same stale view — indistinguishable from a dashboard that is not
+live, which is how it behaved, while carrying a meta-refresh the whole time.
+
+Rows are now re-read per request, so the page tracks a run in progress:
+
+```
+samples at first request  : 5
+samples after run grew   : 12
+page changed between requests: True
+meta refresh present: True     no <script>: True
+```
+
+A run appends to `samples.jsonl` while the dashboard reads it, so the last line
+can be caught mid-write; an unparseable line is skipped rather than fatal. The
+update stays JavaScript-free by design: `<meta http-equiv="refresh">` only.
+
+`--watch` is implied by `--refresh`; `--refresh 0 --watch` gives a live server
+with no automatic page refresh.
