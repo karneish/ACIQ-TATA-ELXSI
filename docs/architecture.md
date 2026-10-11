@@ -129,11 +129,13 @@ created, receives the leased traffic, and is reverted on expiry
 **Withdrawn:** an earlier "12.92 Mbps mean in the leased class" predated
 per-device addresses, so the lease matched all traffic and the number measured
 steering, not leasing (`docs/limitations.md` §5h).
-**Open defect:** with a lease active, throughput exceeded the configured parent
+**Open defect:** with a lease active, throughput exceeds the configured parent
 ceiling by ~23% (12.27 vs 10 Mbps); without a lease the same run delivered
-8.98 Mbps. The lease commit appears not to restore the planned child rates —
-children were observed at `rate 10Mbit` each on a 10 Mbit parent, guarantees
-summing to 40.
+8.98 Mbps. The parent is genuinely configured at `rate 10Mbit ceil 10Mbit` and
+`tc`'s own byte totals agree with our readings, so this is not a measurement
+error. A deferred-retry path that re-applied the start-of-run plan was a real
+defect and is fixed; the overshoot survived that fix, so its mechanism remains
+unestablished. See `docs/limitations.md`.
 **Not yet measured:** the "visibly raises throughput" half of the success
 condition. The measured run had no capacity drop, so the link was never
 constrained. Needs a `--drop-at` run with and without `--lease`.

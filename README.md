@@ -51,10 +51,14 @@ Read this before quoting a number.
    so the lease matched every flow in the run and the leased class took the whole
    link — true about steering, not about leases. **Verified since:** with one
    address per device, a lease for `203.0.113.4` classifies only that device's
-   flows as leased and leaves the others in their own classes. **Open:** with a
-   lease active, measured throughput exceeded the configured HTB parent ceiling
-   by ~23% (12.27 vs 10 Mbps), while the same run without a lease delivered
-   8.98 Mbps. Root cause not established.
+   flows as leased and leaves the others in their own classes. **Open defect:** with
+   a lease active, measured throughput exceeds the configured HTB parent ceiling
+   by ~23% (12.27 vs 10 Mbps); the same run without a lease delivers 8.98 Mbps.
+   The parent really is configured at `rate 10Mbit ceil 10Mbit` and `tc`'s own
+   byte totals agree with what we read. One real defect was found and fixed on
+   the way -- a deferred lease retry re-applied the start-of-run plan -- but the
+   overshoot survived that fix and its mechanism is not established.
+   See `docs/limitations.md`.
 6. **Classification accuracy is measured on self-generated traffic**, and the
    link is an HTB token-bucket emulation rather than real access hardware.
 

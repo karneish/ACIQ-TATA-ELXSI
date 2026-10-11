@@ -424,8 +424,14 @@ demonstrated on.
 ## 5g. Gate re-verified against current code (2026-10-09, re-run 2026-10-11)
 
 `testbed/logs/gate-20261009-204709.log` and, after the per-workload
-addresses and the lease-overcapacity fix, `docs/evidence/gate-20261011-125321.log`
+addresses and the deferred-lease-retry fix, `docs/evidence/gate-20261011-141836.log`
 — **20 PASS, 1 MEASURED, 0 FAIL**, no errors or tracebacks.
+
+One earlier run of this gate failed check 6 with `A=0.0` -- iperf3 produced no
+output at all. Check 6 drives raw `tc` and iperf3, not the Harness, and no
+leftover processes or namespaces remained, so it was read as transient; the
+re-run passed. If it recurs, the gate should surface iperf3's stderr, which it
+currently discards.
 
 That log predates the per-workload addresses added for lease matching.
 Re-running the gate afterwards failed check 18 and nothing else:
@@ -700,3 +706,49 @@ testable until the testbed has more than one device address.
 the DESTINATION address"); the wider version of it -- that there is only one
 destination and one source to choose from -- is a topology limitation, not a
 wiring bug.
+
+
+## Open defect: a lease makes the link exceed its configured ceiling
+
+Reproducible, bounded, and **not explained**.
+
+```
+dev7_nolease   parent_max = 10.32 Mbps   total = 305.27 Mb
+dev7_lease     parent_max = 18.41 Mbps   total = 413.99 Mb
+```
+
+The link is configured to 10 Mbps. With a lease active it delivers 12.27 Mbps
+averaged over the post-drop window -- 23% over. Without a lease the same run
+delivers 8.98 Mbps, comfortably under. Same seed, same scenario, same drop.
+
+What has been established:
+
+* the parent is genuinely capped -- live `tc` at peak demand shows
+  `class htb 1:1 root rate 10Mbit ceil 10Mbit`, with `tokens` deeply negative,
+  i.e. actively throttling;
+* the parent's byte counter is read correctly -- it equals the sum of its four
+  children to the byte, and matches `tc`'s own `Sent` to within a second's
+  traffic;
+* it is not a sampling artefact -- the cumulative figure over 33s is 12.27 Mbps,
+  not a burst that averages out;
+* no filter carries `flowid 1:1`, so nothing is classified into the root and
+  bypassing the shaper;
+* two candidate causes were investigated and **both disproved**:
+  1. a lease rebuild restoring the pre-drop capacity -- the deferred-retry path
+     did re-apply the start-of-run plan (a real defect, fixed, `3655bfcf`), but
+     `dev7_lease` still reads 18.41 after that fix;
+  2. the metrics reader over-counting -- refuted by `tc`'s own byte totals.
+
+`dev7` is the post-fix measurement and is unchanged from `dev3`/`dev5`
+(18.42 / 18.35 / 18.41), so the fix did not address this.
+
+**Mechanism not established.** Three further hypotheses were considered and
+rejected on evidence rather than pursued: that child rates summing to more than
+the parent let HTB over-deliver (children were observed at `rate 10Mbit` each on
+a 10 Mbit parent, but the same configuration without a lease stays under the
+cap); that `fq_codel` burst delivery distorted a one-second delta (refuted by
+the cumulative figure); and that the parent's `rate` is not the binding
+constraint on this kernel.
+
+Recorded here rather than chased further: two plausible diagnoses were already
+wrong, and a third guess would have been a guess.
