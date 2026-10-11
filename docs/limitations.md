@@ -708,6 +708,67 @@ destination and one source to choose from -- is a topology limitation, not a
 wiring bug.
 
 
+## Open defect: a lease makes the link exceed its configured ceiling — FIXED
+
+**Fixed.** Root cause: `set_capacity` clamped each child with
+`min(child_rate, capacity)`, putting *every* child at the full link capacity --
+a 100 Mbps plan dropped to 10 became four classes each guaranteed 10, so 40 Mbps
+was promised on a 10 Mbps link, and the over-subscribed tree stopped the cap
+being enforced. Children are now scaled so their rates sum to the new capacity,
+preserving M3's proportions. Measured before and after:
+
+```
+dev7_lease   parent_max = 18.41 Mbps   (24% over)
+dev10_lease  parent_max = 10.14 Mbps   (cap 10)
+dev10_nolease parent_max = 10.08 Mbps
+```
+
+A test named `test_set_capacity_never_rescales_child_rates` had asserted the
+harness must not rescale, on the sound grounds that rates are M3's policy. The
+reasoning was right and the conclusion wrong: scaling preserves M3's
+proportions, clamping destroys them while appearing to leave policy alone.
+
+### What was ruled out along the way
+
+Two other causes were investigated and disproved, both by measurement:
+
+* a lease rebuild restoring the pre-drop capacity -- the audit showed the lease
+  commit applying 100 Mbps, but the settle offset places that commit *before*
+  the drop, so it was legitimate. `sync_lease` was correct;
+* the metrics reader over-counting -- the parent's byte counter equals the sum
+  of its four children to the byte and matches `tc`'s own `Sent`.
+
+Recording the applied rates in every commit (`audit.json`) is what ended the
+guessing; without it the rate on parent `1:1` existed only in hand-taken dumps
+on a wall clock that did not line up with the run's own timeline.
+
+## M7 measured: a lease raises the leased device's share
+
+First real evidence for M7's claim. `--drop 10 --drop-at 5`, lease on
+`203.0.113.4` (= `tv1`) at weight 0.6, seed 42.
+
+Measured by the senders themselves, so independent of the class accounting:
+
+| | tv1 (leased) | tv2 | tv3 |
+|---|---|---|---|
+| no lease | 17.92 MB | 17.92 MB | 17.92 MB |
+| lease 0.6 | **23.04 MB (+28.5%)** | 15.40 MB (-14.1%) | 15.36 MB (-14.3%) |
+
+Totals 53.76 MB against 53.80 MB. The link is the constraint, so the lease
+**redistributes rather than adds** -- which is the point. Without a lease the
+three TVs are provably symmetric (17.92 MB each), so the counterfactual is
+measured rather than assumed. Class-side: `tv1` alone classifies `leased` and
+the other three keep their own classes.
+
+Caveats, stated rather than smoothed over:
+
+* **one seed.** A difference this size warrants more, and this is a single
+  paired comparison.
+* **M2 is still dead.** The plan comes from the requested drop, not from a
+  measurement, so this shows the lease mechanism working on a correct plan --
+  not adaptation working.
+* the lease weight (0.6) was chosen in advance, not tuned.
+
 ## Open defect: a lease makes the link exceed its configured ceiling
 
 Reproducible, bounded, and **not explained**.
