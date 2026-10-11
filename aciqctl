@@ -167,9 +167,18 @@ def cmd_dashboard(a) -> int:
         print(f"error: no such file: {src}", file=sys.stderr)
         return 2
     rows = [json.loads(line) for line in src.read_text().splitlines() if line.strip()]
+    events = []
+    cfg = src.parent / "config.json"
+    try:
+        c = json.loads(cfg.read_text())
+        if c.get("drop_at_s") is not None:
+            events = [{"t": float(c["drop_at_s"]),
+                       "label": f"cap -> {float(c['drop_mbps']):g} Mb/s"}]
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
     out = write_snapshot(rows, a.out,
                          subtitle=a.subtitle or f"source: {src.name}",
-                         refresh_s=a.refresh)
+                         refresh_s=a.refresh, events=events)
     print(f"wrote {out} ({len(rows)} samples)")
     return 0
 
@@ -232,6 +241,24 @@ def cmd_serve(a) -> int:
                 continue
         return rows
 
+    def drop_events(src):
+        """Annotate the capacity change from the run's own config.json.
+
+        The chart should be marked with what the run was actually told, not with
+        a flag the caller has to remember to repeat. Falls back to the dashboard
+        inferring the drop from the data, which is a guess about timing.
+        """
+        if src is None:
+            return []
+        try:
+            c = json.loads((src.parent / "config.json").read_text())
+            if c.get("drop_at_s") is not None:
+                return [{"t": float(c["drop_at_s"]),
+                         "label": f"cap -> {float(c['drop_mbps']):g} Mb/s"}]
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+        return []
+
     def dashboard():
         src = resolve()
         rows = read_rows()
@@ -242,7 +269,8 @@ def cmd_serve(a) -> int:
         # progress.
         return build_from_samples(
             rows, subtitle=subtitle,
-            refresh_s=(a.refresh or (2 if a.watch else 0)))
+            refresh_s=(a.refresh or (2 if a.watch else 0)),
+            events=drop_events(src))
 
     def status():
         src = resolve()
