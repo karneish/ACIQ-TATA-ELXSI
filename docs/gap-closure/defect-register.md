@@ -353,3 +353,71 @@ demonstrably not bulk-shaped.
 **Status:** `open` — small fix (gate the port fallback on the rate rules being
 inconclusive rather than merely unmatched), not applied pending the same
 validation as P1-007.
+
+---
+
+## Resolution log — classifier change set `89b87758`
+
+| id | title | outcome |
+|---|---|---|
+| P1-007 | EF claim refused only when the flow saturates | **closed** |
+| P1-008 | port fallback demotes small flows | **closed** |
+| P1-006 | bulk never assigned at 100 Mbps | **not a defect — fix reverted** |
+
+### P1-007 closed
+
+An EF claim is now weighed against measured behaviour before it is honoured, so
+the saturation condition is no longer the only path to a denial. The claim must
+be plausible on two axes, both derived from this project's own profiles:
+
+```
+EF_PLAUSIBLE_MAX_MBPS = 20.0
+EF_MIN_ASYMMETRY     = 50.0
+```
+
+Denial **falls through to the rate rules** rather than asserting BULK: the
+evidence is "not plausibly interactive", not "bulk", so a mislabelled stream is
+still video. Duty cycle was evaluated and rejected — it measures 1.00 for every
+generator and separates nothing.
+
+Effect: the adversarial EF bulk case moves from `interactive 0.95` tier A to
+`adaptive 0.60` tier B at 100 Mbps, and `bulk 0.75` at 10 Mbps.
+
+### P1-008 closed, and the mirror case found while fixing it
+
+The bulk-port demotion is gated on observed behaviour. Working through the
+symmetric case revealed that the **interactive** port granted priority
+unconditionally, which let the same abuse proceed on port 3478. It is now gated
+on `looks_interactive()` as well.
+
+### P1-006 reclassified — not a defect
+
+An absolute Mbps floor was added to the bulk rule to make bulk reachable on a
+wide, lightly-loaded link. It broke four tests asserting the opposite, and those
+tests encode the documented design: 88 Mbps is a hog on a 100 Mbps link and a
+nobody on a gigabit.
+
+The evaluation that appeared to justify the change was mislabelling its own
+cases — a 21 Mbps transfer on a 100 Mbps link is 0.21 of the link and is not
+hogging, so ADAPTIVE was correct.
+
+The floor was reverted and
+`test_a_moderate_transfer_on_a_wide_link_is_not_bulk` now asserts the design
+survives the next attempt to "fix" it. The report is corrected here rather than
+silently dropped.
+
+### Fixture defect found alongside
+
+`mature()` left `tx_bytes = 0`, so every fixture was strictly one-directional —
+a download, not a conversation. Latent until the EF rule began asking whether a
+flow looks interactive, at which point three tests failed for reasons unrelated
+to what they were testing. The helper now mirrors `rx` in `tx`, halving `rx` so
+the implied rate is unchanged. Two `TrustStore` fixtures were corrected the same
+way. No assertion was weakened.
+
+### Suite: 746 → 757
+
+```
+Ran 757 tests in 6.7s
+OK
+```
