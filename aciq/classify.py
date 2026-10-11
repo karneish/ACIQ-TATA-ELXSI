@@ -90,7 +90,19 @@ MIN_CONFIDENCE = 0.5
 #: Measured: bulk ran at 88.14 Mbps on a 100 Mbps shaper = 0.88.
 #: RELATIVE, because "bulk" is intrinsically a claim about the link: the same
 #: 88 Mbps transfer is a hog on 100 Mbps and a nobody on 1 Gbps.
-BULK_MIN_CAPACITY_FRAC = 0.50
+BULK_MIN_CAPACITY_FRAC = 0.5
+
+#: Interactivity plausibility, used **only** to test an EF claim -- never to
+#: decide the bulk class, which stays capacity-relative by design.
+#:
+#: The question is "could this plausibly be a conversation?", and it has to be
+#: answerable without knowing the link, because a marking is an assertion about
+#: the flow, not about the bottleneck. Measured on this project's profiles:
+#: call 0.09 Mbps at asymmetry 1.0, video 4.69 Mbps at 22-28, bulk 88 Mbps at
+#: 400-1200. A flow far above every interactive rate *and* far more one-way
+#: than any conversation is not one, whatever the link can carry.
+EF_PLAUSIBLE_MAX_MBPS = 20.0
+EF_MIN_ASYMMETRY = 50.00
 
 #: A sustained TCP stream at or above this rate, that is not saturating, is
 #: ADAPTIVE (streaming media).
@@ -165,6 +177,35 @@ class FlowFeatures:
     def rate_mbps(self) -> float:
         return self.rate_bps / 1e6
 
+    @property
+    def asymmetry(self) -> float:
+        """max(rx,tx) / min(rx,tx). 1.0 is perfectly bidirectional.
+
+        The separator between a transfer and a conversation. Deliberately *not*
+        duty cycle: measured 1.00 for every generator, because each emits
+        continuously at a target rate, so it carries no information at all.
+        """
+        lo = min(self.rx_bytes, self.tx_bytes)
+        if lo <= 0:
+            return float("inf")      # strictly one-directional
+        return max(self.rx_bytes, self.tx_bytes) / lo
+
+    def looks_interactive(self) -> bool:
+        """Could this plausibly be a real-time conversation?
+
+        Rate and direction together. Rate alone would flag a large video stream;
+        direction alone would flag any one-way flow including a slow one. A
+        conversation is bidirectional and small, and the measured profiles leave
+        a wide margin: call 0.09 Mbps / asymmetry 1.0, video 4.69 / 22-28, bulk
+        88 / 400-1200.
+
+        Used to test an *EF claim* only. It is deliberately not the bulk rule:
+        bulk means hogging the link, which is relative, and these are different
+        questions.
+        """
+        return (self.rate_mbps <= EF_PLAUSIBLE_MAX_MBPS
+                and self.asymmetry <= EF_MIN_ASYMMETRY)
+
 
 class TrustStore:
     """Per-source EF trust. Bounded and in-memory.
@@ -231,6 +272,13 @@ def classify(f: FlowFeatures, capacity_mbps: float = 100.0,
         too_slow = mature and f.rate_mbps < EF_SLOW_CONFLICT_MBPS
         # Too fast: claiming interactivity while saturating the link.
         too_fast = mature and frac >= EF_FAST_CONFLICT_CAPACITY_FRAC
+        # Or not interactive *in shape*, whatever the link looks like. Without
+        # this a flow marking itself EF kept interactive priority at 0.95
+        # confidence while moving 80 MB in 15 kB packets with 99% one-way
+        # asymmetry -- because the only test was "does it saturate the link",
+        # and on a 100 Mbps link 24 Mbps does not. An EF claim is an input
+        # signal, not proof.
+        not_interactive = mature and not f.looks_interactive()
 
         if too_fast:
             # The mark is a lie and the measurement is unambiguous. Deny the
@@ -264,14 +312,24 @@ def classify(f: FlowFeatures, capacity_mbps: float = 100.0,
                 ),
             )
 
-        t = trust.trust(source)
-        conf = 0.95 if mature else 0.70
-        if t < 0.5:
-            conf = min(conf, 0.60)
-        return Classification(
-            flow=f.flow, cls=TrafficClass.INTERACTIVE, confidence=conf,
-            tier="A", evidence=f"dscp=ef({DSCP_EF}), trust={t:.2f}",
-        )
+        if not_interactive:
+            # The claim is denied. Control falls through to the rate rules below
+            # rather than asserting BULK here, because the evidence is "not
+            # plausibly interactive", not "bulk": a mislabelled stream is still
+            # video, and asserting bulk would be a second guess dressed as a
+            # measurement. Trust still decays, so a source that repeats this
+            # loses the privilege on its next claim.
+            trust.record_miss(source)
+        else:
+            t = trust.trust(source)
+            conf = 0.95 if mature else 0.70
+            if t < 0.5:
+                conf = min(conf, 0.60)
+            return Classification(
+                flow=f.flow, cls=TrafficClass.INTERACTIVE, confidence=conf,
+                tier="A", evidence=f"dscp=ef({DSCP_EF}), trust={t:.2f}",
+            )
+        # falls through to the maturity check and the rate rules
 
     # ---- not enough history yet --------------------------------------------
     if not mature:
@@ -290,6 +348,16 @@ def classify(f: FlowFeatures, capacity_mbps: float = 100.0,
     # bulk transfer to port 3478 "interactive".
     #
     # Bulk: a single flow taking a large share of the whole link.
+    # Deliberately capacity-relative and only capacity-relative. A flow is bulk
+    # when it hogs *this* link: 88 Mbps is a hog on a 100 Mbps link and a nobody
+    # on a gigabit. An earlier revision added an absolute floor here to make
+    # bulk reachable on a wide, lightly-loaded link, and it was wrong -- it
+    # contradicted this rule, broke the tests that assert the rule is
+    # intentional, and made the class mean "large" instead of "hogging".
+    #
+    # The evaluation that appeared to show a defect was mislabelling its own
+    # cases: a 21 Mbps transfer on a 100 Mbps link is not hogging, so ADAPTIVE
+    # was correct. See docs/gap-closure/classifier-before-after.md.
     if frac >= BULK_MIN_CAPACITY_FRAC:
         return Classification(
             flow=f.flow, cls=TrafficClass.BULK, confidence=0.75, tier="B",
@@ -310,16 +378,39 @@ def classify(f: FlowFeatures, capacity_mbps: float = 100.0,
 
     # ---- Tier A fallback: well-known signalling ports -----------------------
     # Only reached once the flow is mature and demonstrably not saturating.
-    if f.flow.dport in INTERACTIVE_PORTS:
+    # Symmetric with the bulk rule below: a port may assert a class only where
+    # the observed behaviour does not contradict it. Interactive ports used to
+    # grant unconditionally, which meant a 21 Mbps one-way transfer on port
+    # 3478 was still handed interactive priority -- the same defect as the bulk
+    # port, pointed the other way, and it survived because the bulk case was
+    # the one that got reported.
+    if f.flow.dport in INTERACTIVE_PORTS and f.looks_interactive():
         return Classification(
             flow=f.flow, cls=TrafficClass.INTERACTIVE, confidence=0.85,
-            tier="A", evidence=f"well-known interactive port {f.flow.dport}",
+            tier="A",
+            evidence=(f"well-known interactive port {f.flow.dport} "
+                      f"*and* {f.rate_mbps:.2f} Mbps / asymmetry "
+                      f"{f.asymmetry:.0f}"),
         )
-    if f.flow.dport in BULK_PORTS:
+    if f.flow.dport in BULK_PORTS and (frac >= BULK_MIN_CAPACITY_FRAC
+                                       or not f.looks_interactive()):
+        # A port may *raise* priority for small, latency-sensitive traffic. It
+        # may not *demote* a flow to bulk on its own: an 0.19 Mbps
+        # bidirectional flow on port 873 was called bulk at 0.70 confidence,
+        # which is a demotion justified by a number in a port table and nothing
+        # observed. If the bulk evidence is absent the hint is declined and the
+        # flow falls through to the packet-shape rules below.
         return Classification(
             flow=f.flow, cls=TrafficClass.BULK, confidence=0.70,
-            tier="A", evidence=f"known bulk port {f.flow.dport}",
+            tier="A",
+            evidence=(f"known bulk port {f.flow.dport} *and* "
+                      f"{f.rate_mbps:.2f} Mbps / asymmetry {f.asymmetry:.0f}"),
         )
+    if f.flow.dport in BULK_PORTS:
+        # Port says bulk; behaviour does not. Declined, and said so.
+        declined_port = f.flow.dport
+    else:
+        declined_port = None
 
     # Interactive: small packets, low rate. Size bounds are wide enough to admit
     # a real video call (1200-1500 byte packets), not just audio.

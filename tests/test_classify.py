@@ -54,6 +54,20 @@ def mature(**kw) -> FlowFeatures:
     # size the byte count from the SAME age the features report, otherwise the
     # implied rate is inflated by the ratio of the two
     f.setdefault("rx_bytes", int(rate * 1e6 / 8 * f["age_s"]))
+    # ...and mirror it in tx, so the fixture is a *bidirectional* flow by
+    # default. It used to leave tx at 0, making every fixture strictly
+    # one-directional -- not a conversation, not a stream, just a download. That
+    # was invisible until a rule started asking whether a flow looks
+    # interactive, and then several tests failed for reasons unrelated to what
+    # they were testing.
+    #
+    # The rx figure is *halved*, not left alone: rate is computed from
+    # rx+tx, so mirroring in full would double every implied rate and quietly
+    # break the capacity-relative tests. The total is preserved.
+    if "tx_bytes" not in f:
+        half = f["rx_bytes"] // 2
+        f["rx_bytes"] = half
+        f["tx_bytes"] = half
     return feats(**f)
 
 
@@ -260,7 +274,18 @@ class TestDscpConflictJudgedOnRate(unittest.TestCase):
 class TestTrustDecay(unittest.TestCase):
     def test_repeated_misclaim_lowers_confidence(self):
         t = TrustStore()
-        f = mature(dscp=DSCP_EF, avg_packet_bytes=200, mbps=0.005)
+        # tx_bytes is set explicitly. `mature()` leaves it at 0, which makes the
+        # fixture strictly one-directional -- not a conversation, and now denied
+        # the EF claim on shape before the slow-rate test is even reached. A
+        # real call carries audio both ways.
+        # rx and tx are each *half* the original byte count, so total_bytes --
+        # and therefore the implied rate -- is unchanged. Adding tx on top of the
+        # rx that `mature()` already set would double it and push the flow above
+        # the too-slow floor, which is the opposite of what this test is about.
+        _age = MIN_AGE_S + 1
+        _half = int(0.005 * 1e6 / 8 * _age / 2)
+        f = mature(dscp=DSCP_EF, avg_packet_bytes=200, mbps=0.005,
+                   rx_bytes=_half, tx_bytes=_half)
         first = classify(f, trust=t)
         for _ in range(3):
             last = classify(f, trust=t)
@@ -293,7 +318,12 @@ class TestTrustDecay(unittest.TestCase):
 
     def test_honest_flow_does_not_lose_trust(self):
         t = TrustStore()
-        classify(mature(dscp=DSCP_EF, avg_packet_bytes=200, mbps=2.0), trust=t)
+        # Bidirectional, as a call is. See the note in
+        # test_repeated_misclaim_lowers_confidence.
+        _age = MIN_AGE_S + 1
+        _half = int(2.0 * 1e6 / 8 * _age / 2)
+        classify(mature(dscp=DSCP_EF, avg_packet_bytes=200, mbps=2.0,
+                        rx_bytes=_half, tx_bytes=_half), trust=t)
         self.assertEqual(t.trust(CALL.src), 1.0)
 
 
@@ -376,3 +406,154 @@ class TestNoGeneratorPorts(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestEFIsAnInputSignalNotProof(unittest.TestCase):
+    """Defect A: a sustained bulk transfer marking itself EF received
+    interactive priority at 0.95 confidence, because the only contradiction
+    test was "does it saturate the link" -- and 24 Mbps does not saturate 100.
+
+    Fixed by asking a question that does not depend on the bottleneck: *could
+    this plausibly be a conversation?*
+    """
+
+    #: A neutral port. The default CALL fixture uses 3478, which is itself an
+    #: interactive port, so a test about the EF rule must not sit on it.
+    NEUTRAL = "flow"
+
+    def _flow(self, mbps, rx_ratio=1.0, **kw):
+        age = MIN_AGE_S + 1
+        rx = int(mbps * 1e6 / 8 * age * rx_ratio)
+        tx = int(mbps * 1e6 / 8 * age * (1 - rx_ratio))
+        kw.setdefault("flow", Flow("10.0.1.2", 40000, "203.0.113.2", 443, "tcp"))
+        return mature(dscp=DSCP_EF, mbps=mbps, rx_bytes=rx, tx_bytes=tx, **kw)
+
+    def test_sustained_bulk_claiming_ef_is_not_interactive(self):
+        """The reported case: 80 MB, 15 kB packets, ~99% one-way."""
+        f = self._flow(21.3, rx_ratio=0.9987, avg_packet_bytes=15000)
+        for cap in (100.0, 10.0):
+            c = classify(f, capacity_mbps=cap)
+            self.assertNotEqual(c.cls, TrafficClass.INTERACTIVE,
+                                f"EF abuse at {cap} Mbps: {c.evidence}")
+
+    def test_it_still_cannot_obtain_interactive_by_repeating(self):
+        t = TrustStore()
+        f = self._flow(21.3, rx_ratio=0.9987, avg_packet_bytes=15000)
+        first = classify(f, capacity_mbps=100.0, trust=t)
+        for _ in range(3):
+            last = classify(f, capacity_mbps=100.0, trust=t)
+        self.assertLess(t.trust("10.0.1.2"), 1.0,
+                        "a source that keeps mislabelling keeps full trust")
+
+    def test_a_normal_call_keeps_its_ef(self):
+        """The fix must not cost the legitimate case its priority."""
+        age = MIN_AGE_S + 1
+        b = int(0.09 * 1e6 / 8 * age)
+        f = mature(dscp=DSCP_EF, mbps=0.09, rx_bytes=b, tx_bytes=b,
+                   avg_packet_bytes=1200)
+        self.assertEqual(classify(f, capacity_mbps=100.0).cls,
+                         TrafficClass.INTERACTIVE)
+
+    def test_a_bursty_interactive_flow_keeps_its_ef(self):
+        age = MIN_AGE_S + 1
+        rx = int(2.0 * 1e6 / 8 * age * 0.8)
+        tx = int(2.0 * 1e6 / 8 * age * 0.2)
+        f = mature(dscp=DSCP_EF, mbps=2.0, rx_bytes=rx, tx_bytes=tx,
+                   avg_packet_bytes=1200, burstiness=0.4)
+        self.assertEqual(classify(f, capacity_mbps=100.0).cls,
+                         TrafficClass.INTERACTIVE)
+
+    def test_a_high_throughput_latency_sensitive_flow_is_not_called_bulk(self):
+        """5 Mbps both ways, small packets: media at volume, not a transfer."""
+        age = MIN_AGE_S + 1
+        b = int(5.0 * 1e6 / 8 * age / 2)
+        f = mature(dscp=DSCP_EF, mbps=5.0, rx_bytes=b, tx_bytes=b,
+                   avg_packet_bytes=1200)
+        self.assertEqual(classify(f, capacity_mbps=100.0).cls,
+                         TrafficClass.INTERACTIVE)
+
+    def test_asymmetry_is_the_separator_not_duty_cycle(self):
+        """Duty cycle is measured 1.00 for every generator and separates
+        nothing; asymmetry does the work."""
+        age = MIN_AGE_S + 1
+        rx = int(10 * 1e6 / 8 * age * 0.999)
+        tx = int(10 * 1e6 / 8 * age * 0.001)
+        one_way = mature(mbps=10, rx_bytes=rx, tx_bytes=tx, duty_cycle=1.0)
+        b = int(10 * 1e6 / 8 * age / 2)
+        two_way = mature(mbps=10, rx_bytes=b, tx_bytes=b, duty_cycle=1.0)
+        self.assertGreater(one_way.asymmetry, 50)
+        self.assertLessEqual(two_way.asymmetry, 1.01)
+        self.assertEqual(one_way.duty_cycle, two_way.duty_cycle)
+
+
+class TestAPortMayNotDemote(unittest.TestCase):
+    """Defect C: port 873 is in BULK_PORTS, so a 0.19 Mbps bidirectional flow on
+    it was classified bulk at 0.70 confidence -- a demotion justified by a
+    number in a table and nothing observed.
+    """
+
+    def test_a_small_flow_on_a_bulk_port_is_not_bulk(self):
+        age = MIN_AGE_S + 1
+        b = int(0.19 * 1e6 / 8 * age / 2)
+        f = mature(mbps=0.19, rx_bytes=b, tx_bytes=b, avg_packet_bytes=1000,
+                   flow=Flow("10.0.1.2", 873, "203.0.113.2", 873, "udp"))
+        c = classify(f, capacity_mbps=100.0)
+        self.assertNotEqual(c.cls, TrafficClass.BULK,
+                            f"port alone demoted a small flow: {c.evidence}")
+
+    def test_rate_evidence_outranks_the_port_hint(self):
+        """The documented precedence: the rate rules are consulted *before* the
+        port tables, so a saturating flow is bulk whatever port it uses. At
+        100 Mbps a 30 Mbps flow is 0.3 of the link and therefore adaptive --
+        the port must not override that."""
+        age = MIN_AGE_S + 1
+        rx = int(30 * 1e6 / 8 * age * 0.999)
+        tx = int(30 * 1e6 / 8 * age * 0.001)
+        f = mature(mbps=30, rx_bytes=rx, tx_bytes=tx,
+                   flow=Flow("10.0.1.2", 873, "203.0.113.2", 873, "tcp"))
+        self.assertEqual(classify(f, capacity_mbps=100.0).cls,
+                         TrafficClass.ADAPTIVE)
+        # ...and on a link where 30 Mbps really is hogging, it is bulk.
+        self.assertEqual(classify(f, capacity_mbps=50.0).cls,
+                         TrafficClass.BULK)
+
+    def test_an_interactive_port_may_still_raise_priority(self):
+        """A port may *raise* priority for small latency-sensitive traffic; only
+        demotion needed a behavioural justification."""
+        age = MIN_AGE_S + 1
+        b = int(0.09 * 1e6 / 8 * age / 2)
+        f = mature(mbps=0.09, rx_bytes=b, tx_bytes=b, avg_packet_bytes=1200,
+                   flow=Flow("10.0.1.2", 3478, "203.0.113.2", 3478, "udp"))
+        self.assertEqual(classify(f, capacity_mbps=100.0).cls,
+                         TrafficClass.INTERACTIVE)
+
+
+class TestBulkStaysCapacityRelative(unittest.TestCase):
+    """Defect B was *not* a code defect, and this asserts the design survives the
+    attempt to 'fix' it.
+
+    An earlier revision added an absolute Mbps floor to the bulk rule so bulk
+    would be reachable on a wide lightly-loaded link. It contradicted the
+    documented design ("88 Mbps is a hog on a 100 Mbps link and a nobody on a
+    gigabit") and broke the tests asserting exactly that. The evaluation that
+    appeared to justify it was mislabelling its own cases: a 21 Mbps transfer on
+    a 100 Mbps link is not hogging.
+    """
+
+    def test_a_moderate_transfer_on_a_wide_link_is_not_bulk(self):
+        age = MIN_AGE_S + 1
+        rx = int(21 * 1e6 / 8 * age * 0.999)
+        tx = int(21 * 1e6 / 8 * age * 0.001)
+        f = mature(mbps=21, rx_bytes=rx, tx_bytes=tx,
+                   flow=Flow("10.0.1.2", 1, "203.0.113.2", 443, "tcp"))
+        self.assertEqual(classify(f, capacity_mbps=100.0).cls,
+                         TrafficClass.ADAPTIVE,
+                         "the absolute floor leaked back into the bulk rule")
+
+    def test_the_same_transfer_on_a_narrow_link_is_bulk(self):
+        age = MIN_AGE_S + 1
+        rx = int(21 * 1e6 / 8 * age * 0.999)
+        tx = int(21 * 1e6 / 8 * age * 0.001)
+        f = mature(mbps=21, rx_bytes=rx, tx_bytes=tx,
+                   flow=Flow("10.0.1.2", 1, "203.0.113.2", 443, "tcp"))
+        self.assertEqual(classify(f, capacity_mbps=30.0).cls,
+                         TrafficClass.BULK)
