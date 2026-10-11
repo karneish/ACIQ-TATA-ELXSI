@@ -16,6 +16,7 @@ import argparse
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -27,6 +28,57 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "artifacts" / "validation"
 
 PASS, FAIL, BLOCKED, NOT_RUN = "PASS", "FAIL", "BLOCKED", "NOT RUN"
+
+
+#: Floor on collected tests. Not a substitute for checking the exit code -- it
+#: catches the quieter failure where the suite still exits 0 but collection has
+#: silently shrunk (a broken import in one test module drops it, and `discover`
+#: reports the rest as a success). Without a floor, deleting a whole test module
+#: would still produce a green acceptance run.
+MIN_TESTS = 809
+
+
+def parse_unittest(text: str) -> dict:
+    """Extract outcome from unittest output. Pure, so it can be unit-tested."""
+    out = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0,
+           "ok": False, "summary": ""}
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("Ran ") and " test" in line:
+            parts = line.split()
+            for i, tok in enumerate(parts):
+                if tok == "test" or tok == "tests":
+                    try:
+                        out["tests"] = int(parts[i - 1])
+                    except (ValueError, IndexError):
+                        pass
+                    break
+            out["summary"] = line
+        elif line.startswith("FAILED") or line.startswith("OK"):
+            out["ok"] = line.startswith("OK")
+            if line.startswith("FAILED"):
+                out["ok"] = False
+    # Counts appear as `OK (skipped=6)` or `FAILED (failures=2, skipped=1)`.
+    for field in ("failures", "errors", "skipped"):
+        m = re.search(rf"{field}=(\d+)", text)
+        if m:
+            out[field] = int(m.group(1))
+    return out
+
+
+def suite_verdict(rc: int, text: str, min_tests: int = MIN_TESTS) -> tuple:
+    """(status, detail) for the test-suite gate. Skips and low counts count."""
+    p = parse_unittest(text)
+    if rc != 0 or not p["ok"]:
+        return FAIL, (f"exit {rc}, {p['summary'] or 'unittest reported failure'}")
+    if p["tests"] < min_tests:
+        # green, but too few tests to mean anything
+        return FAIL, (f"only {p['tests']} tests collected, floor is {min_tests}; "
+                      f"a shrinking suite must not pass silently")
+    detail = f"{p['tests']} tests"
+    if p["skipped"]:
+        detail += f", {p['skipped']} skipped"
+    return PASS, detail
 
 
 def rev() -> str:
@@ -60,6 +112,8 @@ def run(cmd: list[str], timeout: int = 900) -> tuple[int, str]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", help="write the JSON summary here")
+    ap.add_argument("--min-tests", type=int, default=MIN_TESTS,
+                    help="floor on collected tests (default %(default)s)")
     a = ap.parse_args()
 
     run_id = rev()[:8]
@@ -87,12 +141,11 @@ def main() -> int:
     rc, txt = run([sys.executable, "-m", "unittest", "discover",
                    "-s", "tests", "-t", "."])
     (outdir / "unittest.log").write_text(txt)
-    n = 0
-    for line in txt.splitlines():
-        if line.startswith("Ran ") and " test" in line:
-            n = int(line.split()[1])
-    record("unit+integration+socket", PASS if rc == 0 else FAIL,
-           f"{n} tests, exit {rc}", "unittest.log")
+    status, detail = suite_verdict(rc, txt, a.min_tests)
+    p = parse_unittest(txt)
+    record("unit+integration+socket", status, f"{detail}, exit {rc}",
+           "unittest.log")
+    env["tests"] = p
 
     # 2. metric integrity, independently
     print("\nphase 2: metric integrity")
@@ -142,6 +195,11 @@ def main() -> int:
                   "FIFO/CAKE/ACIQ comparison", "30-minute stability"):
             record(g, BLOCKED, detail)
     else:
+        rc2, txt2 = run(["sudo", "-n", sys.executable, "-m", "unittest",
+                         "tests.test_rollback_live", "-v"])
+        (outdir / "rollback-live.log").write_text(txt2)
+        record("live rollback verification (kernel)", PASS if rc2 == 0 else FAIL,
+               "tc read-back in an isolated namespace", "rollback-live.log")
         rc, txt = run(["sudo", "env",
                        f"ACIQ_VENV={os.environ.get('ACIQ_VENV', '/home/mekarz/aciq-venv')}",
                        "./testbed/gate.sh"])

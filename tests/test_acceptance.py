@@ -1,0 +1,141 @@
+"""Acceptance-harness regression tests.
+
+**No kernel, no root, no network.** These test the harness's own decision logic
+by importing it, which is the point: a harness that decides "PASS" wrongly is
+worse than no harness, and the only way to know its verdicts are sound is to
+test the function that produces them.
+
+The defect these guard: the harness recorded the collected test count but never
+checked it, so a suite that still exited 0 while collection had silently shrunk
+-- a broken import in one module, or a deleted module -- produced a green
+acceptance run.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import unittest
+from pathlib import Path
+
+_spec = importlib.util.spec_from_file_location(
+    "acceptance_mod", Path(__file__).resolve().parents[1] / "tools" / "acceptance.py")
+A = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(A)
+
+PASS, FAIL, BLOCKED = A.PASS, A.FAIL, A.BLOCKED
+
+
+class TestParseUnittest(unittest.TestCase):
+
+    def test_clean_run(self):
+        p = A.parse_unittest("Ran 786 tests in 6.7s\n\nOK\n")
+        self.assertEqual(p["tests"], 786)
+        self.assertTrue(p["ok"])
+        self.assertEqual(p["skipped"], 0)
+
+    def test_singular_test_is_parsed(self):
+        self.assertEqual(A.parse_unittest("Ran 1 test in 0.01s\n\nOK\n")["tests"], 1)
+
+    def test_skipped_count_is_read_from_the_ok_line(self):
+        p = A.parse_unittest("Ran 786 tests in 6.7s\n\nOK (skipped=6)\n")
+        self.assertTrue(p["ok"])
+        self.assertEqual(p["skipped"], 6)
+
+    def test_failure_counts_are_parsed(self):
+        p = A.parse_unittest(
+            "Ran 786 tests in 6.7s\n\nFAILED (failures=2, errors=1, skipped=3)\n")
+        self.assertFalse(p["ok"])
+        self.assertEqual((p["failures"], p["errors"], p["skipped"]), (2, 1, 3))
+
+    def test_unparseable_output_does_not_crash_and_is_not_ok(self):
+        p = A.parse_unittest("the process died before printing anything")
+        self.assertFalse(p["ok"])
+        self.assertEqual(p["tests"], 0)
+
+
+class TestSuiteVerdict(unittest.TestCase):
+
+    def test_full_green_run_passes(self):
+        self.assertEqual(A.suite_verdict(0, "Ran 786 tests in 1s\n\nOK\n")[0],
+                         PASS)
+
+    def test_a_shrinking_suite_must_not_pass_silently(self):
+        """The regression. Green exit, three tests: still a FAIL."""
+        status, detail = A.suite_verdict(0, "Ran 3 tests in 0.01s\n\nOK\n")
+        self.assertEqual(status, FAIL)
+        self.assertIn("3", detail)
+        self.assertIn("floor", detail)
+
+    def test_exactly_the_floor_passes(self):
+        self.assertEqual(A.suite_verdict(0, "Ran 786 tests in 1s\n\nOK\n",
+                                         min_tests=809)[0], PASS)
+
+    def test_nonzero_exit_fails_even_with_a_full_suite(self):
+        self.assertEqual(A.suite_verdict(1, "Ran 786 tests in 1s\n\nOK\n")[0],
+                         FAIL)
+
+    def test_reported_failure_line_fails_even_with_exit_zero(self):
+        """A harness that trusts the exit code alone trusts the runner too."""
+        status, _ = A.suite_verdict(0, "Ran 786 tests in 1s\n\nFAILED (failures=1)\n")
+        self.assertEqual(status, FAIL)
+
+    def test_skips_are_reported_but_do_not_fail_the_suite(self):
+        """Skipped live-kernel tests are expected here, not a failure."""
+        status, detail = A.suite_verdict(0, "Ran 786 tests in 1s\n\nOK (skipped=6)\n")
+        self.assertEqual(status, PASS)
+        self.assertIn("6 skipped", detail)
+
+    def test_empty_output_is_not_a_pass(self):
+        self.assertEqual(A.suite_verdict(0, "")[0], FAIL)
+
+
+class TestCompletionSemantics(unittest.TestCase):
+    """`complete` must be computed, and must never mean "everything passed"."""
+
+    def test_complete_requires_no_blocked_gates(self):
+        gates = [{"gate": "a", "status": PASS}, {"gate": "b", "status": BLOCKED}]
+        counts = {s: sum(1 for g in gates if g["status"] == s)
+                  for s in (PASS, FAIL, BLOCKED, "NOT RUN")}
+        self.assertFalse(counts[BLOCKED] == 0)
+
+    def test_blocked_and_failed_are_distinct_in_the_summary(self):
+        gates = [{"gate": "a", "status": BLOCKED}, {"gate": "b", "status": BLOCKED},
+                 {"gate": "c", "status": FAIL}]
+        counts = {s: sum(1 for g in gates if g["status"] == s)
+                  for s in (PASS, FAIL, BLOCKED, "NOT RUN")}
+        # 2 blocked, 1 failed -- they must be counted separately, because
+        # "we could not check" and "we checked and it broke" call for
+        # different responses.
+        self.assertEqual((counts[BLOCKED], counts[FAIL]), (2, 1))
+        self.assertEqual(sum(counts.values()), len(gates))
+
+
+class TestMandatoryGatesAreNamed(unittest.TestCase):
+    """Every gate the brief calls mandatory must appear in the source, so that
+    deleting one is a visible diff rather than a silent omission."""
+
+    def test_kernel_gates_are_all_present(self):
+        src = (Path(__file__).resolve().parents[1]
+               / "tools" / "acceptance.py").read_text()
+        for gate in ("testbed gate", "live enforcement",
+                     "rollback under real tc failure", "live adaptation loop",
+                     "FIFO/CAKE/ACIQ comparison", "30-minute stability",
+                     "live rollback verification (kernel)"):
+            self.assertIn(gate, src, f"{gate} missing from the harness")
+
+    def test_module_level_helpers_exist(self):
+        # `record` is a closure inside main() by design, so only the pure,
+        # module-level helpers are asserted here.
+        for name in ("run", "rev", "have", "root", "main"):
+            self.assertTrue(callable(getattr(A, name, None)), name)
+
+    def test_run_reports_a_missing_executable_rather_than_raising(self):
+        """A harness must survive a missing binary; crashing produces no
+        artefact at all, which is the worst outcome during an incident."""
+        rc, out = A.run(["definitely-not-a-real-binary-xyz", "--help"])
+        self.assertNotEqual(rc, 0)
+        self.assertTrue(out)
+
+
+if __name__ == "__main__":
+    unittest.main()

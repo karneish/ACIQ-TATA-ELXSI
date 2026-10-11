@@ -433,12 +433,17 @@ class TestSafeState(unittest.TestCase):
         r = FakeRunner(fail_on="cake")
         r2 = FakeRunner(fail_on="fq_codel")
         class Both(FakeRunner):
+            # Refuses two qdiscs, then defers to the parent for everything
+            # else so the pfifo rung is actually *modelled* in the fake
+            # kernel. Returning a bare 0 would claim pfifo was installed
+            # without any state to read back, which is precisely the situation
+            # the new verification refuses to accept.
             def run(self, argv):
-                self.commands.append(argv)
                 joined = " ".join(argv)
                 if "qdisc" in argv and "add" in argv and ("cake" in joined or "fq_codel" in joined):
+                    self.commands.append(argv)
                     return 1, "", "refused"
-                return 0, "", ""
+                return super().run(argv)
         tm = TransactionManager(Both(), Shield())
         tm.remember_capacity(CAP)
         self.assertTrue(tm.force_safe())

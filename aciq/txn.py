@@ -16,9 +16,10 @@ import time
 from dataclasses import dataclass, field
 
 from .model import RatePlan
-from .qdisc import read_class_state
+from .qdisc import parse_qdisc_text, read_class_state
 from .shield import Mode, Shield, Violation
-from .tc import TcTree, Mismatch, build_tree, parse_class_state, render, verify, unverified_fields
+from .tc import (TcTree, Mismatch, build_tree, compare_states, parse_class_state,
+                 render, verify, unverified_fields)
 
 
 class Runner:
@@ -63,6 +64,10 @@ class FakeRunner:
         self._drops: dict[str, int] = {}
         self._over: dict[str, int] = {}
         self.commands: list[tuple[str, ...]] = []
+        #: root qdisc model, handle -> kind. Added because the safe state is
+        #: class-free and is therefore verified by reading the root qdisc back;
+        #: without this a correct safe state is indistinguishable from no qdisc.
+        self._qdiscs: dict[str, str] = {}
 
     @staticmethod
     def _mbps(token: str) -> float:
@@ -95,6 +100,19 @@ class FakeRunner:
                 ]
                 return 0, "\n".join(lines), ""
             return 0, self.readback, ""
+        if "qdisc" in argv and "del" in argv:
+            self._qdiscs.clear()
+        if "qdisc" in argv and "add" in argv:
+            spec = [x for x in argv[argv.index("add") + 1:]
+                    if x not in ("dev", "root", "handle")]
+            handle = argv[argv.index("handle") + 1] if "handle" in argv else "root"
+            self._qdiscs[handle] = spec[0] if spec else "unknown"
+        if "qdisc" in argv and "show" in argv:
+            if not self._qdiscs:
+                return 0, "", ""
+            return 0, "\n".join(
+                f"qdisc {kind} {h}: root refcnt 2" for h, kind
+                in self._qdiscs.items()), ""
         if "class" in argv and "add" in argv:
             cid = argv[argv.index("classid") + 1]
             rate = self._mbps(argv[argv.index("rate") + 1])
@@ -105,6 +123,39 @@ class FakeRunner:
         return 0, "", ""
 
 
+#: Rollback outcome vocabulary. Each is a distinct condition with a different
+#: meaning for whoever is holding a broken link, so collapsing them into a bool
+#: is what made the original defect possible: every path returned True.
+VERIFIED = "verified"                        # cmds ok AND read-back matched
+COMMANDS_FAILED = "commands_failed"          # a restore command was refused
+VERIFICATION_FAILED = "verification_failed"  # cmds ok, state still wrong
+UNVERIFIABLE = "unverifiable"                # state could not be inspected
+NO_TARGET = "no_target"                      # nothing known-good to restore to
+PARTIAL = "partial"                          # some cmds failed, state matched
+
+
+@dataclass
+class RollbackResult:
+    """Evidence about what a rollback actually did.
+
+    ``ok`` is True **only** for `verified`. Running the commands is not the
+    same as restoring the kernel, and this type exists so that difference
+    cannot be quietly lost in a bool.
+    """
+
+    ok: bool
+    outcome: str
+    reason: str = ""
+    mismatches: list[Mismatch] = field(default_factory=list)
+    unverified: list[tuple[str, str]] = field(default_factory=list)
+    failed_commands: list[str] = field(default_factory=list)
+    source: str = "none"
+    target: str = ""
+
+    def __bool__(self) -> bool:
+        return self.ok
+
+
 @dataclass
 class Outcome:
     ok: bool
@@ -113,6 +164,7 @@ class Outcome:
     violations: list[Violation] = field(default_factory=list)
     mismatches: list[Mismatch] = field(default_factory=list)
     reason: str = ""
+    rollback: RollbackResult | None = None
 
 
 class TransactionManager:
@@ -134,6 +186,12 @@ class TransactionManager:
         self.audit: list[dict] = []
         #: last known-good rendered command list, so a rebuild can be undone
         self._last_good: list[tuple[str, ...]] | None = None
+        #: canonical read-back state observed when that tree committed. This is
+        #: the rollback *target*, and it is an observation rather than a
+        #: re-rendering of intent.
+        self._last_good_state: dict[str, dict[str, float]] | None = None
+        #: full evidence for the most recent rollback attempt
+        self.last_rollback: RollbackResult | None = None
         #: which rung of the safe-state ladder is currently applied
         self.safe_state_in_force: str | None = None
         #: human-readable explanation of the most recent refusal, so a driver
@@ -243,10 +301,11 @@ class TransactionManager:
         if not ok:
             self.shield.breach(now, [Violation("apply_failed", err)])
             rb = self._rollback()
-            self._log(now, "apply_failed", detail=err, rolled_back=rb)
-            return Outcome(False, False, rb,
+            self._log(now, "apply_failed", detail=err, rolled_back=rb.ok,
+                      rollback=rb.outcome, rb_reason=rb.reason)
+            return Outcome(False, False, rb.ok,
                            violations=[Violation("apply_failed", err)],
-                           reason=err)
+                           reason=err, rollback=rb)
 
         state = self._read_classes()
         unverifiable = unverified_fields(tree, state)
@@ -263,13 +322,19 @@ class TransactionManager:
             self.shield.breach(now, self.shield.veto_readback(mism))
             rb = self._rollback()
             self._log(now, "readback_mismatch", mismatches=[str(m) for m in mism],
-                      rolled_back=rb, source=self.last_readback_source)
-            return Outcome(False, False, rb, mismatches=mism,
-                           reason="read-back mismatch")
+                      rolled_back=rb.ok, rollback=rb.outcome, rb_reason=rb.reason,
+                      source=self.last_readback_source)
+            return Outcome(False, False, rb.ok, mismatches=mism,
+                           reason="read-back mismatch", rollback=rb)
 
         # committed
         self.last_reason = ""
         self._last_good = render(tree, dev=self.dev, ns=self.ns)
+        # Keep the *observed* state next to the commands. Replaying commands is
+        # not the same as knowing what they produced, and a rollback target that
+        # cannot be described cannot be checked afterwards -- which is precisely
+        # the gap being closed here.
+        self._last_good_state = {k: dict(v) for k, v in state.items()}
         self.shield.note_change(now)
         self.shield.observe_ok(now)
         self.shield.state.alarm = None
@@ -284,19 +349,152 @@ class TransactionManager:
                            for c in tree.classes})
         return Outcome(True, True, False)
 
-    def _rollback(self) -> bool:
-        """Restore the last known-good tree. Without one, fall back to the safe
-        state, which is a plain unleased plan: interactive keeps the largest
-        share and every class keeps its floor."""
-        if self._last_good is not None:
-            pre = ("ip", "netns", "exec", self.ns) if self.ns else ()
-            self.runner.run(pre + ("tc", "qdisc", "del", "dev", self.dev, "root"))
-            for argv in self._last_good:
-                self.runner.run(argv)
-            return True
-        return self.force_safe()
+    def _replay(self, argv_list) -> list[str]:
+        """Run restore commands, collecting the ones the kernel refused.
 
-    def force_safe(self) -> bool:
+        Previously every return value here was discarded, so a rollback that
+        restored nothing reported exactly like one that restored everything.
+        """
+        pre = ("ip", "netns", "exec", self.ns) if self.ns else ()
+        rc, _, err = self.runner.run(
+            pre + ("tc", "qdisc", "del", "dev", self.dev, "root"))
+        failed = [] if rc == 0 else [f"qdisc del: {err.strip() or rc}"]
+        for argv in argv_list:
+            rc, _, err = self.runner.run(argv)
+            if rc != 0:
+                failed.append(f"{' '.join(argv)} -> {err.strip() or rc}")
+        return failed
+
+    def _read_root_qdisc(self) -> tuple[dict[str, str], str]:
+        pre = ("ip", "netns", "exec", self.ns) if self.ns else ()
+        for argv in (("tc", "qdisc", "show", "dev", self.dev),
+                     ("tc", "-j", "qdisc", "show", "dev", self.dev)):
+            rc, out, _ = self.runner.run(pre + argv)
+            if rc == 0 and out:
+                if "-j" in argv:
+                    try:
+                        data = json.loads(out)
+                    except (ValueError, TypeError):
+                        continue
+                    state = {}
+                    for q in data if isinstance(data, list) else []:
+                        if q.get("root") or q.get("parent") in (None, "root"):
+                            state[str(q.get("handle") or "root")] =                                 str(q.get("kind", ""))
+                    if state:
+                        return state, "tc-json"
+                else:
+                    state = parse_qdisc_text(out)
+                    if state:
+                        return state, "tc-text"
+        return {}, "none"
+
+    def _rollback(self) -> RollbackResult:
+        """Restore the last known-good tree and **verify it was restored**.
+
+        Replaying commands proves only that commands ran. The kernel may refuse
+        part of the tree, normalise a rate, or leave a filter behind, and the
+        old implementation returned True in every one of those cases. The state
+        is therefore read back and compared against the canonical snapshot
+        captured when the good tree was committed.
+
+        Without a known-good tree, fall back to the safe state, which is a plain
+        unleased plan: interactive keeps the largest share and every class keeps
+        its floor.
+        """
+        if self._last_good is None:
+            res = self.force_safe(result=True)
+            self.last_rollback = res
+            return res
+
+        target = self._last_good_state or {}
+        failed = self._replay(self._last_good)
+
+        if not target:
+            # Commands ran but there is no description of what "restored" means,
+            # so the result is unknown -- which is not the same as success.
+            res = RollbackResult(
+                False, UNVERIFIABLE,
+                reason="no canonical state recorded for the known-good tree; "
+                       "restored commands ran but the target state is unknown",
+                failed_commands=failed, source="none", target="unknown")
+            self.last_rollback = res
+            self._log(self.clock(), "rollback_unverifiable",
+                      reason=res.reason, failed=failed[:6])
+            return res
+
+        raw, source = self._read_class_state()
+        # _read_class_state returns the reader's own mapping; normalise it the
+        # same way apply() does, or the comparison is against dataclasses
+        # instead of the {classid: {rate, ceil}} shape it expects.
+        actual = parse_class_state(raw)
+        if not actual:
+            # Commands that were refused outrank an unreadable state: we already
+            # know the restore did not happen, so "unverifiable" would understate
+            # it and hide the cause behind a missing reader.
+            if failed:
+                res = RollbackResult(
+                    False, COMMANDS_FAILED,
+                    reason=f"{len(failed)} restore command(s) refused and the "
+                           f"post-rollback state could not be read back "
+                           f"(source={source})",
+                    failed_commands=failed, source=source, target="known-good")
+            else:
+                res = RollbackResult(
+                    False, UNVERIFIABLE,
+                    reason=f"post-rollback read-back returned no class state "
+                           f"(source={source}); restoration could not be "
+                           f"confirmed",
+                    failed_commands=failed, source=source, target="known-good")
+            self.last_rollback = res
+            self._log(self.clock(), f"rollback_{res.outcome}",
+                      reason=res.reason, source=source, failed=failed[:6])
+            return res
+
+        mism, unver = compare_states(target, actual)
+        self.last_readback_source = source
+
+        if failed and not mism:
+            # State matches, but a command was refused. Restoring the *observed*
+            # state is confirmed; whether anything unobserved (a filter, say)
+            # was left behind is not, so this is reported as partial rather
+            # than folded into a pass.
+            res = RollbackResult(
+                False, PARTIAL,
+                reason="read-back matched the known-good state, but "
+                       f"{len(failed)} restore command(s) were refused",
+                failed_commands=failed, source=source, target="known-good")
+        elif mism:
+            res = RollbackResult(
+                False, VERIFICATION_FAILED,
+                reason="post-rollback state does not match the known-good tree: "
+                       + "; ".join(f"{m.classid}.{m.field} wanted "
+                                   f"{m.expected:.3f} got {m.actual:.3f}"
+                                   for m in mism[:4]),
+                mismatches=mism, unverified=unver, failed_commands=failed,
+                source=source, target="known-good")
+        elif unver:
+            # Everything checkable matched, but not everything was checkable.
+            # Called out so it cannot be read as a clean verification.
+            res = RollbackResult(
+                False, UNVERIFIABLE,
+                reason="read-back could not confirm "
+                       f"{len(unver)} field(s): "
+                       + ", ".join(f"{c}.{f}" for c, f in unver[:4]),
+                unverified=unver, source=source, target="known-good")
+        else:
+            res = RollbackResult(True, VERIFIED,
+                                 reason="post-rollback state matches the "
+                                        "known-good tree",
+                                 source=source, target="known-good")
+
+        self.last_rollback = res
+        self._log(self.clock(), f"rollback_{res.outcome}", reason=res.reason,
+                  mismatches=[str(m) for m in res.mismatches[:6]],
+                  unverified=[f"{c}.{f}" for c, f in res.unverified[:6]],
+                  failed=res.failed_commands[:6], source=res.source)
+        return res
+
+    def force_safe(self, result: bool = False):
         """Apply the emergency safe state, escalating to simpler forms.
 
         The safe state deliberately has **no per-class breakdown**. It exists to
@@ -319,16 +517,38 @@ class TransactionManager:
             ("fq_codel", ("fq_codel",)),
             ("pfifo", ("pfifo", "limit", "1000")),
         )
+        last_err = ""
         for name, spec in ladder:
             self.runner.run(pre + ("tc", "qdisc", "del", "dev", self.dev, "root"))
             rc, _, err = self.runner.run(
                 pre + ("tc", "qdisc", "add", "dev", self.dev, "root", "handle",
                        "1:", *spec))
-            if rc == 0:
+            if rc != 0:
+                last_err = f"{name}: {err.strip() or rc}"
+                continue
+            # A successful `tc qdisc add` is not proof the qdisc is there. Read
+            # the root qdisc back before claiming the household is protected --
+            # the safe state is class-free, so this is the only read that can
+            # distinguish a working safe state from no qdisc at all.
+            got, source = self._read_root_qdisc()
+            if got and got.get("root"):
                 self.safe_state_in_force = name
-                return True
+                res = RollbackResult(True, VERIFIED,
+                                     reason=f"safe state '{name}' installed and "
+                                            f"confirmed by read-back",
+                                     source=source, target=f"safe:{name}")
+                self.last_rollback = res
+                return res if result else True
+            last_err = (f"{name}: accepted by tc but read-back source={source} "
+                        f"reported no root qdisc")
         self.safe_state_in_force = None
-        return False
+        res = RollbackResult(
+            False, NO_TARGET if result else COMMANDS_FAILED,
+            reason="no rung of the safe-state ladder could be installed and "
+                   f"confirmed ({last_err})",
+            source=self._read_root_qdisc()[1])
+        self.last_rollback = res
+        return res if result else False
 
     _last_capacity: float | None = None
 

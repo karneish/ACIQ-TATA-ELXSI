@@ -247,6 +247,68 @@ def verify(tree: TcTree, state: dict[str, dict[str, float]],
     return bad
 
 
+def canon_classid(cid: str) -> str:
+    """Normalise a class handle to `major:minor` with no leading zeros.
+
+    tc prints minor handles zero-padded and unpadded depending on version and
+    on how the class was created (`1:0010` vs `1:10`), so a literal string
+    comparison reports a mismatch where the kernel state is identical. This is
+    the one textual difference treated as equivalent; nothing else is.
+    """
+    cid = str(cid).strip()
+    if ":" not in cid:
+        return cid
+    major, _, minor = cid.partition(":")
+    minor = minor.strip()
+    if minor.isdigit():
+        minor = minor.lstrip("0") or "0"
+    return f"{major.strip()}:{minor}"
+
+
+def compare_states(expected: dict, actual: dict,
+                   tol: float | None = None) -> tuple[list[Mismatch], list]:
+    """Compare two canonical read-back states. -> (mismatches, unverifiable).
+
+    Used for rollback, where both sides are *observations* rather than an
+    intention and a measurement, so the direction of the comparison differs
+    from `verify()` and the failure modes differ with it:
+
+      - a class present in `actual` but not `expected` is **residue**, and is
+        reported. Rollback that leaves an extra class behind has not restored
+        the prior state even though every expected class is correct.
+      - a field the reader cannot see is *unverifiable*, which is reported
+        separately and must not be counted as either a match or a mismatch.
+      - a class missing entirely from `actual` is a mismatch, not a shrug.
+
+    Rounding is absorbed by the same 1% tolerance `verify()` uses, so a kernel
+    that reports 6.0 where 5.9997 was asked for is not a defect.
+    """
+    tol = RATE_TOLERANCE if tol is None else tol
+    bad: list[Mismatch] = []
+    unver: list[tuple[str, str]] = []
+    exp = {canon_classid(k): v for k, v in expected.items()}
+    act = {canon_classid(k): v for k, v in actual.items()}
+    for cid, want in exp.items():
+        got = act.get(cid)
+        if got is None:
+            bad.append(Mismatch(cid, "present", 1.0, 0.0))
+            continue
+        for key in ("rate", "ceil"):
+            if want.get(key) is None:
+                continue
+            have = got.get(key)
+            if have is None:
+                unver.append((cid, key))
+                continue
+            w = want[key]
+            if abs(have - w) > tol * max(w, 1.0):
+                bad.append(Mismatch(cid, key, w, have))
+    for cid in act:
+        if cid not in exp:
+            bad.append(Mismatch(cid, "residual", 0.0, 1.0))
+    return bad, unver
+
+
 def unverified_fields(tree, state) -> list[tuple[str, str]]:
     """(classid, field) pairs the reader could not confirm. Reported, not hidden."""
     out = []

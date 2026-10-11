@@ -143,6 +143,40 @@ def _decode_classid(handle: int) -> str:
     return f"{handle >> 16:x}:{handle & 0xFFFF:x}"
 
 
+def parse_qdisc_text(raw: str) -> dict[str, str]:
+    """Parse `tc qdisc show dev X` into {handle: kind} for **root** qdiscs.
+
+    Needed because the safe state is deliberately class-free -- it is a single
+    `cake`/`fq_codel`/`pfifo` root with no classes at all -- so verifying it
+    through `class show` would read "nothing there" and could not distinguish a
+    correct safe state from a link with no qdisc whatsoever. That distinction
+    is the whole point of the check, so the root qdisc is read directly.
+
+    Minor details: `pfifo` and `fq_codel` have no handle, which tc shows as
+    `noqueue`/blank; they are keyed as `root` so a lookup succeeds.
+    """
+    out: dict[str, str] = {}
+    for line in (raw or "").splitlines():
+        parts = line.split()
+        if not parts or parts[0] != "qdisc":
+            continue
+        kind = parts[1] if len(parts) > 1 else ""
+        rest = parts[2:]
+        # Only root qdiscs. `root` sits right after the handle
+        # (`qdisc htb 1: root ...`); a child qdisc says `parent` in the same
+        # slot (`qdisc htb 1:10 parent 1:1 ...`). Checking anywhere in the line
+        # instead would match both, because a child's parent is often 1: root.
+        if "root" not in rest[:2]:
+            continue
+        handle = "root"
+        if "handle" in rest:
+            i = rest.index("handle")
+            if i + 1 < len(rest):
+                handle = rest[i + 1]
+        out[handle] = kind
+    return out
+
+
 def read_class_state(
     dev: str = "veth-lan",
     ns: str | None = "router",
