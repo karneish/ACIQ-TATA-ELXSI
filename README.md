@@ -22,6 +22,7 @@ to let a user grant a **time-boxed lease** to one device or flow.
 
 | | |
 |---|---|
+| **`docs/gap-closure/final-validation-report.md`** | **gap-closure status: what is verified, what is not, and why** |
 | **`docs/PROJECT.md`** | **complete project reference** — every module, contract, measurement, limitation and defect |
 | `docs/architecture.md` | module contracts, inputs/outputs/failure handling |
 | `docs/limitations.md` | every measurement, withdrawn claim and open defect |
