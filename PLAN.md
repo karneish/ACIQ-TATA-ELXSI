@@ -408,7 +408,7 @@ SAFE_HELD ──manual reset──> MONITOR
 | 10a | cake as leaf | 14–21 Mbps **and** >1 MB on `1:50` |
 | 10b | pfifo as leaf | 14–21 Mbps **and** >1 MB on `1:50` |
 | 11 | conntrack forwarded per-flow v4 | both flows have `bytes=` **and** 1000B larger |
-| 12 | **MEASUREMENT** | saturation signals. Records numbers, never fails |
+| 12 | **MEASUREMENT** | saturation signals. Reports the measured numbers and asserts no threshold, so it cannot pass or fail — it exists to be read |
 | 13 | conntrack forwarded per-flow v6 | both flows have `bytes=` **and** 1000B larger |
 | 14 | IPv6 EF filter | proven by class 1:10 bytes **growing** |
 
