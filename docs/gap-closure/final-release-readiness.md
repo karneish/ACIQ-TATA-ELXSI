@@ -1,127 +1,203 @@
 # Final release readiness
 
-**Revision:** `89b87758` · **Published:** `705cdd5` (same content, exported history)
-**Test suite:** 757 pass, 0 fail · **Claim audit:** exit 0
+**Revision:** `507ed7af` · **Suite:** 813 pass, 0 fail, 6 skipped · **Claim audit:** exit 0
 
 ## Verdict
 
-**NOT READY FOR RELEASE.**
+# VALIDATION BLOCKED
 
-Not "ready with caveats". The pieces that have been validated are validated
-properly; the pieces that decide whether this is *useful* cannot be reached from
-this environment, and the project's own gate is the thing that would answer
-them.
+Not **NOT READY**, and the difference is deliberate.
 
-## Readiness by dimension
+**NOT READY** would assert something is known to be broken. Nothing is. Every
+dimension that could be checked, was checked and passed, and this change set
+closed the one real code defect in scope.
 
-| # | dimension | status | basis |
+**VALIDATION BLOCKED** asserts what is actually true: the environment prevents
+required tests, so the available evidence is insufficient to determine whether
+the system meets its mandatory requirements. That is a statement about this
+shell — PID 1 is `bwrap`, `CapEff` is `0000000000000000`, `ip`/`tc`/`iperf3` are
+absent at package level, `unshare --net` returns `EPERM` — and not about the
+software.
+
+**READY FOR RELEASE is unavailable** regardless of test count: live kernel
+enforcement and kernel-verified rollback are mandatory and unrun.
+
+## A. Repository state
+
+| | |
+|---|---|
+| path | `~/Desktop/Full-projects/TATA-ELXSI` |
+| branch | `main` |
+| HEAD | `507ed7af` |
+| working tree (TATA-ELXSI) | clean at time of report |
+| public remote | `aciq` → `karneish/ACIQ-TATA-ELXSI` |
+| parent remote | `origin` → `karneish/Full-projects` — **never pushed** |
+| remote HEAD | `705cdd5` — **4 commits behind, unmodified** |
+
+Local commits not on the public remote:
+
+```
+507ed7af  Verify rollback by reading the kernel back, not by trusting the replay
+17685a45  Document post-705cdd5 validation: 15 deliverables, acceptance harness
+89b87758  Classifier: deny an EF claim that contradicts observed behaviour
+```
+
+`705cdd5` is the *exported* equivalent of `6a22208c`; the export replays history,
+so hashes differ while the trees are identical.
+
+## B. Rollback verification
+
+**The defect.** `_rollback()` replayed the last known-good command list and
+returned `True` unconditionally — every `runner.run()` result discarded. A
+rollback that restored nothing was indistinguishable from one that restored
+everything. The project already read the kernel back after *applying* a policy;
+it never read it back after *undoing* one, which is the direction where failure
+is silent.
+
+**The change.** `507ed7af`. `verified` is now the only outcome that sets
+`rolled_back=True`; five others are distinguished (`commands_failed`,
+`verification_failed`, `unverifiable`, `no_target`, `partial`). The comparison
+target is the canonical state **observed** at commit, not a re-rendering of
+intent. `force_safe()` is verified too, by reading the root qdisc — the safe
+state is class-free, so `class show` cannot distinguish it from no qdisc at all.
+
+**Unit-test evidence.** 29 tests in `tests/test_rollback.py`, **all mocked and
+labelled as such**, covering all 14 required scenarios. They have teeth: the
+original defect was reinstated and **14 of the 29 failed**, then the fix was
+restored and all 29 pass.
+
+**Live integration evidence. NONE.** `tests/test_rollback_live.py` contains 6
+tests with no mocks — isolated network namespace, fault injected by genuinely not
+sending a command, state read back with `tc -j` called directly rather than
+through `TransactionManager`. **All 6 skip here.**
+
+**Read-back comparison rules.** Kernel rounding within 1% absorbed; `1:0010` vs
+`1:10` normalised. Those are the only two equivalences. Missing class = mismatch;
+unexpected class = `residual` mismatch; field the reader cannot see =
+`unverifiable`, never a pass.
+
+**Remaining failure modes.** A rollback that succeeds but leaves residue the
+class reader cannot see (e.g. a filter) is reported `partial`, not verified — the
+honest answer, since `class show` cannot see filters at all. Cleanup removes the
+root qdisc on the target device and cannot prove it did not remove a qdisc owned
+by another subsystem.
+
+## C. Test results
+
+| suite | command | exit | count |
 |---|---|---|---|
-| 1 | core traffic classification | **PASS** | 16 constructed cases, two capacities; 9 prior defects closed |
-| 2 | measurement and metrics integrity | **PASS** | re-verified live over a socket; arithmetic recomputed independently and matches |
-| 3 | API and security | **PASS** | 27 tests, over the wire; limiter proven bounded on 6 conditions |
-| 4 | documentation accuracy | **PASS** | claim audit exit 0; no red-flag phrases |
-| 5 | repository / packaging hygiene | **PASS** | 757 tests, no import-time side effects |
-| 6 | Linux traffic management enforcement | **BLOCKED** | no `ip`/`tc`/`sudo`; gate is 20/21 on a privileged host |
-| 7 | end-to-end traffic shaping | **BLOCKED** | same |
-| 8 | stability over extended runs | **BLOCKED** | no run exceeds 40 s; brief requires >= 30 min |
-| 9 | live adaptation response | **BLOCKED** | estimator replay-verified, never live |
-| 10 | rollback under real failure | **BLOCKED** | control flow unit-tested; no kernel round-trip |
-| 11 | fairness / non-starvation | **BLOCKED** | property proven; starvation needs a long run |
-| 12 | CAKE / FIFO comparison | **BLOCKED** | CAKE not installable here |
-| 13 | hardware / driver coverage | **BLOCKED** | one VM, one link |
-| 14 | resource and reliability behaviour | **PARTIAL** | bounded by construction; load unmeasured |
+| full | `python3 -m unittest discover -s tests -t .` | 0 | **813 pass, 0 fail, 6 skipped** |
+| rollback (mocked) | `python3 -m unittest tests.test_rollback` | 0 | 29 pass |
+| rollback (live) | `sudo python3 -m unittest tests.test_rollback_live -v` | — | **6 skipped** |
+| harness | `python3 -m unittest tests.test_acceptance` | 0 | 21 pass |
+| acceptance | `python3 tools/acceptance.py` | 0 | 6 PASS · 0 FAIL · **7 BLOCKED** |
+| claim audit | `python3 tools/audit_claims.py` | 0 | clean |
 
-**6 PASS · 1 PARTIAL · 7 BLOCKED · 0 FAIL.**
+All results are from revision `507ed7af`. Count reconciliation: 746 (`6a22208c`)
+→ 757 (+11 classifier) → 809 (+29 rollback, +16 harness, +6 live) → **813** (+4
+claim-audit parser). **Nothing was deleted or weakened at any point.**
 
-No dimension is FAIL. That is a real result — nothing checked was found broken.
-It is also not a pass, because the seven blocked dimensions include every one
-that distinguishes a working QoS controller from a correct-looking one.
+## D. Live QoS evidence
 
-## Why blocked is not a soft pass
+**None at this revision.** Kernel 7.1.5 is present but unreachable; no `tc`.
 
-The classifier, the policy planner and the metric collector have been validated
-directly and thoroughly. What remains unvalidated is the part that makes them
-matter: whether a flow actually lands in the class it was assigned, at the rate
-it was given, on a real link.
+| step | status |
+|---|---|
+| traffic generated in topology | BLOCKED |
+| collector observes it | BLOCKED |
+| classifier selects class | PASS (16 constructed cases) |
+| policy decision | PASS |
+| `tc` config updated | BLOCKED |
+| filters/classes exist | BLOCKED |
+| counters show activity | BLOCKED |
+| behaviour matches policy | BLOCKED |
+| measurements return | PASS (live socket) |
+| control loop responds | BLOCKED |
 
-Steps 5-7 and 9 of the nine-step chain in `live-enforcement-validation.md` are
-exactly the steps that separate application-level correctness from kernel-level
-correctness, and **all four are BLOCKED**. A controller that renders the correct
-`tc` command has demonstrated it can write a string.
+Historical gate evidence (20 PASS / 1 MEASURED / 0 FAIL) exists at `705cdd5` on a
+privileged host. It is **stale by construction** — the collector and classifier
+have both changed since — and is not re-attributed to this revision.
 
-## The one command that changes this verdict
+## E. Remaining limitations
 
-On a Linux host with `iproute2`:
+**Blocked gates (7):** testbed gate · live enforcement · live rollback
+verification · rollback under real `tc` failure · live adaptation loop ·
+FIFO/CAKE/ACIQ comparison · 30-minute stability.
+
+**`min_rate`: not implemented, and the earlier rationale was wrong.** The code
+already reserves `floor * n` (`max(2.0, 0.05 * capacity)` per class) *before*
+weight distribution — 15 Mbps held back at 100 Mbps whether or not anyone uses
+it. The recorded objection ("reserving unused capacity would throttle other
+flows") describes a design this codebase does not have. What genuinely does not
+exist is a *class-differentiated* reservation. Nothing requires it. Full
+reasoning: `min-rate-scope-decision.md`.
+
+**Benchmark limitation.** Controller arithmetic only — classify, `build_plan`,
+reconcile — at one scale on one machine. No efficiency or scalability claim.
+
+**Other.** No per-role API authorization. No TLS. Not penetration tested. Audit
+log rotation untested. Unused capacity is not proactively reclaimed — unused
+capacity is borrowed by other classes under the weight split.
+
+## F. Claim audit
+
+```
+python3 tools/audit_claims.py     # exit 0
+  ran 813 tests, ok=True, exit=0, 6 skipped
+```
+
+- constants code-vs-docs: 4/4 agree
+- evidence cited by claims present: 6/6
+- red-flag phrases: none
+
+**Corrections made this run:**
+
+1. `tools/audit_claims.py` reported `ok=False` on a fully passing suite because
+   it tested `endswith("OK")`, and `OK (skipped=6)` does not end in `OK`. Skips
+   are expected in any sandbox — so the audit was wrong in exactly the
+   environment where it matters most. Fixed and regression-tested (4 tests).
+2. `tools/acceptance.py` recorded the collected test count and never checked it:
+   a suite that exits 0 while collection silently shrinks produced a **green
+   acceptance run**. Fixed with a floor; regression-tested.
+3. `min_rate` scope rationale corrected — see E.
+4. `rollback-failure-injection.md` marked the verification gap fixed.
+
+## G. Verdict rationale and what would change it
+
+**VALIDATION BLOCKED.** Six dimensions PASS, one PARTIAL, seven BLOCKED, zero
+FAIL. The blocked set contains every dimension that separates a working QoS
+controller from a correct-looking one.
+
+### To reach READY FOR RELEASE
 
 ```bash
 cd ~/Desktop/Full-projects/TATA-ELXSI
 sudo -v && python3 tools/acceptance.py
+sudo python3 -m unittest tests.test_rollback_live -v
 ```
 
-If `complete: true` with 0 FAIL, dimensions 6 and 7 close. The remaining
-blocked dimensions need the soak and the comparison suite, both of which are in
-`live-adaptation-stability.md` and `qos-baseline-comparison.md` with acceptance
-thresholds stated **before** they run.
+On a Linux host with `iproute2`, this closes live enforcement and
+kernel-verified rollback — the two mandatory gates. The soak
+(`live-adaptation-stability.md`) and the CAKE comparison
+(`qos-baseline-comparison.md`) follow, with acceptance thresholds stated before
+they run.
 
-## Current classifier behaviour, including where it is wrong
-
-| case | classification |
-|---|---|
-| 5 interactive flows | **interactive, all correct at both capacities** |
-| 5 video flows | **4/5 correct at both capacities** |
-| 3 bulk at 10 Mbps | **3/3 correct** |
-| 3 bulk at 100 Mbps | **0/3 as bulk** |
-| ambiguous cases (3) | abstain, **all correct** |
-| **accuracy** | **100 Mbps 12/16 = 0.7500 · 10 Mbps 15/16 = 0.9375** |
-
-The 0/3 at 100 Mbps is **by design**, and it is the single most important thing
-to understand about this classifier:
-
-> 88 Mbps is a hog on a 100 Mbps link and a nobody on a gigabit.
-
-Three flows at 88 Mbps on a 100 Mbps link each get ~33 Mbps. That is ordinary
-bandwidth sharing, not congestion, so they are `ADAPTIVE`. A "fix" that forced
-them to bulk was tried and **reverted**; `test_a_moderate_transfer_on_a_wide_link_is_not_bulk`
-now exists to stop the next attempt.
-
-Both remaining errors are documented decisions, not oversights: a 2.4 Mbps flow
-claiming EF stays interactive (within plausible range), and the case above.
-
-## What was fixed in this change set
-
-| defect | outcome |
-|---|---|
-| EF priority abuse | closed — an EF claim is weighed against measured behaviour |
-| interactive port granted unconditionally | closed — found while fixing the mirror case |
-| bulk port demoting small flows | closed — port hints now gated both ways |
-| "capacity sensitivity" | **not a defect** — reported fix reverted, design asserted |
-| `mature()` fixtures one-directional | closed — 3 tests had unrealistic input |
-
-## Full deliverables
-
-| document | contents |
-|---|---|
-| `post-705cdd5-baseline.md` | revision identity, environment limits, all prior defects |
-| `metric-integrity.md` | fresh measurements, validity states, definitions |
-| `api-security-validation.md` | auth, bind policy, bounded limiter, audit, limits |
-| `classifier-policy.md` | full decision tree, thresholds, known limitation |
-| `classifier-before-after.md` | confusion matrices, defect outcomes, test-count reconciliation |
-| `live-enforcement-validation.md` | nine-step chain, what is proven vs unproven |
-| `rollback-failure-injection.md` | tested failures, the unverified restore |
-| `live-adaptation-stability.md` | estimator replay, timings, stability gaps |
-| `qos-baseline-comparison.md` | fixture, metrics, the fairness note, the asymmetry |
-| `fairness-policy-safety.md` | the enforced guarantee, the deliberate omission |
-| `protocol-device-coverage.md` | per-direction testing, transport and device limits |
-| `resource-reliability.md` | measured cost, bounded state, blocked load behaviour |
-| `acceptance-harness.md` | the harness and its BLOCKED semantics |
-| `documentation-claim-audit.md` | constant and evidence checks, withdrawn claims |
+**Warning before running:** `acceptance.py` phase 6 changes kernel networking
+state via `testbed/gate.sh`, which creates network namespaces, veth pairs and
+`tc` qdiscs, and removes them on exit. Inspect `testbed/gate.sh` before running
+it privileged. There is **no dry-run mode**, and none was invented.
 
 ## Honest summary
 
-The classifier is measurably better than when this run started, by an
-evaluation run before and after on identical cases. Nine of ten reported defects
-are closed; the tenth was shown not to be a defect and the "fix" was reverted.
+One real defect was found and fixed this run: rollback reported success without
+checking. It is now verified by reading the kernel back, with six distinguishable
+failure outcomes, 29 mocked tests that demonstrably catch the original defect,
+and a live integration test written but not yet runnable here.
 
-That is a good result for the code. It is not a release, because whether the
-software works on a network is still unmeasured, and this environment is not
-where that can be measured.
+Three smaller defects were found by auditing the verification tooling itself —
+each one a number recorded, formatted, displayed, and never consulted. That
+pattern recurring inside the audit tools is itself worth noting: the same
+class of error was fixed in `txn.py`, `acceptance.py` and `audit_claims.py`.
+
+The code is in better shape than it was. Whether it works **on a network** is
+still unmeasured, and this environment is not where that can be found out.

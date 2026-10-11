@@ -102,15 +102,35 @@ def check_code_claims() -> list[dict]:
             for n, c, d in checks]
 
 
+def parse_suite_status(text: str) -> dict:
+    """Read unittest's summary. Pure, so it can be unit-tested.
+
+    `endswith("OK")` was the previous implementation and it broke as soon as
+    unittest started reporting skips: `OK (skipped=6)` does not end in `OK`, so
+    a fully passing suite was reported as failed. Skips are expected here -- the
+    live kernel tests skip in any sandbox -- so a parser that cannot read them
+    makes the audit wrong in exactly the environment it is most needed.
+    """
+    lines = text.strip().splitlines()
+    status = lines[-1].strip() if lines else ""
+    m = re.search(r"Ran (\d+) tests?", text)
+    skipped = re.search(r"skipped=(\d+)", text)
+    failed = re.search(r"(?:failures|errors)=(\d+)", text)
+    return {"ran": int(m.group(1)) if m else None,
+            "ok": bool(re.fullmatch(r"OK(?: \(.*\))?", status)),
+            "skipped": int(skipped.group(1)) if skipped else 0,
+            "failures": int(failed.group(1)) if failed else 0,
+            "status": status}
+
+
 def check_test_count() -> dict:
     import subprocess
     r = subprocess.run(
         [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-t", "."],
         cwd=ROOT, capture_output=True, text=True, timeout=900)
-    m = re.search(r"Ran (\d+) tests", r.stderr)
-    return {"ran": int(m.group(1)) if m else None,
-            "ok": r.stderr.strip().endswith("OK"),
-            "exit": r.returncode}
+    d = parse_suite_status(r.stderr)
+    d["exit"] = r.returncode
+    return d
 
 
 def main() -> int:
@@ -139,7 +159,8 @@ def main() -> int:
 
     print("\n-- test suite --")
     t = check_test_count()
-    print(f"  ran {t['ran']} tests, ok={t['ok']}, exit={t['exit']}")
+    print(f"  ran {t['ran']} tests, ok={t['ok']}, exit={t['exit']}"
+          + (f", {t['skipped']} skipped" if t['skipped'] else ""))
 
     summary = {"constants_disagree": bad, "evidence": ec,
                "red_flags": flags, "tests": t}

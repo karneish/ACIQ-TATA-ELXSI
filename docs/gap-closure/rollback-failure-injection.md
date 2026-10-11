@@ -1,7 +1,9 @@
 # Rollback and failure injection
 
 **Status: BLOCKED** for real `tc` failures. Unit-level failure handling is
-**PASS**.
+**PASS**, and the verification gap is now closed in code and covered by 29
+mocked tests — but that verification has **not been exercised against a real
+kernel**, which is exactly what remains unproven.
 
 ## Why
 
@@ -18,14 +20,16 @@ installation, during read-back, during rollback.
 restore.** The prompt's own warning applies directly: a rollback function
 returning without raising is not evidence of a successful rollback.
 
-## The gap found by inspection, not fixed
+## The gap found by inspection — NOW FIXED
 
-`_rollback` restores the rendered command list. It does **not** re-read the
-tree afterwards. A rollback that itself fails silently leaves the kernel in an
-unknown state while the controller reports itself recovered.
+`_rollback` restored the rendered command list without re-reading the tree, and
+returned `True` unconditionally. A rollback that itself failed left the kernel in
+an unknown state while the controller reported itself recovered.
 
-Specified and small: re-read after rollback, and on mismatch enter
-`SAFE_HELD` explicitly. Not shipped because it cannot be validated here.
+**Fixed in `507ed7af`.** The kernel state is now read back and compared against
+the canonical snapshot captured when the good tree committed; verification
+failure is distinguished from success across six outcomes. Comparison rules and
+test evidence: **`rollback-readback-verification.md`**.
 
 ## Scenario coverage
 
@@ -33,6 +37,10 @@ Specified and small: re-read after rollback, and on mismatch enter
 |---|---|---|
 | tc command failure | PASS | BLOCKED |
 | partial class-tree application | PASS | BLOCKED |
+| restored state does not match target | **PASS** (14 mocked tests) | BLOCKED |
+| residual class left behind | **PASS** (mocked) | BLOCKED |
+| read-back unavailable / malformed | **PASS** (mocked) | BLOCKED |
+| repeated rollback is idempotent | **PASS** (mocked) | BLOCKED |
 | missing / invalid interface | PASS | BLOCKED |
 | permission denial | -- | BLOCKED |
 | interface disappears mid-apply | -- | BLOCKED |

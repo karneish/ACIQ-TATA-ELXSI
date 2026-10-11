@@ -1,0 +1,156 @@
+# Rollback read-back verification
+
+## The defect
+
+`TransactionManager._rollback()` replayed the last known-good command list and
+returned `True`, unconditionally:
+
+```python
+self.runner.run(pre + ("tc", "qdisc", "del", "dev", self.dev, "root"))
+for argv in self._last_good:
+    self.runner.run(argv)
+return True
+```
+
+Every return value was discarded. `force_safe()` had the same shape one level
+down, returning `True` on a successful `tc qdisc add` without checking the qdisc
+existed.
+
+The project already read the kernel back **after applying** a policy. It never
+read it back **after undoing** one — and that asymmetry is why it went unnoticed.
+A failed apply is loud; a failed rollback is silent, and leaves the controller
+reporting itself recovered over a link nobody has shaped.
+
+## The fix
+
+`verified` is now the **only** outcome that makes `rolled_back` true.
+
+| outcome | `ok` | meaning |
+|---|---|---|
+| `verified` | **yes** | commands ran and the state matches the target |
+| `commands_failed` | no | a restore command was refused |
+| `verification_failed` | no | commands ran, kernel state is wrong |
+| `unverifiable` | no | the state could not be read back |
+| `no_target` | no | nothing known-good to restore to |
+| `partial` | no | state matches, but some commands were refused |
+
+`RollbackResult` carries mismatches, unverifiable fields, failed commands, the
+read-back source and the target, so the verdict is auditable rather than a bare
+bool. `Outcome.rollback` carries it to callers; `apply()` logs
+`rollback_verification_failed` with the specific mismatches.
+
+### The target is an observation
+
+Rollback compares against `_last_good_state` — the canonical state captured when
+the good tree **committed** — not a re-rendering of intent. Replaying commands is
+not the same as knowing what they produced.
+
+Before this change there was no snapshot at all, so there was nothing to compare
+against. Storing it is one line inside `apply()`, and it is what makes rollback
+verifiable.
+
+### Comparison rules
+
+`compare_states()` in `aciq/tc.py`. It is **not** the apply-side `verify()`,
+because the failure modes differ:
+
+| situation | verdict | why |
+|---|---|---|
+| class matches | match | |
+| kernel rounding within 1% | match | `tc` rounds freely; `RATE_TOLERANCE = 0.01` |
+| `1:0010` vs `1:10` | match | same class, printed differently — the **only** textual normalisation |
+| class missing | **mismatch** | not present is not correct |
+| class present but not expected | **mismatch (`residual`)** | every expected class correct is still not restoration |
+| field the reader cannot see | **unverifiable** | weaker than a match, so never counted as one |
+| rate differs beyond 1% | **mismatch** | |
+
+Normalisation is deliberately minimal. Only rounding and handle padding are
+absorbed; nothing that could hide a real difference is.
+
+### `force_safe()` is verified differently
+
+The safe state is class-free by design — a single `cake`/`fq_codel`/`pfifo` root.
+Reading it through `class show` returns nothing and **cannot distinguish a
+working safe state from no qdisc at all**. `parse_qdisc_text()` reads the root
+qdisc for exactly that reason. A rung that `tc` accepted but that did not appear
+in read-back is reported as not installed.
+
+`parse_qdisc_text` initially matched `root` anywhere in the line, which made
+`qdisc cake ... root` parse as `htb` — a test caught it, and root detection now
+checks only the two fields after the handle, since a child's `parent` is often
+`1:`.
+
+## Two defects the tests caught in the fix itself
+
+1. **`_read_class_state` returns raw `ClassState` objects.** The rollback path
+   compared them without the `parse_class_state()` normalisation `apply()`
+   applies, so it compared dataclasses against dicts and raised
+   `AttributeError`. A happy-path test would not have found this.
+2. **Outcome ordering hid the cause.** The first cut reported `unverifiable`
+   whenever read-back was empty. If every restore command was refused,
+   restoration definitionally did not happen — "could not confirm" understates
+   it and buries the cause behind a missing reader. Command failure now outranks
+   unreadable state.
+
+## Evidence
+
+| file | contents | status |
+|---|---|---|
+| `tests/test_rollback.py` | 29 tests | **MOCKED — all of them** |
+| `tests/test_rollback_live.py` | 6 tests | **LIVE, skipped here** |
+| `artifacts/validation/<rev>/rollback-live.log` | live run | **will not exist until run with root** |
+
+### Mocked coverage (29)
+
+All 14 required scenarios: matching read-back, command failure, commands-ok-state-wrong,
+malformed output, missing interface, partial restoration, residual class, divergent
+rate, normalisation, idempotence, cleanup failure, read-back exception, original-error
+preservation, audit output. Plus comparison-rule tests and two asserting the audit
+reason leaks no environment or credential.
+
+**They have teeth — measured, not assumed.** Reinstating the original
+`return True` fails **14 of 29**:
+
+```
+FAIL test_cleanup_failure_alone_is_still_reported
+FAIL test_outcome_rolled_back_is_false_when_commands_failed
+FAIL test_rollback_command_failure_is_not_success
+FAIL test_failed_verification_is_recorded_in_the_audit
+FAIL test_successful_rollback_is_recorded
+FAIL test_exception_during_readback_is_not_swallowed
+FAIL test_original_error_is_preserved_when_rollback_also_fails
+FAIL test_repeated_rollback_on_unverifiable_stays_unverifiable
+FAIL test_empty_readback_is_unverifiable_not_a_pass
+FAIL test_malformed_readback_is_unverifiable
+FAIL test_missing_target_state_is_unverifiable
+FAIL test_residual_class_after_restore_is_detected
+FAIL test_state_unchanged_after_restore_is_not_success
+FAIL test_successful_rollback_is_verified
+```
+
+### Live integration (6) — NOT RUN
+
+`tests/test_rollback_live.py` contains **no mocks at all**:
+
+- an isolated network namespace `aciqrb<random>`, created and destroyed by the
+  module, with a veth pair inside it;
+- the host's interfaces, routes and qdiscs are never touched — if namespace
+  creation is unavailable the module **skips** rather than falling back to a real
+  interface;
+- the fault is injected by genuinely **not sending** one command, so the kernel
+  receives a truncated tree — there is no fake anywhere in the read-back path;
+- state is read back with `tc -j` called **directly**, not through
+  `TransactionManager`, so a bug shared between the code and its own reader
+  cannot make it pass;
+- it covers both directions of the verdict: a genuine restoration confirming as
+  `verified`, and a lying runner producing `verification_failed` on a real
+  kernel, which is otherwise untested production code.
+
+All 6 skip here: `iproute2 not on PATH`.
+
+```
+sudo python3 -m unittest tests.test_rollback_live -v
+```
+
+**A skipped live test is not evidence of rollback correctness.** Until that runs,
+rollback is verified in control flow only.

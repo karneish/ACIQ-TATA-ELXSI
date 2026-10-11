@@ -28,8 +28,8 @@ PASS, FAIL, BLOCKED = A.PASS, A.FAIL, A.BLOCKED
 class TestParseUnittest(unittest.TestCase):
 
     def test_clean_run(self):
-        p = A.parse_unittest("Ran 786 tests in 6.7s\n\nOK\n")
-        self.assertEqual(p["tests"], 786)
+        p = A.parse_unittest(f"Ran {A.MIN_TESTS} tests in 6.7s\n\nOK\n")
+        self.assertEqual(p["tests"], A.MIN_TESTS)
         self.assertTrue(p["ok"])
         self.assertEqual(p["skipped"], 0)
 
@@ -37,13 +37,13 @@ class TestParseUnittest(unittest.TestCase):
         self.assertEqual(A.parse_unittest("Ran 1 test in 0.01s\n\nOK\n")["tests"], 1)
 
     def test_skipped_count_is_read_from_the_ok_line(self):
-        p = A.parse_unittest("Ran 786 tests in 6.7s\n\nOK (skipped=6)\n")
+        p = A.parse_unittest(f"Ran {A.MIN_TESTS} tests in 6.7s\n\nOK (skipped=6)\n")
         self.assertTrue(p["ok"])
         self.assertEqual(p["skipped"], 6)
 
     def test_failure_counts_are_parsed(self):
         p = A.parse_unittest(
-            "Ran 786 tests in 6.7s\n\nFAILED (failures=2, errors=1, skipped=3)\n")
+            f"Ran {A.MIN_TESTS} tests in 6.7s\n\nFAILED (failures=2, errors=1, skipped=3)\n")
         self.assertFalse(p["ok"])
         self.assertEqual((p["failures"], p["errors"], p["skipped"]), (2, 1, 3))
 
@@ -55,9 +55,12 @@ class TestParseUnittest(unittest.TestCase):
 
 class TestSuiteVerdict(unittest.TestCase):
 
+    @staticmethod
+    def _ok(n=None):
+        return f"Ran {n if n is not None else A.MIN_TESTS} tests in 1s\n\nOK\n"
+
     def test_full_green_run_passes(self):
-        self.assertEqual(A.suite_verdict(0, "Ran 786 tests in 1s\n\nOK\n")[0],
-                         PASS)
+        self.assertEqual(A.suite_verdict(0, self._ok())[0], PASS)
 
     def test_a_shrinking_suite_must_not_pass_silently(self):
         """The regression. Green exit, three tests: still a FAIL."""
@@ -67,21 +70,22 @@ class TestSuiteVerdict(unittest.TestCase):
         self.assertIn("floor", detail)
 
     def test_exactly_the_floor_passes(self):
-        self.assertEqual(A.suite_verdict(0, "Ran 786 tests in 1s\n\nOK\n",
-                                         min_tests=809)[0], PASS)
+        self.assertEqual(A.suite_verdict(0, self._ok(),
+                                         min_tests=A.MIN_TESTS)[0], PASS)
 
     def test_nonzero_exit_fails_even_with_a_full_suite(self):
-        self.assertEqual(A.suite_verdict(1, "Ran 786 tests in 1s\n\nOK\n")[0],
-                         FAIL)
+        self.assertEqual(A.suite_verdict(1, self._ok())[0], FAIL)
 
     def test_reported_failure_line_fails_even_with_exit_zero(self):
         """A harness that trusts the exit code alone trusts the runner too."""
-        status, _ = A.suite_verdict(0, "Ran 786 tests in 1s\n\nFAILED (failures=1)\n")
+        status, _ = A.suite_verdict(
+            0, self._ok().replace("OK", "FAILED (failures=1)"))
         self.assertEqual(status, FAIL)
 
     def test_skips_are_reported_but_do_not_fail_the_suite(self):
         """Skipped live-kernel tests are expected here, not a failure."""
-        status, detail = A.suite_verdict(0, "Ran 786 tests in 1s\n\nOK (skipped=6)\n")
+        status, detail = A.suite_verdict(
+            0, self._ok().replace("OK", "OK (skipped=6)"))
         self.assertEqual(status, PASS)
         self.assertIn("6 skipped", detail)
 
@@ -139,3 +143,40 @@ class TestMandatoryGatesAreNamed(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestClaimAuditParser(unittest.TestCase):
+    """The audit misread `OK (skipped=6)` as a failure because it tested
+    `endswith("OK")`. Skips are expected in any sandbox, so the one environment
+    where the audit most needs to be right was the one it got wrong."""
+
+    @staticmethod
+    def _audit():
+        import importlib.util
+        from pathlib import Path as _P
+        root = _P(__file__).resolve().parents[1]
+        sp = importlib.util.spec_from_file_location(
+            "audit_mod", root / "tools" / "audit_claims.py")
+        m = importlib.util.module_from_spec(sp)
+        sp.loader.exec_module(m)
+        return m
+
+    def test_ok_with_skips_is_ok(self):
+        d = self._audit().parse_suite_status(
+            f"Ran {A.MIN_TESTS} tests in 6.8s\n\nOK (skipped=6)\n")
+        self.assertTrue(d["ok"])
+        self.assertEqual(d["ran"], A.MIN_TESTS)
+        self.assertEqual(d["skipped"], 6)
+        self.assertEqual(d["failures"], 0)
+
+    def test_plain_ok_is_ok(self):
+        self.assertTrue(self._audit().parse_suite_status(
+            "Ran 10 tests in 0.1s\n\nOK\n")["ok"])
+
+    def test_failed_line_is_not_ok(self):
+        d = self._audit().parse_suite_status(
+            "Ran 809 tests in 6.8s\n\nFAILED (failures=2, skipped=1)\n")
+        self.assertFalse(d["ok"])
+        self.assertEqual(d["failures"], 2)
+
+    def test_empty_output_is_not_ok(self):
+        self.assertFalse(self._audit().parse_suite_status("")["ok"])
