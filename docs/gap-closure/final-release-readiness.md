@@ -1,6 +1,6 @@
 # Final release readiness
 
-**Revision:** `507ed7af` · **Suite:** 813 pass, 0 fail, 6 skipped · **Claim audit:** exit 0
+**Revision:** see `git log -1` · **Suite:** 819 pass, 0 fail, 6 skipped · **Claim audit:** exit 0
 
 ## Verdict
 
@@ -86,16 +86,16 @@ by another subsystem.
 
 | suite | command | exit | count |
 |---|---|---|---|
-| full | `python3 -m unittest discover -s tests -t .` | 0 | **813 pass, 0 fail, 6 skipped** |
+| full | `python3 -m unittest discover -s tests -t .` | 0 | **819 pass, 0 fail, 6 skipped** |
 | rollback (mocked) | `python3 -m unittest tests.test_rollback` | 0 | 29 pass |
-| rollback (live) | `sudo python3 -m unittest tests.test_rollback_live -v` | — | **6 skipped** |
+| rollback (live) | `sudo python3 -m unittest tests.test_rollback_live -v` | — | **6 skipped — and 5 defects found on first real run** |
+| live-vs-double | `python3 -m unittest tests.test_rollback_live_sim` | 0 | 6 pass |
 | harness | `python3 -m unittest tests.test_acceptance` | 0 | 21 pass |
 | acceptance | `python3 tools/acceptance.py` | 0 | 6 PASS · 0 FAIL · **7 BLOCKED** |
 | claim audit | `python3 tools/audit_claims.py` | 0 | clean |
 
-All results are from revision `507ed7af`. Count reconciliation: 746 (`6a22208c`)
-→ 757 (+11 classifier) → 809 (+29 rollback, +16 harness, +6 live) → **813** (+4
-claim-audit parser). **Nothing was deleted or weakened at any point.**
+Count reconciliation: 746 (`6a22208c`) → 757 (+11 classifier) → 809 (+29 rollback,
++16 harness, +6 live) → 813 (+4 claim-audit parser) → **819** (+6 live-vs-double). **Nothing was deleted or weakened at any point.**
 
 ## D. Live QoS evidence
 
@@ -170,11 +170,18 @@ controller from a correct-looking one.
 
 ### To reach READY FOR RELEASE
 
+Run the harness **as root** — `sudo -v && python3 tools/acceptance.py` refreshes
+the sudo timestamp but leaves the harness running as your user, so every
+mandatory gate is reported BLOCKED even though root was available:
+
 ```bash
 cd ~/Desktop/Full-projects/TATA-ELXSI
-sudo -v && python3 tools/acceptance.py
+sudo python3 tools/acceptance.py
 sudo python3 -m unittest tests.test_rollback_live -v
 ```
+
+The harness now tries a cached sudo rather than only checking `euid`, and says
+which command to run when it cannot.
 
 On a Linux host with `iproute2`, this closes live enforcement and
 kernel-verified rollback — the two mandatory gates. The soak

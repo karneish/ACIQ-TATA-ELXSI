@@ -146,6 +146,41 @@ FAIL test_successful_rollback_is_verified
   `verified`, and a lying runner producing `verification_failed` on a real
   kernel, which is otherwise untested production code.
 
+### First real run exposed five defects — all in the test, none in `txn.py`
+
+Run on a real host for the first time, all 6 errored identically:
+
+```
+TypeError: cannot unpack non-iterable CompletedProcess object
+```
+
+`Runner.run` returned a `subprocess.CompletedProcess` where the runner protocol
+requires a `(rc, stdout, stderr)` tuple. Invisible until then, because the
+module had only ever skipped. Fixed, and three more found by executing it
+against a kernel double:
+
+| defect | consequence |
+|---|---|
+| `Runner.run` returned `CompletedProcess` | every live test errored |
+| `LyingRunner`/`BlindRunner` had no `__init__` | `TypeError` on construction |
+| `FlakyRunner` re-armed on the rollback's own `qdisc del` | **the restore it existed to check was broken by the fault itself** — the test would have asserted that a failed rollback is reported failed, a much weaker claim |
+| fault fired more than once | same, from a different direction |
+
+The third is the important one: the test named "rollback restores the known-good
+tree" would have passed while proving nothing about successful restoration.
+
+### The double, committed as a permanent test
+
+`tests/test_rollback_live_sim.py` (6 tests) executes the **real live test module**
+against an in-memory kernel speaking the real `tc` CLI shapes — text output for
+the primary reader, JSON for the fallback. It needs no root, so the live path is
+never again exercised only for the first time on a real machine. It also asserts
+the double is actually modelling the tree, so it cannot degenerate into a
+green no-op.
+
+**It proves the live test is not broken. It does not prove a kernel behaves this
+way.** Only a root run does that.
+
 All 6 skip here: `iproute2 not on PATH`.
 
 ```

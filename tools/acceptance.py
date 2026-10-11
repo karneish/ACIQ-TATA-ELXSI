@@ -35,7 +35,7 @@ PASS, FAIL, BLOCKED, NOT_RUN = "PASS", "FAIL", "BLOCKED", "NOT RUN"
 #: silently shrunk (a broken import in one test module drops it, and `discover`
 #: reports the rest as a success). Without a floor, deleting a whole test module
 #: would still produce a green acceptance run.
-MIN_TESTS = 813
+MIN_TESTS = 819
 
 
 def parse_unittest(text: str) -> dict:
@@ -96,6 +96,21 @@ def have(tool: str) -> bool:
 
 def root() -> bool:
     return os.geteuid() == 0
+
+
+def sudo_ok() -> bool:
+    """Is a usable, non-interactive sudo available?
+
+    `sudo -v && python3 tools/acceptance.py` refreshes the sudo timestamp but
+    leaves the *harness* running as the invoking user, so a harness that only
+    checked euid reported every mandatory gate BLOCKED even though root was one
+    command away. BLOCKED is the honest answer for "I cannot run this"; using an
+    available sudo first is simply trying.
+    """
+    if root() or shutil.which("sudo") is None:
+        return False
+    return subprocess.run(["sudo", "-n", "true"], capture_output=True,
+                          timeout=10).returncode == 0
 
 
 def run(cmd: list[str], timeout: int = 900) -> tuple[int, str]:
@@ -181,12 +196,14 @@ def main() -> int:
     # 6. kernel-dependent gates
     print("\nphase 6: kernel-dependent gates")
     missing = [t for t in ("ip", "tc") if not have(t)]
-    if missing or not root():
+    elevate = sudo_ok()
+    if missing or not (root() or elevate):
         why = []
         if missing:
             why.append("missing " + ", ".join(missing))
-        if not root():
-            why.append(f"euid={os.geteuid()}, need 0")
+        if not root() and not elevate:
+            why.append(f"euid={os.geteuid()}, need 0 and no cached sudo; "
+                       f"run `sudo python3 tools/acceptance.py`")
         if platform.machine() and os.path.exists("/.dockerenv"):
             why.append("container")
         detail = "; ".join(why)
@@ -196,8 +213,9 @@ def main() -> int:
                   "FIFO/CAKE/ACIQ comparison", "30-minute stability"):
             record(g, BLOCKED, detail)
     else:
-        rc2, txt2 = run(["sudo", "-n", sys.executable, "-m", "unittest",
-                         "tests.test_rollback_live", "-v"])
+        sudo_argv = [] if root() else ["sudo", "-n"]
+        rc2, txt2 = run(sudo_argv + [sys.executable, "-m", "unittest",
+                                     "tests.test_rollback_live", "-v"])
         (outdir / "rollback-live.log").write_text(txt2)
         record("live rollback verification (kernel)", PASS if rc2 == 0 else FAIL,
                "tc read-back in an isolated namespace", "rollback-live.log")

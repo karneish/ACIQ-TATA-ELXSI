@@ -32,6 +32,7 @@ import uuid
 
 from aciq.policy import build_plan
 from aciq.shield import Shield
+from aciq.tc import build_tree
 from aciq.txn import VERIFICATION_FAILED, VERIFIED, TransactionManager
 
 
@@ -141,9 +142,8 @@ class TestLiveRollback(unittest.TestCase):
         self.assertTrue(out.ok, out.reason)
         state = tc_state()
         self.assertTrue(state, f"tc reported no classes: {state}")
-        self.assertEqual(sorted(state), sorted(
-            {c.classid for c in __import__("aciq.tc", fromlist=["x"])
-             .build_tree(plan).classes}))
+        self.assertEqual(sorted(state),
+                         sorted(c.classid for c in build_tree(plan).classes))
 
     def test_rollback_restores_the_known_good_tree(self):
         """Apply, commit, then fail a later apply and confirm restoration."""
@@ -181,7 +181,10 @@ class TestLiveRollback(unittest.TestCase):
         tm.remember_capacity(100.0)
         self.assertTrue(tm.apply(build_plan(100.0), now=1000.0).ok)
 
-        class BlindRunner(FlakyRunner):
+        class BlindRunner(Runner):
+            def __init__(self, *a, **k):
+                super().__init__()
+
             def run(self, argv):
                 if "class" in argv and "show" in argv:
                     return 1, "", "simulated reader failure"
@@ -212,7 +215,13 @@ class TestLiveRollback(unittest.TestCase):
         self.assertTrue(tm.apply(build_plan(100.0), now=1000.0).ok)
         good = tc_state()
 
-        class LyingRunner(FlakyRunner):
+        # Subclasses Runner, not FlakyRunner: this test needs the restore to
+        # *succeed* while landing the wrong rates, so inheriting the fault
+        # injection would break the replay and pass for the wrong reason.
+        class LyingRunner(Runner):
+            def __init__(self, *a, **k):
+                super().__init__()
+
             def run(self, argv):
                 a = list(argv)
                 if "class" in argv and "add" in argv and "rate" in a:
@@ -239,31 +248,46 @@ class TestLiveRollback(unittest.TestCase):
 
 
 class Runner:
-    """Real command execution inside the test namespace."""
+    """Real command execution inside the test namespace.
+
+    Adapts `_ns_run` to the `(rc, stdout, stderr)` tuple the TransactionManager
+    runner protocol expects. Returning the CompletedProcess directly was a real
+    bug -- every live test errored on `cannot unpack non-iterable
+    CompletedProcess` the first time it was ever run, which is precisely the
+    code path that had only ever been skipped.
+    """
 
     def run(self, argv):
-        return _ns_run(*argv)
+        r = _ns_run(*argv)
+        return r.returncode, r.stdout, r.stderr
 
 
 class FlakyRunner(Runner):
-    """Real execution, but the first `class add` of a rebuild is refused.
+    """Real execution, with one `class add` of a rebuild refused.
 
     The refusal is modelled by *not running* that one command, so the kernel
     genuinely receives a truncated tree -- there is no fake anywhere in the
     read-back path.
+
+    It fires **exactly once, ever**. Disarming after the first failure is not
+    enough: the rollback replay issues its own `tc qdisc del`, which re-arms the
+    fault and breaks the very restore the test is checking. The test would then
+    assert that a failed rollback is reported as failed -- a different and much
+    weaker claim than the one it is named for.
     """
 
-    def __init__(self, good: dict):
+    def __init__(self, good: dict | None = None):
         self.good = good
         self._armed = False
+        self._fired = False
 
     def run(self, argv):
-        joined = " ".join(argv)
-        if "class" in argv and "add" in argv and self._armed:
+        if "class" in argv and "add" in argv and self._armed and not self._fired:
+            self._fired = True
             return 1, "", "injected apply failure"
         if "qdisc" in argv and "del" in argv:
             self._armed = True
-        return _ns_run(*argv)
+        return super().run(argv)
 
 
 if __name__ == "__main__":
