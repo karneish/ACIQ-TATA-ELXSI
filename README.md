@@ -51,18 +51,15 @@ Read this before quoting a number.
    so the lease matched every flow in the run and the leased class took the whole
    link — true about steering, not about leases. **Verified since:** with one
    address per device, a lease for `203.0.113.4` classifies only that device's
-   flows as leased and leaves the others in their own classes. **Measured** on a
-   10 Mbps capped link, one seed: the leased device delivered 23.04 MB against
-   17.92 MB without the lease (+28.5%), while the two un-leased devices fell to
-   15.40 and 15.36 MB (-14%). Total delivered is unchanged (53.76 vs 53.80 MB) --
-   the link is the constraint, so a lease redistributes rather than adds.
-   Measured by the senders, not by our own class accounting. Replicated on three
-   paired seeds at +28.14% / +28.08% / +28.16%, with the ceiling holding at
-   10.07-10.19 Mbps in all six runs. **The exact paired Wilcoxon is p = 0.25 at
-   n = 3, which is the floor rather than a result** -- two-sided exact Wilcoxon
-   over 3 pairs cannot go below 0.25, so six paired seeds are needed before
-   p < 0.05 is reachable. M2 is still dead, so this is the lease mechanism
-   working on a correct plan, not adaptation working.
+   flows as leased and leaves the others in their own classes. **Measured** on a 10 Mbps capped link: the leased device gained
+   **+27.46% to
+   +28.92% (mean +28.13%)** across **seven paired seeds**, **exact paired
+   Wilcoxon p = 0.015625** -- the minimum reachable for seven pairs, with all
+   seven differences in the same direction. The three-device total moves by
+   -0.10%, confirming the link redistributes rather than adds, and the ceiling
+   held at 10.04-10.19 Mbps across all fourteen runs. Measured by the senders,
+   not by our own class accounting. M2 is still dead, so this is the lease
+   mechanism working on a correct plan, not adaptation working.
 6. **Classification accuracy is measured on self-generated traffic**, and the
    link is an HTB token-bucket emulation rather than real access hardware.
 

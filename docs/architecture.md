@@ -132,10 +132,10 @@ steering, not leasing (`docs/limitations.md` §5h).
 **Measured:** on a 10 Mbps capped link, the leased device delivered 23.04 MB
 against 17.92 MB without the lease (+28.5%); the two un-leased devices fell to
 15.40 and 15.36 MB. Total delivered unchanged, so the lease redistributes a
-saturated link rather than adding throughput. Replicated on three paired seeds
-(+28.14% / +28.08% / +28.16%); sender-side measurement. Exact paired Wilcoxon is
-p = 0.25 at n = 3, which is the floor for that test -- six paired seeds are needed
-before p < 0.05 is reachable.
+saturated link rather than adding throughput. Replicated on seven paired seeds (+27.46%
+to +28.92%, mean +28.13%); sender-side measurement. Exact paired Wilcoxon
+p = 0.015625 at n = 7 -- the minimum reachable with all seven differences in the
+same direction. Three-device total moves -0.10%.
 **Fixed:** an over-subscribed tree on a capacity drop -- `min(rate, capacity)`
 gave every child the full link -- meant the configured ceiling was exceeded by
 ~23% (18.41 vs 10 Mbps). Children are now scaled to sum to the capacity.

@@ -773,19 +773,37 @@ is saturated in every run and delivery is redistributed, not added. The ceiling
 held in all six runs at 10.07-10.19 Mbps against a 10 Mbps cap, which is the
 independent confirmation that the over-subscription fix works.
 
-**The exact paired Wilcoxon is p = 0.25 at n = 3 — and that is the floor, not a
-result.** Two-sided exact Wilcoxon over 3 pairs cannot go below 0.25 however
-large the effect, because it enumerates 2^3 sign flips; `aciq/report.py` already
-notes that 6 pairs are needed before p < 0.05 is reachable at all. The effect is
-consistent to within 0.08 percentage points across every seed, but consistency
-across three is not significance, and reporting it as such would be the exact
-error this project has been correcting all along.
+### Seven paired seeds, and a p-value
+
+| seed | tv1 no-lease | tv1 leased | change | parent_max (no-lease / leased) |
+|---|---|---|---|---|
+| 42 | 17.99 MB | 23.05 MB | +28.14% | 10.19 / 10.07 |
+| 43 | 17.96 MB | 23.00 MB | +28.08% | 10.15 / 10.11 |
+| 44 | 17.99 MB | 23.05 MB | +28.16% | 10.08 / 10.10 |
+| 45 | 17.93 MB | 23.11 MB | +28.92% | 10.08 / 10.11 |
+| 46 | 18.00 MB | 23.05 MB | +28.08% | 10.06 / 10.10 |
+| 47 | 18.00 MB | 23.06 MB | +28.08% | 10.05 / 10.04 |
+| 48 | 18.00 MB | 22.94 MB | +27.46% | 10.08 / 10.07 |
+
+**Exact paired Wilcoxon (two-sided, by sign enumeration): p = 0.015625, n = 7,
+statistic 0.** Seven of seven differences in the same direction gives the
+minimum reachable p for seven pairs — 2 x (1/2)^7 — so this is the strongest
+result the test can return, not a convenient one.
+
+tv1 change: **+27.46% to +28.92%, mean +28.13%**. Three-device total across all
+seven: 53.91 -> 53.86 MB, a **-0.10%** change. The link is saturated, so the
+lease redistributes and does not add — which is the whole claim.
+
+`parent_max` held at **10.04-10.19 Mbps in all fourteen runs**, which is
+independent confirmation that the over-subscription fix works and that the
+ceiling is enforced rather than merely requested.
 
 Caveats, stated rather than smoothed over:
 
-* **three seeds.** The direction is unanimous and the magnitude is stable, but
-  **six paired seeds are needed for an exact p < 0.05**, and that is the next
-  run.
+* The lease weight (0.6) was chosen in advance, not tuned.
+* **M2 is still dead.** The plan comes from the requested drop, not from a
+  measurement, so this is the lease mechanism working on a correct plan — not
+  adaptation working.
 * **M2 is still dead.** The plan comes from the requested drop, not from a
   measurement, so this shows the lease mechanism working on a correct plan --
   not adaptation working.
