@@ -115,19 +115,75 @@ class TestCapacityInvariant(unittest.TestCase):
             rate = float(text.split(" rate ")[1].split("mbit")[0])
             self.assertLessEqual(rate, before.get(cid, rate) + 1e-9)
 
-    def test_set_capacity_never_rescales_child_rates(self):
-        """Ceil is a safety clamp; rates are policy and belong to M3. If the
-        harness rescaled rates it would bypass M2, and "adaptation time" would
-        measure the harness rather than the system."""
+    def test_child_rates_still_sum_to_the_new_capacity(self):
+        """This test used to assert the opposite, and that is how the bug lived.
+
+        `set_capacity` clamped each child with `min(rate, capacity)`, which put
+        *every* child at the full link capacity: a 100 Mbps plan dropped to 10
+        became four classes each guaranteed 10, so 40 Mbps was promised on a
+        10 Mbps link. Gate check 6 has always rescaled instead
+        (`rate 8mbit ceil 20mbit`, sum 16 <= 20); this path did not, and the
+        over-subscribed tree is what stopped the cap being enforced.
+
+        The original rationale -- "rates are policy and belong to M3" -- is
+        sound, but scaling preserves M3's proportions. Clamping flattened them
+        and broke the sum invariant while pretending not to touch policy.
+        """
+        h = harness()
+        h.apply_system(SystemSpec.ACIQ, 100.0)
+        before = len(h.runner.commands)      # only what set_capacity emits
+        h.set_capacity(10.0)
+        child = [c for c in h.runner.commands[before:]
+                 if "parent 1:1 classid" in " ".join(c)]
+        self.assertTrue(child, "no child class command was emitted")
+        total = 0.0
+        for cmd in child:
+            text = " ".join(cmd)
+            rate = float(text.split(" rate ")[1].split("mbit")[0])
+            ceil = float(text.split(" ceil ")[1].split("mbit")[0])
+            self.assertLessEqual(rate, ceil, text)
+            total += rate
+        self.assertLessEqual(total, 10.0 + 1e-6,
+                             f"children promised {total} on a 10 Mbps link")
+
+    def test_scaling_preserves_the_proportions_m3_chose(self):
+        h = harness()
+        h.apply_system(SystemSpec.ACIQ, 100.0)
+        before = dict(h._current_plan.rates)
+        self.assertTrue(before, "no plan rates to preserve")
+        n = len(h.runner.commands)
+        h.set_capacity(10.0)
+        after = {}
+        for cmd in h.runner.commands[n:]:
+            text = " ".join(cmd)
+            if "parent 1:1 classid" not in text:
+                continue
+            cid = text.split("classid ")[1].split(" ")[0]
+            after[cid] = float(text.split(" rate ")[1].split("mbit")[0])
+        self.assertTrue(after, "no child rates were emitted")
+        self.assertLessEqual(sum(after.values()), 10.0 + 1e-6)
+        # Proportions survive the drop: every child's share of the total should
+        # match its share before it, to within rounding.
+        total_before = sum(before.values())
+        scaled = sorted(before.values(), reverse=True)
+        scaled_after = sorted(after.values(), reverse=True)
+        self.assertEqual(len(scaled), len(scaled_after))
+        for b4, a4 in zip(scaled, scaled_after):
+            self.assertAlmostEqual(b4 / total_before, a4 / sum(after.values()),
+                                   places=3)
+
+    def test_a_grown_capacity_does_not_rescale_upwards(self):
+        """A capacity that grows is M3's to replan. The harness only shrinks."""
         h = harness()
         h.apply_system(SystemSpec.ACIQ, 100.0)
         before = len(h.runner.commands)
-        h.set_capacity(10.0)
+        h.set_capacity(200.0)
         for cmd in h.runner.commands[before:]:
             text = " ".join(cmd)
-            if "classid 1:" in text and " 1:1 " in text:
-                continue
-            self.assertNotIn(" rate ", f" {text} ", f"child rate changed: {text}")
+            if "parent 1:1 classid" in text:
+                rate = float(text.split(" rate ")[1].split("mbit")[0])
+                self.assertLessEqual(rate, 100.0,
+                                     f"a capacity change handed out bandwidth: {text}")
 
     def test_set_capacity_emits_no_qdisc_command(self):
         h = harness()

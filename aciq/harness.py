@@ -389,6 +389,12 @@ class Harness:
             "parent", BARE_CLASS_ID, "classid", ROOT_CLASS_ID, "htb",
             "rate", f"{capacity_mbps:.4f}mbit", "ceil", f"{capacity_mbps:.4f}mbit",
         )]
+        rates = {cls: _rate_of(self._current_plan, cls)
+                 for cls in _class_ids_of(self._current_plan)}
+        total = sum(rates.values())
+        # Only shrink. A link that grew must not be re-planned by a capacity
+        # change; that is M3's job and it will do it when M2 measures.
+        scale = (capacity_mbps / total) if total > capacity_mbps else 1.0
         for cls, cid in sorted(_class_ids_of(self._current_plan).items(),
                                key=lambda kv: kv[1]):
             # `rate` is passed through unchanged and is not optional. tc refuses
@@ -396,12 +402,17 @@ class Harness:
             # the clamp cannot be expressed on its own. Passing each child's
             # *existing* rate back satisfies tc without making a policy
             # decision -- only ceil moves, and only downward.
-            # Clamped down, never up. HTB requires rate <= ceil, so lowering the
-            # ceil below a child's existing rate would leave an invalid class --
-            # and `min` is the only safe direction: a raise would hand M3's
-            # bandwidth to someone. The *proportions* are still M3's to decide;
-            # this only stops the config being illegal.
-            child_rate = min(_rate_of(self._current_plan, cls), capacity_mbps)
+            # Scaled, not clamped. `min(child_rate, capacity)` put *every*
+            # child at the full link capacity, so a 100 Mbps plan dropped to 10
+            # became four classes each guaranteed 10 -- 40 Mbps promised on a
+            # 10 Mbps link. Gate check 6 has always rescaled instead
+            # (`rate 8mbit ceil 20mbit`, sum 16 <= 20); this path did not, and
+            # the over-subscribed tree is what stopped the cap being enforced.
+            #
+            # Scaling preserves the proportions M3 chose, which a per-child
+            # clamp does not -- it flattens them. Nothing is raised: the factor
+            # is <= 1 whenever the sum exceeds the capacity.
+            child_rate = rates[cls] * scale if scale < 1.0 else rates[cls]
             cmds.append(pre + (
                 "tc", "class", "change", "dev", self.dev,
                 "parent", ROOT_CLASS_ID, "classid", cid, "htb",
