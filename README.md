@@ -44,11 +44,17 @@ Read this before quoting a number.
    runs in `data/matrix6/` carry a **stale** estimate; each `result.json` says so.
 4. **Scenario 3 never exercises M2 at all** — ~14.3 Mbps on a 20 Mbps link is
    71% utilisation, so those runs report `estimator=None, policy_changes=0`.
-5. **A lease routes its flow to class `1:40`; that it raises throughput is
-   unmeasured.** Measured: 12.92 Mbps mean in the leased class, cross-checked
-   against the generators' byte counts. Unmeasured because the measured run had
-   no capacity drop, so the link was never contended — a lease cannot raise
-   throughput on a link that was never the constraint.
+5. **A lease routes the leased device's flows to class `1:40`; that it improves
+   that device's outcome is unmeasured, and an earlier positive-sounding number
+   is withdrawn.** An earlier version of this file reported "12.92 Mbps mean in
+   the leased class". That was measured before workloads had distinct addresses,
+   so the lease matched every flow in the run and the leased class took the whole
+   link — true about steering, not about leases. **Verified since:** with one
+   address per device, a lease for `203.0.113.4` classifies only that device's
+   flows as leased and leaves the others in their own classes. **Open:** with a
+   lease active, measured throughput exceeded the configured HTB parent ceiling
+   by ~23% (12.27 vs 10 Mbps), while the same run without a lease delivered
+   8.98 Mbps. Root cause not established.
 6. **Classification accuracy is measured on self-generated traffic**, and the
    link is an HTB token-bucket emulation rather than real access hardware.
 

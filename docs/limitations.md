@@ -319,7 +319,14 @@ Third attempt, and it works. `data/leased3/`:
 
 | class | peak | mean |
 |---|---|---|
-| **leased_flow** | **24.85 Mbps** | **12.92 Mbps** |
+| ~~leased_flow~~ | ~~24.85 Mbps~~ | ~~12.92 Mbps~~ |
+
+**This row is withdrawn.** It was measured when every workload sent from the one
+address the `wan` namespace held, so the lease matched every flow in the run and
+the leased class took the whole link. A lease matching all traffic capturing all
+traffic is evidence that steering works — which the gate already proves — and not
+evidence that a lease protects a device. See "M7 leases cannot be measured in
+this testbed as built" below for the topology that made it vacuous.
 | adaptive_video | 0.00 | 0.00 |
 | bulk_transfer | 0.00 | 0.00 |
 
@@ -414,10 +421,11 @@ file. Charts update by `<meta>` refresh rather than a websocket. A dashboard tha
 needs the network stops working on exactly the air-gapped host it would be
 demonstrated on.
 
-## 5g. Gate re-verified against current code (2026-10-09)
+## 5g. Gate re-verified against current code (2026-10-09, re-run 2026-10-11)
 
-`testbed/logs/gate-20261009-204709.log` — **20 PASS, 1 MEASURED, 0 FAIL**, no
-errors or tracebacks.
+`testbed/logs/gate-20261009-204709.log` and, after the per-workload
+addresses and the lease-overcapacity fix, `docs/evidence/gate-20261011-125321.log`
+— **20 PASS, 1 MEASURED, 0 FAIL**, no errors or tracebacks.
 
 That log predates the per-workload addresses added for lease matching.
 Re-running the gate afterwards failed check 18 and nothing else:
