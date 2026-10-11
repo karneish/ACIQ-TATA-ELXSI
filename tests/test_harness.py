@@ -543,3 +543,60 @@ class TestTheShieldRetryCannotReapplyAStalePlan(unittest.TestCase):
         self.assertTrue(h.sync_lease(lease, 100.0))
         self.assertEqual(h.runner.commands, [],
                          "an unchanged, already-applied lease rebuilt the qdisc")
+
+
+class TestTheAuditRecordsWhatWasApplied(unittest.TestCase):
+    """`classes=5` said how many, never which rates.
+
+    Every hypothesis about the lease overshoot had to be checked against a
+    separately-timestamped `tc` dump, taken by hand, with a wall clock that did
+    not line up with the run's own timeline -- which is how a correct-looking
+    story survived several runs. The rate on parent 1:1 is the entire question
+    and it belongs in the artefact.
+    """
+
+    def _lease_after_drop(self):
+        clock = [0.0]
+        h = Harness(runner=FakeRunner(auto_readback=True), clock=lambda: clock[0])
+        h.reset_for_run()
+        h.set_lease(None, 100.0)
+        h.apply_system(SystemSpec.ACIQ, 100.0)
+        lease = Lease(id="l", target="device", ip="203.0.113.4", weight=0.6)
+        h.sync_lease(lease, 100.0)
+        clock[0] = 5.0
+        h.set_capacity(10.0)
+        clock[0] = 6.26
+        h.sync_lease(lease, 100.0)
+        return h
+
+    def test_a_commit_records_the_applied_rates(self):
+        h = self._lease_after_drop()
+        commits = [e for e in h.txn.audit if e["event"] == "committed"]
+        self.assertTrue(commits[-1].get("applied"),
+                        "the audit records a commit with no applied rates")
+
+    def test_the_recorded_parent_rate_is_the_real_one(self):
+        h = self._lease_after_drop()
+        commits = [e for e in h.txn.audit if e["event"] == "committed"]
+        self.assertEqual(commits[-1]["applied"]["1:1"], [10.0, 10.0])
+
+    def test_every_class_is_recorded_with_its_rate_and_ceiling(self):
+        h = self._lease_after_drop()
+        applied = [e for e in h.txn.audit if e["event"] == "committed"][-1]["applied"]
+        self.assertEqual(set(applied), {"1:1", "1:10", "1:20", "1:30", "1:40"})
+        for classid, (rate, ceil_m) in applied.items():
+            self.assertLessEqual(ceil_m, 10.0,
+                                 f"{classid} ceiling exceeds the link")
+
+    def test_a_refused_change_is_not_recorded_as_applied(self):
+        h = Harness(runner=FakeRunner(auto_readback=False), clock=lambda: 0.0)
+        h.apply_system(SystemSpec.ACIQ, 100.0)
+        h.runner.fail_everything = True
+        try:
+            h.set_capacity(10.0)
+        except Exception:
+            pass
+        for e in h.txn.audit:
+            if e["event"] == "committed":
+                self.assertNotIn("1:1", e.get("applied") or {},
+                                 "a commit with no applied tree")

@@ -273,7 +273,15 @@ class TransactionManager:
         self.shield.note_change(now)
         self.shield.observe_ok(now)
         self.shield.state.alarm = None
-        self._log(now, "committed", classes=len(tree.classes))
+        # Record *what* was applied, not just how many classes. "classes=5" is
+        # what made every hypothesis about a lease overshoot checkable-looking
+        # and unfalsifiable: the rate on parent 1:1 is the whole question, and
+        # it was absent from the artefact. Several runs were spent inferring it
+        # from a separately-timestamped `tc` dump.
+        self._log(now, "committed", classes=len(tree.classes),
+                  applied={c.classid: [round(c.rate_mbps, 4),
+                                       round(c.ceil_mbps, 4)]
+                           for c in tree.classes})
         return Outcome(True, True, False)
 
     def _rollback(self) -> bool:
