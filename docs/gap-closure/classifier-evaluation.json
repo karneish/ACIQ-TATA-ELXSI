@@ -1,0 +1,369 @@
+{
+  "100.0": {
+    "capacity_mbps": 100.0,
+    "cases": 16,
+    "labelled": 13,
+    "accuracy_on_labelled": 0.6154,
+    "abstention_required": 3,
+    "abstained_correctly": 3,
+    "abstention_rate": 0.1875,
+    "macro_f1": 0.7273,
+    "high_confidence_errors": 3,
+    "high_confidence_error_names": [
+      "ADVERSARIAL bulk claiming EF",
+      "ADVERSARIAL video claiming EF on a small pipe",
+      "ADVERSARIAL interactive on a bulk port"
+    ],
+    "per_class": {
+      "realtime_interactive": {
+        "support": 5,
+        "tp": 4,
+        "fp": 2,
+        "fn": 1,
+        "precision": 0.6667,
+        "recall": 0.8,
+        "f1": 0.7273
+      },
+      "adaptive_video": {
+        "support": 5,
+        "tp": 4,
+        "fp": 2,
+        "fn": 1,
+        "precision": 0.6667,
+        "recall": 0.8,
+        "f1": 0.7273
+      },
+      "bulk_transfer": {
+        "support": 3,
+        "tp": 0,
+        "fp": 1,
+        "fn": 3,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": null
+      },
+      "leased_flow": {
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": null,
+        "recall": null,
+        "f1": null
+      }
+    },
+    "rows": [
+      {
+        "name": "call: EF, small, frequent, bidirectional",
+        "truth": "realtime_interactive",
+        "got": "realtime_interactive",
+        "confidence": 0.95,
+        "tier": "A",
+        "correct": true
+      },
+      {
+        "name": "call: EF, steady, one-way-heavy",
+        "truth": "realtime_interactive",
+        "got": "realtime_interactive",
+        "confidence": 0.95,
+        "tier": "A",
+        "correct": true
+      },
+      {
+        "name": "interactive: RTP ports, no EF claim",
+        "truth": "realtime_interactive",
+        "got": "realtime_interactive",
+        "confidence": 0.55,
+        "tier": "B",
+        "correct": true
+      },
+      {
+        "name": "interactive: STUN 3478, unidirectional",
+        "truth": "realtime_interactive",
+        "got": "realtime_interactive",
+        "confidence": 0.55,
+        "tier": "B",
+        "correct": true
+      },
+      {
+        "name": "video: sustained, large, few bytes per packet",
+        "truth": "adaptive_video",
+        "got": "adaptive_video",
+        "confidence": 0.6,
+        "tier": "B",
+        "correct": true
+      },
+      {
+        "name": "video: over TLS port, no marks",
+        "truth": "adaptive_video",
+        "got": "adaptive_video",
+        "confidence": 0.6,
+        "tier": "B",
+        "correct": true
+      },
+      {
+        "name": "video: ramping (ABR ladder)",
+        "truth": "adaptive_video",
+        "got": "adaptive_video",
+        "confidence": 0.6,
+        "tier": "B",
+        "correct": true
+      },
+      {
+        "name": "bulk: sustained one-way, very large packets",
+        "truth": "bulk_transfer",
+        "got": "adaptive_video",
+        "confidence": 0.6,
+        "tier": "B",
+        "correct": false
+      },
+      {
+        "name": "bulk: large on an encrypted port, no marks",
+        "truth": "bulk_transfer",
+        "got": "adaptive_video",
+        "confidence": 0.6,
+        "tier": "B",
+        "correct": false
+      },
+      {
+        "name": "ADVERSARIAL bulk claiming EF",
+        "truth": "bulk_transfer",
+        "got": "realtime_interactive",
+        "confidence": 0.95,
+        "tier": "A",
+        "correct": false
+      },
+      {
+        "name": "ADVERSARIAL video claiming EF on a small pipe",
+        "truth": "adaptive_video",
+        "got": "realtime_interactive",
+        "confidence": 0.95,
+        "tier": "A",
+        "correct": false
+      },
+      {
+        "name": "ADVERSARIAL interactive on a bulk port",
+        "truth": "realtime_interactive",
+        "got": "bulk_transfer",
+        "confidence": 0.7,
+        "tier": "A",
+        "correct": false
+      },
+      {
+        "name": "insufficient: 3 packets",
+        "truth": null,
+        "got": null,
+        "confidence": 0.35,
+        "tier": "C",
+        "correct": true
+      },
+      {
+        "name": "insufficient: too young",
+        "truth": null,
+        "got": null,
+        "confidence": 0.35,
+        "tier": "C",
+        "correct": true
+      },
+      {
+        "name": "insufficient: idle, tiny, no ports, no marks",
+        "truth": null,
+        "got": null,
+        "confidence": 0.35,
+        "tier": "C",
+        "correct": true
+      },
+      {
+        "name": "correction overrides what the rate would say",
+        "truth": "adaptive_video",
+        "got": "adaptive_video",
+        "confidence": 1.0,
+        "tier": "X",
+        "correct": true
+      }
+    ]
+  },
+  "10.0": {
+    "capacity_mbps": 10.0,
+    "cases": 16,
+    "labelled": 13,
+    "accuracy_on_labelled": 0.8462,
+    "abstention_required": 3,
+    "abstained_correctly": 3,
+    "abstention_rate": 0.1875,
+    "macro_f1": 0.8487,
+    "high_confidence_errors": 2,
+    "high_confidence_error_names": [
+      "ADVERSARIAL video claiming EF on a small pipe",
+      "ADVERSARIAL interactive on a bulk port"
+    ],
+    "per_class": {
+      "realtime_interactive": {
+        "support": 5,
+        "tp": 4,
+        "fp": 1,
+        "fn": 1,
+        "precision": 0.8,
+        "recall": 0.8,
+        "f1": 0.8
+      },
+      "adaptive_video": {
+        "support": 5,
+        "tp": 4,
+        "fp": 0,
+        "fn": 1,
+        "precision": 1.0,
+        "recall": 0.8,
+        "f1": 0.8889
+      },
+      "bulk_transfer": {
+        "support": 3,
+        "tp": 3,
+        "fp": 1,
+        "fn": 0,
+        "precision": 0.75,
+        "recall": 1.0,
+        "f1": 0.8571
+      },
+      "leased_flow": {
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": null,
+        "recall": null,
+        "f1": null
+      }
+    },
+    "rows": [
+      {
+        "name": "call: EF, small, frequent, bidirectional",
+        "truth": "realtime_interactive",
+        "got": "realtime_interactive",
+        "confidence": 0.95,
+        "tier": "A",
+        "correct": true
+      },
+      {
+        "name": "call: EF, steady, one-way-heavy",
+        "truth": "realtime_interactive",
+        "got": "realtime_interactive",
+        "confidence": 0.95,
+        "tier": "A",
+        "correct": true
+      },
+      {
+        "name": "interactive: RTP ports, no EF claim",
+        "truth": "realtime_interactive",
+        "got": "realtime_interactive",
+        "confidence": 0.55,
+        "tier": "B",
+        "correct": true
+      },
+      {
+        "name": "interactive: STUN 3478, unidirectional",
+        "truth": "realtime_interactive",
+        "got": "realtime_interactive",
+        "confidence": 0.55,
+        "tier": "B",
+        "correct": true
+      },
+      {
+        "name": "video: sustained, large, few bytes per packet",
+        "truth": "adaptive_video",
+        "got": "adaptive_video",
+        "confidence": 0.6,
+        "tier": "B",
+        "correct": true
+      },
+      {
+        "name": "video: over TLS port, no marks",
+        "truth": "adaptive_video",
+        "got": "adaptive_video",
+        "confidence": 0.6,
+        "tier": "B",
+        "correct": true
+      },
+      {
+        "name": "video: ramping (ABR ladder)",
+        "truth": "adaptive_video",
+        "got": "adaptive_video",
+        "confidence": 0.6,
+        "tier": "B",
+        "correct": true
+      },
+      {
+        "name": "bulk: sustained one-way, very large packets",
+        "truth": "bulk_transfer",
+        "got": "bulk_transfer",
+        "confidence": 0.75,
+        "tier": "B",
+        "correct": true
+      },
+      {
+        "name": "bulk: large on an encrypted port, no marks",
+        "truth": "bulk_transfer",
+        "got": "bulk_transfer",
+        "confidence": 0.75,
+        "tier": "B",
+        "correct": true
+      },
+      {
+        "name": "ADVERSARIAL bulk claiming EF",
+        "truth": "bulk_transfer",
+        "got": "bulk_transfer",
+        "confidence": 0.75,
+        "tier": "B",
+        "correct": true
+      },
+      {
+        "name": "ADVERSARIAL video claiming EF on a small pipe",
+        "truth": "adaptive_video",
+        "got": "realtime_interactive",
+        "confidence": 0.95,
+        "tier": "A",
+        "correct": false
+      },
+      {
+        "name": "ADVERSARIAL interactive on a bulk port",
+        "truth": "realtime_interactive",
+        "got": "bulk_transfer",
+        "confidence": 0.7,
+        "tier": "A",
+        "correct": false
+      },
+      {
+        "name": "insufficient: 3 packets",
+        "truth": null,
+        "got": null,
+        "confidence": 0.35,
+        "tier": "C",
+        "correct": true
+      },
+      {
+        "name": "insufficient: too young",
+        "truth": null,
+        "got": null,
+        "confidence": 0.35,
+        "tier": "C",
+        "correct": true
+      },
+      {
+        "name": "insufficient: idle, tiny, no ports, no marks",
+        "truth": null,
+        "got": null,
+        "confidence": 0.35,
+        "tier": "C",
+        "correct": true
+      },
+      {
+        "name": "correction overrides what the rate would say",
+        "truth": "adaptive_video",
+        "got": "adaptive_video",
+        "confidence": 1.0,
+        "tier": "X",
+        "correct": true
+      }
+    ]
+  }
+}

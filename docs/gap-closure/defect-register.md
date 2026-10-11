@@ -271,3 +271,85 @@ latency, or behaviour at 50/100/500 flows.
 **Acceptance:** the measurements in §15, or each marked blocked with a reason.
 
 **Status:** `open` — partly feasible in this shell.
+---
+
+## P1-007 — An EF claim is refused only when the flow saturates
+
+**Severity:** P1 — §8.1, "cases in which missing evidence is treated as positive
+evidence".
+
+**Files:** `aciq/classify.py:238-272`.
+
+**Root cause:** the EF conflict test is `too_fast = frac >= EF_FAST_CONFLICT_CAPACITY_FRAC`
+(0.5). A flow taking 21% of a 100 Mbps link is therefore not "too fast", so a
+bulk-shaped flow that marks itself EF receives **interactive priority at 0.95
+confidence** — 80 MB moved, 15 KB packets, 99% duty cycle, and it is treated as a
+call.
+
+There is no packet-level bulk test anywhere in the classifier. `Tier B`'s bulk
+rule is also purely rate-based (`frac >= 0.5`), so "bulk" and "saturating" are the
+same predicate, and a large one-way transfer at half the link or less is not
+bulk by definition.
+
+**Reproduction:** `python3 tools/eval_classifier.py`, case
+"ADVERSARIAL bulk claiming EF".
+
+```
+capacity 100 Mbps:  truth=bulk_transfer  got=realtime_interactive  conf=0.95 tier=A
+capacity  10 Mbps:  (same case resolves, because frac then exceeds 0.5)
+```
+
+**Evidence:** `docs/gap-closure/classifier-evaluation.json`.
+
+**Required change:** the EF path must consult the same bulk evidence as the rate
+path, including a packet-level test (average packet size, directionality, duty
+cycle) rather than rate alone.
+
+**Why this is documented and not patched here:** it changes the core
+classification rule, and this shell cannot run the end-to-end experiment that
+would show whether enforcement still behaves. Shipping an unvalidated change to
+the rule that decides which class a flow gets is the exact failure this project
+has spent its history correcting. The change is small and specified; it needs a
+kernel-integrated run to land.
+
+---
+
+## P1-008 — Classifier quality depends materially on the capacity assumption
+
+**Severity:** P1 — an operating point that is never stated.
+
+**Measured** (`tools/eval_classifier.py`, 16 constructed cases, ground truth from
+the workload profile rather than from the classifier):
+
+| link capacity | accuracy | macro F1 | bulk F1 |
+|---|---|---|---|
+| 100 Mbps (shipped default) | 0.6154 | 0.7273 | **0.0 — bulk never assigned** |
+| 10 Mbps (what `--drop 10` produces) | 0.8462 | 0.8487 | 0.8571 |
+
+`BULK_MIN_CAPACITY_FRAC = 0.5` means the same flow is bulk on a 10 Mbps link and
+merely adaptive on a 100 Mbps one. Every stored experiment in `data/` ran at
+100 Mbps with ~25 Mbps of load, so **bulk should rarely have been assigned in
+them at all** — and the `bulk_transfer` figures reported from those runs deserve
+re-reading through this lens.
+
+**Status:** `open` — a threshold and an assumption, both documented, neither
+validated across the capacity range the estimator can actually produce.
+
+---
+
+## P1-009 — A port-table rule can override behaviour at high confidence
+
+**Severity:** P1.
+
+**Case:** "ADVERSARIAL interactive on a bulk port" — a small bidirectional flow
+on port 873, which is in `BULK_PORTS`. It is classified **bulk at 0.70**, tier A.
+
+**Root cause:** the well-known-port fallback runs after the rate rules and is not
+gated on the rate evidence *disagreeing*. A port hint overrides a flow that is
+demonstrably not bulk-shaped.
+
+**Evidence:** `tools/eval_classifier.py`, both capacities.
+
+**Status:** `open` — small fix (gate the port fallback on the rate rules being
+inconclusive rather than merely unmatched), not applied pending the same
+validation as P1-007.
