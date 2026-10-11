@@ -1126,3 +1126,56 @@ class TestDevicesHaveTheirOwnAddresses(unittest.TestCase):
         finally:
             E.subprocess.Popen = real_popen
         self.assertNotIn("--src", seen["argv"])
+
+
+class TestTheGateNeverLeavesASourceToTheKernel(unittest.TestCase):
+    """check 18 regressed because `send6()` opened an unbound socket.
+
+    Per-workload addresses on the wan namespace (for lease matching) made the
+    kernel's source-address selection free to pick an address the check's
+    filter did not match, so the flow fell to the default class and 1:20 never
+    grew. IPv4 got away with it only because 203.0.113.2 stayed primary -- an
+    ordering nothing should depend on.
+    """
+
+    GATE = (Path(__file__).resolve().parents[1] / "testbed" / "gate.sh")
+
+    def _gate(self):
+        return self.GATE.read_text()
+
+    def test_the_gate_script_exists(self):
+        self.assertTrue(self.GATE.exists(), self.GATE)
+
+    def test_both_senders_bind_a_source_when_given_one(self):
+        src = self._gate()
+        self.assertIn('if src:\n    s.bind((src, 0))', src,
+                      "send() no longer binds an explicit source")
+        self.assertIn('if src:\n    s.bind((src, 0, 0, 0))', src,
+                      "send6() no longer binds an explicit source")
+
+    def test_every_steered_flow_names_its_source(self):
+        """A call site that omits the source reintroduces the ambiguity."""
+        src = self._gate()
+        import re
+        for m in re.finditer(r"^\s*(send6?)\s+(\S+)\s+(\S+)\s+.*$", src, re.M):
+            line = m.group(0)
+            stripped = line.strip()
+            # Skip the helper definitions themselves and comments.
+            if stripped.startswith("#") or "()" in stripped:
+                continue
+            self.assertRegex(stripped, r"(\d+\.\d+\.\d+\.\d+|fd00:[0-9a-f:]+)$",
+                             f"sender does not name a source: {stripped}")
+
+    def test_wan_has_one_address_per_device_for_ipv4(self):
+        """The IPv4 extras are needed: leases address devices individually."""
+        setup = (Path(__file__).resolve().parents[1]
+                 / "testbed" / "setup.sh").read_text()
+        self.assertIn("203.0.113.$i", setup)
+
+    def test_wan_does_not_grow_ipv6_beyond_one_address(self):
+        """One IPv6 address only: several make source selection ambiguous, and
+        leases are IPv4-only here anyway."""
+        setup = (Path(__file__).resolve().parents[1]
+                 / "testbed" / "setup.sh").read_text()
+        self.assertNotIn("fd00:2::$i", setup,
+                         "extra IPv6 addresses reintroduce check 18's failure")

@@ -38,9 +38,12 @@ ip -n router addr add fd00:1::1/64  dev veth-lan nodad
 ip -n router addr add fd00:2::1/64  dev veth-wan nodad
 ip -n client addr add fd00:1::2/64  dev veth-c    nodad
 ip -n wan    addr add fd00:2::2/64  dev veth-w    nodad
-for i in 3 4 5 6 7 8 9 10; do
-  ip -n wan addr add fd00:2::$i/64 dev veth-w nodad
-done
+# Deliberately NOT mirrored for IPv6. The gate's send6() opens an unbound
+# socket and lets the kernel choose a source, so a namespace carrying several
+# IPv6 addresses can pick one the check's filter does not match -- which is
+# exactly how check 18 broke. IPv4 tolerates it only because 203.0.113.2 stays
+# primary; nothing should depend on that ordering. Leases are IPv4-only here,
+# so the IPv6 extras bought nothing.
 
 for p in "router veth-lan" "router veth-wan" "client veth-c" "wan veth-w"; do
   set -- $p

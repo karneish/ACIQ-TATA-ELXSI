@@ -419,6 +419,26 @@ demonstrated on.
 `testbed/logs/gate-20261009-204709.log` — **20 PASS, 1 MEASURED, 0 FAIL**, no
 errors or tracebacks.
 
+That log predates the per-workload addresses added for lease matching.
+Re-running the gate afterwards failed check 18 and nothing else:
+
+```
+PASS  checks 1-17, including check 16 (IPv4 steering)
+FAIL  check 18: IPv6 1:20 did not grow (62520 -> 62520)
+```
+
+The address change caused it; no product code was involved. `send6()` opened an
+unbound socket, so with several IPv6 addresses on `wan` the kernel's
+source-address selection could choose one that `bmark`'s exact-match filter did
+not cover, and the flow fell through to the default class. The IPv4 checks got
+away with it only because `203.0.113.2` stayed primary -- an ordering dependency
+rather than a guarantee.
+
+Fixed at both levels: `setup.sh` no longer adds the IPv6 extras (leases here are
+IPv4-only, so they bought nothing), and both gate senders now bind an explicit
+source so checks 16, 17, 18 and 19 name the address they steer. **Check 18 is
+fixed in the source but not yet verified** -- that needs a real gate run.
+
 This mattered: the gate's last run predated three commits that changed
 `aciq/closedloop.py` and `aciq/harness.py`, which is the path the gate exists to
 test. A green gate on stale code is not evidence about the current code, and the

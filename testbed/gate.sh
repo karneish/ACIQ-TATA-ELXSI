@@ -357,11 +357,17 @@ cbytes () { $R tc -s class show dev "$EGR_IF" \
 # longer accepted as a boolean: after the rename to tos, "1" parses as IP_TOS
 # 0x01, which is DSCP 0 with the ECN bits set -- silently the wrong value, and
 # check 17 depends on claiming real EF.
-send () {  # send <dst> <port> <size> <tos:hex|ef> [count]
-  ip netns exec wan "$VENV/bin/python" - "$1" "$2" "$3" "$4" "${5:-40}" <<'PY'
+send () {  # send <dst> <port> <size> <tos:hex|ef> [count] [src]
+  # `src` is bound explicitly. The filters these checks install match an exact
+  # source address, so letting the kernel pick one makes the check depend on
+  # which address happens to be primary on the interface. That held only while
+  # wan had a single address; adding per-device addresses broke check 18.
+  ip netns exec wan "$VENV/bin/python" - "$1" "$2" "$3" "$4" "${5:-40}" "${6:-}" <<'PY'
 import socket, sys, time
-dst, port, size, tos, n = sys.argv[1:6]
+dst, port, size, tos, n, src = sys.argv[1:7]
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+if src:
+    s.bind((src, 0))
 if tos == "ef":
     tos = 0xB8
 elif tos in ("0", "", "none"):
@@ -381,11 +387,14 @@ s.close()
 PY
 }
 
-send6 () {  # send6 <dst> <port> <size> [count]
-  ip netns exec wan "$VENV/bin/python" - "$1" "$2" "$3" "${4:-40}" <<'PY'
+send6 () {  # send6 <dst> <port> <size> [count] [src]
+  # See send(): bound explicitly, never left to source-address selection.
+  ip netns exec wan "$VENV/bin/python" - "$1" "$2" "$3" "${4:-40}" "${5:-}" <<'PY'
 import socket, sys, time
-dst, port, size, n = sys.argv[1:5]
+dst, port, size, n, src = sys.argv[1:6]
 s = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+if src:
+    s.bind((src, 0, 0, 0))
 for _ in range(int(n)):
     s.sendto(b"x" * int(size), (dst, int(port), 0, 0))
     time.sleep(0.002)
@@ -426,7 +435,7 @@ ok "check 15: per-flow flower filters install"
 # See testbed/bridge_isolate.sh tests J and K.
 A20=$(cbytes 1:20); A30=$(cbytes 1:30)
 bmark 203.0.113.2 10.0.1.2 udp 7001 adaptive || die "check 16: steering failed"
-send 10.0.1.2 7001 1000 0 60
+send 10.0.1.2 7001 1000 0 60 203.0.113.2
 sleep 1
 B20=$(cbytes 1:20); B30=$(cbytes 1:30)
 echo "1:20 $A20 -> $B20   1:30 $A30 -> $B30"
@@ -445,7 +454,7 @@ v0 sample because nothing routed to class 1:20."
 # explicit verdict wins regardless of what the sender put in the header.
 C10=$(cbytes 1:10)
 bmark 203.0.113.2 10.0.1.2 udp 7002 unclassified || die "check 17: steering failed"
-send 10.0.1.2 7002 1000 ef 60
+send 10.0.1.2 7002 1000 ef 60 203.0.113.2
 sleep 1
 D10=$(cbytes 1:10)
 echo "EF-claiming but classified unclassified: 1:10 $C10 -> $D10"
@@ -456,7 +465,7 @@ awk -v a="$C10" -v b="$D10" 'BEGIN{exit !(b+0 <= a+0 + 2000)}' \
 # ---------- 18 steered IPv6 flow reaches its class ----------
 A20=$(cbytes 1:20)
 bmark fd00:2::2 fd00:1::2 udp 7003 adaptive || die "check 18: steering failed"
-send6 fd00:1::2 7003 1000 60
+send6 fd00:1::2 7003 1000 60 fd00:2::2
 sleep 1
 B20=$(cbytes 1:20)
 echo "ipv6 1:20 $A20 -> $B20"
@@ -471,7 +480,7 @@ awk -v a="$A20" -v b="$B20" 'BEGIN{exit !(b+0 > a+0 + 20000)}' \
 # removal has to be shown working rather than assumed.
 E0=$(cbytes 1:20); E3=$(cbytes 1:30)
 bunmark 203.0.113.2 10.0.1.2 udp 7001 || die "check 19: removal failed"
-send 10.0.1.2 7001 1000 0 60
+send 10.0.1.2 7001 1000 0 60 203.0.113.2
 sleep 1
 F20=$(cbytes 1:20); F30=$(cbytes 1:30)
 echo "after removing the filter: 1:20 $E0 -> $F20   1:30 $E3 -> $F30"
