@@ -20,6 +20,7 @@ Standard library only, like the rest of the project.
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import sys
 from pathlib import Path
@@ -184,10 +185,26 @@ def cmd_serve(a) -> int:
     # that a lease can be requested while looking at the traffic it affects.
     # Rendering an empty dashboard instead would look like a broken page rather
     # than an honest "no samples given".
-    src = Path(a.samples) if a.samples else None
-    if src is not None and not src.is_file():
-        print(f"error: no such file: {src}", file=sys.stderr)
-        return 2
+    pattern = a.samples or None
+
+    def resolve() -> Path | None:
+        """Find the samples file, re-globbing every time.
+
+        A dashboard meant to watch a run has to be startable *before* the run
+        exists -- otherwise it can only ever chart something already finished,
+        which is the opposite of watching. Exiting on a missing file forced a
+        dummy first run, and an unexpanded glob (`data/live/*/samples.jsonl`)
+        was reported as a literal missing path rather than as "not yet".
+
+        Resolving per request is what lets the path appear later.
+        """
+        if not pattern:
+            return None
+        if any(ch in pattern for ch in "*?["):
+            hits = sorted(glob.glob(pattern))
+            return Path(hits[0]) if hits else None
+        p = Path(pattern)
+        return p if p.is_file() else None
 
     def read_rows() -> list:
         """Re-read on every request, so the page tracks a run in progress.
@@ -201,6 +218,7 @@ def cmd_serve(a) -> int:
         observed mid-write. An unparseable line is skipped rather than fatal: a
         torn read is normal here and must not take the server down.
         """
+        src = resolve()
         if src is None:
             return []
         rows = []
@@ -210,22 +228,28 @@ def cmd_serve(a) -> int:
                 continue
             try:
                 rows.append(json.loads(line))
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, OSError):
                 continue
         return rows
 
     def dashboard():
+        src = resolve()
+        rows = read_rows()
+        subtitle = (f"source: {src.name}" if src
+                    else f"waiting for {pattern}" if pattern else "no samples")
+        # Live by construction: the rows are re-read per request, so a refresh
+        # interval is what turns it from a snapshot into a view of a run in
+        # progress.
         return build_from_samples(
-            read_rows(),
-            subtitle=(f"source: {src.name}" if src else "no samples"),
-            # Live by construction: the rows are re-read per request, so a
-            # refresh interval is what turns it from a snapshot into a view of
-            # a run in progress.
+            rows, subtitle=subtitle,
             refresh_s=(a.refresh or (2 if a.watch else 0)))
 
     def status():
+        src = resolve()
         return {"samples": len(read_rows()),
-                "sample_source": str(src) if src else None}
+                "sample_source": str(src) if src else None,
+                "sample_pattern": pattern,
+                "waiting": bool(pattern) and src is None}
 
     book = load(a.leases_file)
     httpd = serve(book, host=a.host, port=a.port,

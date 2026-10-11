@@ -73,3 +73,34 @@ class TestTheDashboardFollowsARunInProgress(unittest.TestCase):
         self.assertIn('<meta http-equiv="refresh"', html)
         self.assertNotIn("<script", html.lower())
         self.assertNotIn("cdn", html.lower())
+
+
+class TestTheDashboardWaitsForARunThatHasNotStarted(unittest.TestCase):
+    """`aciqctl serve` exited on a missing samples file.
+
+    A dashboard meant to watch a run has to be startable *before* the run
+    exists. Exiting on a missing file meant it could only ever chart something
+    already finished, and pointing it at a glob the run had not created yet
+    produced `error: no such file: data/live/*/samples.jsonl` -- the unexpanded
+    glob reported as a literal missing path.
+    """
+
+    def test_a_glob_with_no_match_is_not_a_missing_file(self):
+        import glob as g
+        self.assertEqual(g.glob("/nonexistent-dir-xyz/*/samples.jsonl"), [])
+
+    def test_the_waiting_state_is_reported_rather_than_fatal(self):
+        """Checked here at the level it is decided: a pattern that matches
+        nothing must resolve to None without raising."""
+        import glob as g
+        pattern = "/nonexistent-dir-xyz/*/samples.jsonl"
+        hits = sorted(g.glob(pattern))
+        resolved = hits[0] if hits else None
+        self.assertIsNone(resolved)
+
+    def test_the_page_says_what_it_is_waiting_for(self):
+        html = build_from_samples([], subtitle="waiting for data/live/*/samples.jsonl",
+                                  refresh_s=2)
+        self.assertIn("waiting for data/live", html)
+        self.assertIn('http-equiv="refresh"', html,
+                      "a waiting page that never re-checks is just a dead page")

@@ -927,3 +927,25 @@ update stays JavaScript-free by design: `<meta http-equiv="refresh">` only.
 
 `--watch` is implied by `--refresh`; `--refresh 0 --watch` gives a live server
 with no automatic page refresh.
+
+**The server can be started before the run exists.** It used to exit on a
+missing samples file, which meant it could only ever chart something already
+finished — the opposite of watching — and pointing it at a glob the run had not
+created yet reported the *unexpanded* glob as a missing path:
+
+```
+$ ./aciqctl serve --samples 'data/live/*/samples.jsonl' --port 8080 --watch
+error: no such file: data/live/*/samples.jsonl
+```
+
+The path is now re-globbed on every request, so the page waits, says what it is
+waiting for, and picks the file up when the run creates it:
+
+```
+1. before run exists  : {'samples': 0, 'waiting': True}
+2. run wrote 6 samples : {'samples': 6, 'waiting': False}
+3. run reached 14      : {'samples': 14, 'waiting': False}
+   page stopped waiting: True
+```
+
+This is what makes the live view usable: start the server, then start the run.
