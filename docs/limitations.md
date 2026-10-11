@@ -949,3 +949,44 @@ waiting for, and picks the file up when the run creates it:
 ```
 
 This is what makes the live view usable: start the server, then start the run.
+
+
+## M8: three of the six panels have never had data
+
+Found while rebuilding the dashboard, and worth stating plainly because the
+page previously did not admit it.
+
+Across every run this project has produced -- `matrix6`, `fixcheck`, `dev10`,
+`ab_lease_42` -- these fields are **identically zero** in every sample of every
+class:
+
+| field | distinct values | non-zero |
+|---|---|---|
+| `rtt_p95` | 1 | **0** |
+| `jitter_ms` | 1 | **0** |
+| `loss_ratio` | 1 | **0** |
+| `goodput_mbps` | 119 | 118 |
+| `backlog_bytes` | many | many |
+
+So the latency, jitter and loss panels never had anything to draw. Worse, an
+all-zero series was padded symmetrically, which put the axis at -0.5..0.5 and
+labelled **negative latency** -- a reading that reads as a measurement rather
+than as the absence of one.
+
+Fixed in the renderer, and worth being precise about what was fixed: the
+*presentation*, not the data. The generators do not report per-flow RTT to the
+collector, so those panels now say "not measured — every sample reported exactly
+0" instead of drawing a line. **Making them real is not fixed** and would need
+the generators to return RTT per flow, which is a change to `testbed/workloads/`
+and to what M5 collects.
+
+The other renderer defects found at the same time:
+
+* no x-axis labels at all, on a chart whose main event happens *at a time*;
+* the capacity drop was not marked anywhere;
+* the highest y tick was clipped away when it fell just above the data max,
+  leaving the top of the panel ungridded;
+* the legend listed names with no values, so every reading required tracing a
+  line to its right-hand end.
+
+All covered by tests over a recorded run, not a synthetic one.
