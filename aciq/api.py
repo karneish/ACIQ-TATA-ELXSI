@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import re
+import secrets
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
 
@@ -40,6 +41,23 @@ from .intent import IntentError, LeaseBook, lease_to_dict
 
 #: Refuse absurd bodies rather than buffering them.
 MAX_BODY_BYTES = 64 * 1024
+
+#: Mutating requests per client per window. A lease book is cheap to write and
+#: expensive to get wrong: an unbounded caller can rewrite the router's policy
+#: as fast as Python can serialise JSON. Reads are never limited -- a dashboard
+#: polling every two seconds must not be throttled.
+RATE_LIMIT_WRITES = 30
+RATE_LIMIT_WINDOW_S = 60.0
+#: Ceiling on tracked clients, so a varying source address cannot grow the table
+#: without bound.
+MAX_RATE_CLIENTS = 1024
+
+#: Hosts that are not loopback. Binding to one of these exposes lease creation to
+#: the LAN, so it requires an explicit token rather than happening silently.
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+#: Methods that change policy. Everything else is a read.
+MUTATING_METHODS = frozenset({"POST", "DELETE", "PUT", "PATCH"})
 
 _INTENT_RE = re.compile(r"^/intent/(?P<id>[A-Za-z0-9_.:-]{1,64})$")
 
@@ -49,15 +67,48 @@ class IntentService:
 
     def __init__(self, book: LeaseBook | None = None,
                  status_provider: Callable[[], dict] | None = None,
-                 dashboard_provider: Callable[[], str] | None = None):
+                 dashboard_provider: Callable[[], str] | None = None,
+                 token: str | None = None,
+                 audit: Callable[[dict], None] | None = None):
         self.book = book or LeaseBook()
         self._status = status_provider or (lambda: {"leases": 0})
         self._dashboard = dashboard_provider or (lambda: "<!doctype html><p>no dashboard")
+        #: Bearer token required for mutating routes. None means "no token
+        #: configured", which is only acceptable on loopback -- `check_bind`
+        #: refuses to start otherwise rather than leaving it to the operator's
+        #: memory of which default they got.
+        self.token = token
+        self._audit = audit or (lambda rec: None)
+        #: client -> (window_start, count). Not a lock: the ThreadingHTTPServer
+        #: would need one, and a torn counter under concurrency would at worst
+        #: let a caller slightly over its budget.
+        self._rate: dict[str, tuple[float, int]] = {}
 
     # ---- routes ----------------------------------------------------------
-    def handle(self, method: str, path: str, body: bytes = b"") -> tuple[int, Any, str]:
+    def handle(self, method: str, path: str, body: bytes = b"",
+               headers: dict | None = None,
+               client: str = "local") -> tuple[int, Any, str]:
         """-> (status, payload, content_type). Never raises for bad input."""
+        headers = headers or {}
         path = path.split("?", 1)[0].rstrip("/") or "/"
+        mutating = method in MUTATING_METHODS
+
+        if mutating:
+            # Authenticate before anything else, so a rejected caller cannot
+            # reach the parser, the book, or the rate limiter's own accounting.
+            if self.token is not None:
+                supplied = (headers.get("authorization") or "").strip()
+                want = f"Bearer {self.token}"
+                # Constant-time compare: a timing oracle on a bearer token is a
+                # real, if slow, attack.
+                if not secrets.compare_digest(supplied, want):
+                    self._audit({"method": method, "path": path,
+                                 "client": client, "outcome": "unauthorised"})
+                    return 401, {"error": "unauthorised"}, "application/json"
+            if not self._allow_write(client):
+                self._audit({"method": method, "path": path,
+                             "client": client, "outcome": "rate_limited"})
+                return 429, {"error": "too many write requests"}, "application/json"
 
         if method == "GET" and path == "/":
             return 200, self._dashboard(), "text/html; charset=utf-8"
@@ -72,7 +123,7 @@ class IntentService:
                 return 200, {"leases": [lease_to_dict(l, now) for l in
                                         self.book.active(now)]}, "application/json"
             if method == "POST":
-                return self._create(body)
+                return self._create(body, client)
             return 405, {"error": f"{method} not allowed on /intent"}, "application/json"
 
         m = _INTENT_RE.match(path)
@@ -87,7 +138,28 @@ class IntentService:
             return 200, {"ok": True}, "application/json"
         return 404, {"error": f"no route for {method} {path}"}, "application/json"
 
-    def _create(self, body: bytes) -> tuple[int, Any, str]:
+    def _allow_write(self, client: str) -> bool:
+        """Token bucket, fixed window. Returns whether the write may proceed."""
+        now = self.book.now()
+        start, count = self._rate.get(client, (now, 0))
+        if now - start >= RATE_LIMIT_WINDOW_S:
+            start, count = now, 0
+        count += 1
+        self._rate[client] = (start, count)
+        # Bound the table. Time-based pruning alone is not enough: with a fixed
+        # or coarse clock nothing ever expires and the dict grows without limit,
+        # which is itself a memory leak an attacker can drive simply by varying
+        # the source address. Evict the oldest half when over the cap.
+        if len(self._rate) > MAX_RATE_CLIENTS:
+            fresh = {k: v for k, v in self._rate.items()
+                     if now - v[0] < RATE_LIMIT_WINDOW_S}
+            if len(fresh) > MAX_RATE_CLIENTS:
+                ordered = sorted(fresh.items(), key=lambda kv: kv[1][0])
+                fresh = dict(ordered[len(ordered) // 2:])
+            self._rate = fresh
+        return count <= RATE_LIMIT_WRITES
+
+    def _create(self, body: bytes, client: str = "local") -> tuple[int, Any, str]:
         if len(body) > MAX_BODY_BYTES:
             return 413, {"error": "body too large"}, "application/json"
         try:
@@ -111,6 +183,11 @@ class IntentService:
             return 400, {"error": str(e)}, "application/json"
         except TypeError as e:
             return 400, {"error": str(e)}, "application/json"
+        self._audit({"method": "POST", "path": "/intent", "outcome": "created",
+                     "client": client,
+                     "lease": lease.id, "target": lease.target,
+                     "ip": lease.ip, "weight": lease.weight,
+                     "ttl_s": lease.ttl_s})
         return 201, lease_to_dict(lease, self.book.now()), "application/json"
 
 
@@ -166,25 +243,55 @@ def make_handler(service: IntentService):
                 n = 0
             return self.rfile.read(min(n, MAX_BODY_BYTES))
 
+        def _client(self) -> str:
+            return self.client_address[0] if self.client_address else "unknown"
+
+        def _hdrs(self) -> dict:
+            return {k.lower(): v for k, v in self.headers.items()}
+
         def do_GET(self):  # noqa: N802
-            status, payload, ctype = service.handle("GET", self.path)
+            status, payload, ctype = service.handle(
+                "GET", self.path, headers=self._hdrs(), client=self._client())
             self._send(status, payload, ctype)
 
         def do_POST(self):  # noqa: N802
-            status, payload, ctype = service.handle("POST", self.path, self._read_body())
+            status, payload, ctype = service.handle(
+                "POST", self.path, self._read_body(),
+                headers=self._hdrs(), client=self._client())
             self._send(status, payload, ctype)
 
         def do_DELETE(self):  # noqa: N802
-            status, payload, ctype = service.handle("DELETE", self.path)
+            status, payload, ctype = service.handle(
+                "DELETE", self.path, headers=self._hdrs(), client=self._client())
             self._send(status, payload, ctype)
 
     return Handler
 
 
+def check_bind(host: str, token: str | None) -> None:
+    """Refuse to expose lease creation without authentication.
+
+    Raising at startup rather than logging a warning: a service that is reachable
+    from the LAN and can rewrite the router's policy is a misconfiguration that
+    should stop the process, not something the operator should notice in a log
+    file they may not read.
+    """
+    if host in LOOPBACK_HOSTS:
+        return
+    if not token:
+        raise ValueError(
+            f"refusing to bind {host}: a non-loopback bind exposes POST /intent "
+            f"to the network, so a token is required. Set ACIQ_API_TOKEN, or bind "
+            f"127.0.0.1 for a local-only service.")
+
+
 def serve(book: LeaseBook, host: str = "127.0.0.1", port: int = 8080,
-          status_provider=None, dashboard_provider=None, verbose: bool = False):
+          status_provider=None, dashboard_provider=None, verbose: bool = False,
+          token: str | None = None, audit=None):
     """Start the server and block. Returns the ThreadingHTTPServer."""
-    service = IntentService(book, status_provider, dashboard_provider)
+    check_bind(host, token)
+    service = IntentService(book, status_provider, dashboard_provider,
+                            token=token, audit=audit)
     httpd = ThreadingHTTPServer((host, port), make_handler(service))
     httpd.verbose = verbose
     return httpd

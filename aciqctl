@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import glob
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -280,8 +281,21 @@ def cmd_serve(a) -> int:
                 "waiting": bool(pattern) and src is None}
 
     book = load(a.leases_file)
+    audit = None
+    if a.audit_log:
+        # Append, line-buffered, flushed per record: an audit log lost on crash
+        # is not an audit log.
+        fh = open(a.audit_log, "a", buffering=1)
+
+        def audit(rec):
+            try:
+                fh.write(json.dumps(rec) + "\n")
+            except OSError:
+                pass
+
     httpd = serve(book, host=a.host, port=a.port,
-                  status_provider=status, dashboard_provider=dashboard)
+                  status_provider=status, dashboard_provider=dashboard,
+                  token=a.token, audit=audit)
     print(f"M7 intent API on http://{a.host}:{a.port}")
     print(f"  POST /intent   DELETE /intent/<id>   GET /intent   GET /status")
     print(f"  M8 dashboard:  http://{a.host}:{a.port}/")
@@ -358,6 +372,12 @@ def build_parser() -> argparse.ArgumentParser:
                     help="samples.jsonl to chart on the dashboard")
     sv.add_argument("--leases-file", default=str(DEFAULT_LEASES_PATH),
                     dest="leases_file")
+    sv.add_argument("--token", default=os.environ.get("ACIQ_API_TOKEN"),
+                    help="bearer token required for lease creation. Required "
+                         "unless the bind address is loopback; also read from "
+                         "the ACIQ_API_TOKEN environment variable")
+    sv.add_argument("--audit-log", default=None, dest="audit_log",
+                    help="append one JSON line per policy-changing request here")
     sv.add_argument("--watch", action="store_true",
                     help="follow a run in progress: re-read samples.jsonl on "
                          "every request (implied by --refresh > 0)")
