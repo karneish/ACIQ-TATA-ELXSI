@@ -3,10 +3,13 @@
 > Prototype for **Case Study 3: Adaptive QoS Engine for Mixed Home Broadband Traffic**
 > (TATA ELXSI / TELIPORT).
 >
-> **Status: incomplete, and this README says so.** Three of the brief's required
-> outputs do not exist yet, and the behavioural classifier is tested but **not
-> connected to enforcement**. Read [Current state](#current-state) before
-> anything else.
+> **Status: substantially complete, and this README says exactly where it
+> falls short.** Per-flow enforcement, the capacity drop and the lease mechanism
+> are **verified on a real kernel**. Three things are not done: capacity
+> *estimation* is verified only by replaying a recorded run, latency/jitter/loss
+> are not measured at all, and there is no device-identity layer.
+> Read [`docs/PROJECT.md`](docs/PROJECT.md) for the complete reference, and
+> [Current state](#current-state) for the honest gap list.
 
 A traffic controller for a home broadband link. It classifies flows without
 reading any payload, estimates the real link capacity from queue counters, shares
@@ -14,6 +17,17 @@ bandwidth between three traffic classes with guaranteed floors, and is designed
 to let a user grant a **time-boxed lease** to one device or flow.
 
 ---
+
+## Documents
+
+| | |
+|---|---|
+| **`docs/PROJECT.md`** | **complete project reference** — every module, contract, measurement, limitation and defect |
+| `docs/architecture.md` | module contracts, inputs/outputs/failure handling |
+| `docs/limitations.md` | every measurement, withdrawn claim and open defect |
+| `docs/ACIQ_EXPLAINED.md` | plain-language walkthrough |
+| `docs/WIRING_AUDIT.md` | how each flow reaches its class, and the traps |
+| `docs/setup.md` | standing the testbed up from scratch |
 
 ## Current state
 
