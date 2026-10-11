@@ -223,6 +223,11 @@ class ExperimentRunner:
         self._lease_ips: list[str] = []
         self._lease_weight = 0.5
         self._lease_effective_s = 0.0
+        #: Recent per-tick verdicts, newest last. Used to attribute a workload's
+        #: probe traffic to the class it was steered into; bounded so a long run
+        #: cannot grow it without limit.
+        self._last_verdicts: list[dict] = []
+        self.window_verdicts = 200
 
     def run_paths(self, scenario: str, system: SystemSpec, mode: CapacityMode,
                   seed: int) -> RunPaths:
@@ -252,6 +257,11 @@ class ExperimentRunner:
         #: INSTALLED" -- which is how a working lease arm got read as a failed
         #: one. Coverage over time is the only thing a run can honestly report.
         self._lease_effective_s = 0.0
+        #: Recent per-tick verdicts, newest last. Used to attribute a workload's
+        #: probe traffic to the class it was steered into; bounded so a long run
+        #: cannot grow it without limit.
+        self._last_verdicts: list[dict] = []
+        self.window_verdicts = 200
         self._lease_weight = lease_weight
         #: None means "one whole run", which is the useful default for measuring
         #: a lease: a TTL shorter than the run would demonstrate expiry and
@@ -457,6 +467,13 @@ class ExperimentRunner:
             # A dry run must still advance the *scenario* timeline, otherwise
             # drop_at_s can never be reached and the drop path goes untested.
             elapsed = (now - t0) if self.real_time else i * self.tick_s
+
+            # Probe telemetry has to be read *during* the run. It used to be
+            # ingested once, after `launcher.collect()` returned, so every row
+            # of samples.jsonl would have carried the same final value -- a step
+            # function presented as a time series.
+            self._ingest_probes(collector, paths, ports, scenario_name)
+
             frame = collector.poll()
 
             # Close the loop on every tick. M2 needs consecutive saturated
@@ -470,6 +487,12 @@ class ExperimentRunner:
                 self._lease_effective_s += self.tick_s
             if enforcement_on:
                 verdicts, filters_n = self._enforcement_step(ports, t0 + elapsed)
+                # Kept so the probe collector can ask which class a workload's
+                # traffic was actually steered into. Without this mapping, latency
+                # had nowhere to land and was reported as zero for the whole
+                # life of the project.
+                self._last_verdicts.append(verdicts)
+                del self._last_verdicts[:-self.window_verdicts]
                 self._enf_filters_n = filters_n
                 n_json, n_text = self._last_filter_reads
                 if filters_n > 0:
@@ -827,6 +850,48 @@ notes=(([] if dropped else ["no capacity drop in this run"])
                 time.sleep(self.tick_s)
             warm.poll()
         shutil.rmtree(scratch, ignore_errors=True)
+
+    def _ingest_probes(self, collector: MetricsCollector, paths: RunPaths,
+                       ports, scenario_name: str) -> None:
+        """Fold each probe workload's partial report into the collector.
+
+        The generators write their report incrementally rather than only at exit,
+        so this can be called every tick. `label -> TrafficClass` comes from the
+        classifier's own verdict for that flow, which is the only party that
+        knows where the traffic was steered -- that mapping was missing
+        entirely, and its absence is why latency was reported as zero forever.
+        """
+        for (label, _port, _dscp), _w in zip(ports,
+                                             _expand(SCENARIOS[scenario_name])):
+            f = paths.file(f"{label}.partial.json")
+            if not f.exists():
+                continue
+            try:
+                d = json.loads(f.read_text())
+            except (json.JSONDecodeError, OSError):
+                continue        # mid-write; the next tick will catch it
+            cls = self._verdict_class(label)
+            collector.ingest(EvaluationData(
+                t=time.monotonic(), label=label,
+                rtt_ms=d.get("p95"), jitter_ms=d.get("jitter_ms"),
+                loss_ratio=d.get("loss_ratio")), cls=cls)
+
+    def _verdict_class(self, label: str) -> TrafficClass | None:
+        """The class the bridge last steered this workload's flow into."""
+        for verdicts in reversed(self._last_verdicts):
+            v = verdicts.get(label)
+            if v is None:
+                continue
+            name = v.get("class") if isinstance(v, dict) else v
+            if not name:
+                return None
+            try:
+                return TrafficClass(name)
+            except ValueError:
+                # "unclassified" and any future non-enum value: this flow is
+                # not in a class that carries probe telemetry.
+                return None
+        return None
 
     def _closed_loop_step(self, collector: MetricsCollector, dt: float, now: float):
         """M2 -> M3 -> M4, using only what the counter reader sees."""

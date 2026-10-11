@@ -221,22 +221,52 @@ class TestCollector(unittest.TestCase):
         self.assertAlmostEqual(f.fairness, 1.0, places=6)
 
     def test_evaluation_data_feeds_percentiles(self):
+        """These two tests used to label the probe with the *class value*, which
+        made the broken lookup work by coincidence and hid the defect: in a real
+        run the label is "call" or "tv1" and the branch never fired, so latency
+        reported 0.0 in every run the project ever produced."""
         c = MetricsCollector(StaticSource([snap(0.0, **{I: {"rx_bytes": 0}})]))
         for v in (10.0, 12.0, 11.0, 40.0):
-            c.ingest(EvaluationData(t=0.0, label=I.value, rtt_ms=v))
+            c.ingest(EvaluationData(t=0.0, label=I.value, rtt_ms=v), cls=I)
         f = c.poll()
         self.assertGreater(f.per_class[I].rtt_p50, 0.0)
         self.assertGreater(f.per_class[I].rtt_p99, f.per_class[I].rtt_p50)
 
+    def test_a_workload_label_reaches_its_class(self):
+        """The real path: a generator labelled "tv1", steered into a class."""
+        c = MetricsCollector(StaticSource([snap(0.0, **{I: {"rx_bytes": 0}})]))
+        for v in (10.0, 12.0, 11.0, 40.0):
+            c.ingest(EvaluationData(t=0.0, label="tv1", rtt_ms=v), cls=I)
+        self.assertEqual(c.class_of("tv1"), I)
+        self.assertEqual(c.labels_for(I), ["tv1"])
+        self.assertIsNotNone(c.poll().per_class[I].rtt_p50)
+
+    def test_a_class_with_no_probe_reports_unavailable_not_zero(self):
+        c = MetricsCollector(StaticSource([snap(0.0, **{I: {"rx_bytes": 0}})]))
+        m = c.poll().per_class[I]
+        self.assertIsNone(m.rtt_p50, "an unprobed class reported a latency")
+        self.assertIsNone(m.loss_ratio)
+        self.assertEqual(m.metric_status, "no_probe")
+
+    def test_a_measured_zero_survives(self):
+        """`ev.loss_ratio or 0.0` discarded a genuine zero and substituted a
+        recomputed value, so "measured zero" and "missing" were identical."""
+        c = MetricsCollector(StaticSource([snap(0.0, **{I: {"rx_bytes": 0}})]))
+        c.ingest(EvaluationData(t=0.0, label="call", rtt_ms=5.0,
+                                jitter_ms=0.0, loss_ratio=0.0), cls=I)
+        m = c.poll().per_class[I]
+        self.assertEqual(m.loss_ratio, 0.0)
+        self.assertEqual(m.jitter_ms, 0.0)
+
     def test_evaluation_window_is_bounded(self):
         c = MetricsCollector(StaticSource([snap(0.0, **{I: {"rx_bytes": 0}})]), window=5)
         for i in range(50):
-            c.ingest(EvaluationData(t=0.0, label=I.value, rtt_ms=float(i)))
+            c.ingest(EvaluationData(t=0.0, label=I.value, rtt_ms=float(i)), cls=I)
         self.assertEqual(len(c.rtts(I.value)), 5)
 
     def test_loss_ratio_propagates(self):
         c = MetricsCollector(StaticSource([snap(0.0, **{I: {"rx_bytes": 0}})]))
-        c.ingest(EvaluationData(t=0.0, label=I.value, loss_ratio=0.25))
+        c.ingest(EvaluationData(t=0.0, label=I.value, loss_ratio=0.25), cls=I)
         self.assertAlmostEqual(c.poll().per_class[I].loss_ratio, 0.25)
 
     def test_cpu_fraction_zero_on_a_tiny_window(self):

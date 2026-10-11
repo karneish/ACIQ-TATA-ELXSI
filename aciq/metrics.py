@@ -20,6 +20,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Iterable, Protocol
 
+from .measure import NOT_MEASURED, VALID
 from .model import TrafficClass
 
 #: Below this wall-clock window, getrusage granularity makes a CPU fraction
@@ -338,15 +339,27 @@ class TcJsonSource:
 # --------------------------------------------------------------------------
 @dataclass
 class ClassMetrics:
+    """Per-class telemetry.
+
+    The latency, jitter and loss fields are `float | None`, never `0.0`.
+    `0.0` was the default for the whole life of this project, which made
+    "not measured" and "measured zero" the same value -- and the dashboard then
+    drew a flat zero line on an axis padded to -0.5..0.5, labelling negative
+    latency. A metric that could not be computed is None plus a `metric_status`
+    saying why.
+    """
     goodput_mbps: float = 0.0
     drop_rate_per_s: float = 0.0
     overlimit_rate_per_s: float = 0.0
     backlog_bytes: int = 0
-    rtt_p50: float = 0.0
-    rtt_p95: float = 0.0
-    rtt_p99: float = 0.0
-    jitter_ms: float = 0.0
-    loss_ratio: float = 0.0
+    rtt_p50: float | None = None
+    rtt_p95: float | None = None
+    rtt_p99: float | None = None
+    jitter_ms: float | None = None
+    loss_ratio: float | None = None
+    #: One of aciq.measure's VALID / INSUFFICIENT_SAMPLES / NOT_MEASURED, or
+    #: "no_probe" when the class carries no probe traffic at all.
+    metric_status: str = "no_probe"
 
 
 @dataclass
@@ -371,18 +384,37 @@ class MetricsCollector:
         self._prev: CounterSnapshot | None = None
         self._rtts: dict[str, list[float]] = {}
         self._last_eval: dict[str, EvaluationData] = {}
+        #: workload label -> TrafficClass. Supplied by the driver, which knows
+        #: the verdict; see `ingest`.
+        self._by_class: dict[str, TrafficClass] = {}
         self._ru0 = resource.getrusage(resource.RUSAGE_SELF)
         self._t0 = time.monotonic()
 
     # --- evaluation-side input -------------------------------------------
-    def ingest(self, data: EvaluationData) -> None:
+    #
+    # `ingest` keys by workload label ("call", "tv1") while `poll` reads back by
+    # class value ("adaptive_video"). Those are different namespaces, the lookup
+    # never matched, and the entire evaluation branch was dead code -- which is
+    # why rtt/jitter/loss reported 0.0 in every run this project ever produced.
+    # `_by_class` is populated by the caller, which is the only party that knows
+    # which class a workload was actually steered into.
+    def ingest(self, data: EvaluationData, cls: TrafficClass | None = None) -> None:
         if data.rtt_ms is not None:
             self._rtts.setdefault(data.label, []).append(data.rtt_ms)
             self._rtts[data.label] = self._rtts[data.label][-self.window :]
         self._last_eval[data.label] = data
+        if cls is not None:
+            self._by_class[data.label] = cls
+
+    def class_of(self, label: str) -> TrafficClass | None:
+        """Which class a workload's probe traffic should be reported under."""
+        return self._by_class.get(label)
 
     def rtts(self, label: str) -> list[float]:
         return list(self._rtts.get(label, []))
+
+    def labels_for(self, cls: TrafficClass) -> list[str]:
+        return [lbl for lbl, c in self._by_class.items() if c is cls]
 
     # --- polling -----------------------------------------------------------
     def poll(self) -> MetricsFrame:
@@ -402,13 +434,31 @@ class MetricsCollector:
                     m.overlimit_rate_per_s = rate_per_s(old.overlimits, cur.overlimits, dt)
             goodputs.append(m.goodput_mbps)
 
-            ev = self._last_eval.get(cls.value)
-            if ev is not None:
-                if ev.rtt_ms is not None:
-                    p = percentiles(self.rtts(cls.value))
+            # Per class, gather every probe workload steered into it. A class
+            # with no probe traffic reports metric_status "no_probe" and leaves
+            # the latency fields None -- which is the honest answer for a bulk
+            # transfer that carries no measurement probe at all.
+            labels = self.labels_for(cls)
+            evals = [self._last_eval[l] for l in labels
+                     if l in self._last_eval]
+            if evals:
+                rtts: list[float] = []
+                for lbl in labels:
+                    rtts.extend(self.rtts(lbl))
+                if rtts:
+                    p = percentiles(rtts)
                     m.rtt_p50, m.rtt_p95, m.rtt_p99 = p["p50"], p["p95"], p["p99"]
-                    m.jitter_ms = ev.jitter_ms or jitter_from_samples(self.rtts(cls.value))
-                m.loss_ratio = ev.loss_ratio or 0.0
+                # `or` would discard a measured 0.0 and substitute a
+                # recomputed value, making genuine zero indistinguishable from
+                # missing. Explicit None checks only.
+                jitters = [e.jitter_ms for e in evals if e.jitter_ms is not None]
+                if jitters:
+                    m.jitter_ms = sum(jitters) / len(jitters)
+                losses = [e.loss_ratio for e in evals if e.loss_ratio is not None]
+                if losses:
+                    m.loss_ratio = sum(losses) / len(losses)
+                m.metric_status = (VALID if (rtts or jitters or losses)
+                                   else NOT_MEASURED)
             frame.per_class[cls] = m
 
         if goodputs:

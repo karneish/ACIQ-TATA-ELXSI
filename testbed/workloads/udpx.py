@@ -15,6 +15,7 @@ generate ourselves, which is also what gives M1 free ground-truth labels.
 
 from __future__ import annotations
 
+import json
 import socket
 import struct
 import threading
@@ -26,6 +27,11 @@ PREAMBLE = MAGIC + struct.pack("!I", 0) + b"\x00" * 8
 #: recvfrom() returns at once when a reply is already queued, so a short value
 #: costs nothing under load. A long one blocks the send loop when idle.
 DRAIN_TIMEOUT_S = 0.0005
+
+
+#: How often the running summary is rewritten for the controller to poll. Twice a
+#: second is well inside a 1 Hz tick, and costs a few hundred bytes of I/O.
+PARTIAL_EVERY_S = 0.5
 
 
 def parse(data: bytes) -> tuple[int, int] | None:
@@ -115,6 +121,8 @@ class UdpProbe:
         family: int = socket.AF_INET,
         label: str = "probe",
         src: str | None = None,
+        partial_path=None,
+        obs_path=None,
     ):
         self.dst = dst
         self.port = port
@@ -138,6 +146,8 @@ class UdpProbe:
         self.rtts_ms: list[float] = []
         self.loss_events: list[tuple[int, int]] = []  # (seq, gap_size)
         self._waiting: dict[int, float] = {}
+        self.partial_path = partial_path
+        self.obs_path = obs_path
 
     # --- stats ---------------------------------------------------------------
     @property
@@ -164,6 +174,38 @@ class UdpProbe:
             idx = min(len(xs) - 1, int(round((p / 100.0) * (len(xs) - 1))))
             out[f"p{int(p)}"] = xs[idx]
         return out
+
+    # --- streaming, so a collector can read a run in progress ---------------
+    #
+    # The controller needs a *series*, not a summary. Everything used to be
+    # written once at exit, after the measurement loop had finished, which is why
+    # every row of samples.jsonl carried the same final value -- and why the
+    # latency panels of the dashboard had nothing to draw until this was split
+    # out. Two files, deliberately separate:
+    #
+    #   <label>.partial.json   the summary so far; polled cheaply by the driver
+    #   <label>.obs.jsonl      every individual observation, appended as it
+    #                          happens, so every derived figure is recomputable
+    #                          from raw evidence rather than trusted.
+
+    def write_partial(self, path) -> None:
+        try:
+            with open(path, "w") as fh:
+                json.dump(self.report(), fh)
+        except OSError:
+            pass
+
+    def write_observation(self, path, seq: int, sent_ns: int,
+                          recv_ns: int | None) -> None:
+        try:
+            with open(path, "a") as fh:
+                fh.write(json.dumps({
+                    "seq": seq,
+                    "sent_mono_s": sent_ns / 1e9,
+                    "recv_mono_s": None if recv_ns is None else recv_ns / 1e9,
+                }) + "\n")
+        except OSError:
+            pass
 
     def report(self) -> dict:
         pct = self.percentiles()
@@ -200,6 +242,11 @@ class UdpProbe:
         # duration whenever nothing is waiting, which silently throttles the
         # send cadence to 1/timeout packets per second.
         self.sock.settimeout(DRAIN_TIMEOUT_S)
+        partial_at = now_ = None
+        if self.partial_path:
+            now_ = time.monotonic()
+            partial_at = now_
+            self.write_partial(self.partial_path)
         start = time.monotonic()
         end = start + duration_s
         next_send = start
@@ -221,12 +268,20 @@ class UdpProbe:
                 # Drain after each send so the socket buffer never backs up and
                 # makes the next sendto() slow.
                 self._drain()
+                if self.partial_path and time.monotonic() >= partial_at:
+                    now_ = time.monotonic()
+                    partial_at = now_ + PARTIAL_EVERY_S
+                    self.write_partial(self.partial_path)
             else:
                 time.sleep(max(0.0, next_send - now))
         self._drain()
         self._compute_loss()
+        self._flush_losses()
         self.elapsed_s = time.monotonic() - start
-        return self.report()
+        rep = self.report()
+        if self.partial_path:
+            self.write_partial(self.partial_path)
+        return rep
 
     def _drain(self) -> None:
         """Collect any replies that arrived since the last check."""
@@ -243,9 +298,28 @@ class UdpProbe:
             seq, _sent = parsed
             t_ns = self._waiting.pop(seq, None)
             if t_ns is None:
-                continue
+                continue        # duplicate or unsolicited reply
+            recv_ns = time.monotonic_ns()
             self.received += 1
-            self.rtts_ms.append((time.monotonic_ns() - t_ns) / 1e6)
+            self.rtts_ms.append((recv_ns - t_ns) / 1e6)
+            if self.obs_path:
+                # Raw, per-observation, appended as it happens. Every derived
+                # figure in the report is recomputable from this file.
+                self.write_observation(self.obs_path, seq, t_ns, recv_ns)
+
+    def _flush_losses(self) -> None:
+        """Write the still-outstanding sends as explicit losses.
+
+        Without this the raw stream contains only replies, and loss becomes
+        invisible: a consumer can see what arrived but not what should have. The
+        in-flight ones are marked so a measurement window can exclude them
+        rather than reporting a loss spike as the run ends.
+        """
+        if not self.obs_path:
+            return
+        for seq, t_ns in sorted(self._waiting.items()):
+            self.write_observation(self.obs_path, seq, t_ns, None)
+        self._waiting.clear()
 
     def _compute_loss(self) -> None:
         """Any sequence number never acked is a loss event."""
