@@ -114,6 +114,40 @@ class TestCompletionSemantics(unittest.TestCase):
         self.assertEqual(sum(counts.values()), len(gates))
 
 
+class TestCompletionAndSkips(unittest.TestCase):
+    """`complete` must mean "everything mandatory ran", not "nothing failed".
+
+    The six live-kernel tests skip without root or iproute2, and a skip is not a
+    failure -- so a suite can be green with the mandatory rollback verification
+    never having executed. `complete` has to notice."""
+
+    @staticmethod
+    def _complete(counts, skipped):
+        return counts[BLOCKED] == 0 and skipped == 0
+
+    def test_no_blocked_and_no_skips_is_complete(self):
+        self.assertTrue(self._complete({PASS: 6, FAIL: 0, BLOCKED: 0}, 0))
+
+    def test_a_skipped_mandatory_test_prevents_completion(self):
+        self.assertFalse(self._complete({PASS: 6, FAIL: 0, BLOCKED: 0}, 6))
+
+    def test_a_blocked_gate_prevents_completion(self):
+        self.assertFalse(self._complete({PASS: 5, FAIL: 0, BLOCKED: 7}, 0))
+
+    def test_a_failure_prevents_an_overall_pass_but_is_reported_separately(self):
+        counts = {PASS: 5, FAIL: 1, BLOCKED: 7}
+        self.assertEqual(counts[FAIL], 1)
+        self.assertFalse(self._complete(counts, 0))
+
+    def test_skips_do_not_by_themselves_fail_the_suite_gate(self):
+        """A skip is weaker than a pass but not a failure; it is handled at
+        completion time, not by failing a green suite."""
+        status, detail = A.suite_verdict(
+            0, f"Ran {A.MIN_TESTS} tests in 1s\n\nOK (skipped=6)\n")
+        self.assertEqual(status, PASS)
+        self.assertIn("6 skipped", detail)
+
+
 class TestMandatoryGatesAreNamed(unittest.TestCase):
     """Every gate the brief calls mandatory must appear in the source, so that
     deleting one is a visible diff rather than a silent omission."""
@@ -180,3 +214,58 @@ class TestClaimAuditParser(unittest.TestCase):
 
     def test_empty_output_is_not_ok(self):
         self.assertFalse(self._audit().parse_suite_status("")["ok"])
+
+
+class TestCitationTraceability(unittest.TestCase):
+    """A backticked `test_*` name in docs/gap-closure/ must name a real test.
+
+    Found by writing four invented test names into classifier-final-validation
+    and three into fairness-policy-safety. The behaviour was correct; the names
+    were made up, and nothing noticed. Citing a test that does not exist reads
+    as evidence and verifies nothing.
+    """
+
+    @staticmethod
+    def _audit():
+        import importlib.util
+        from pathlib import Path as _P
+        sp = importlib.util.spec_from_file_location(
+            "audit_mod2", _P(__file__).resolve().parents[1] / "tools" / "audit_claims.py")
+        m = importlib.util.module_from_spec(sp)
+        sp.loader.exec_module(m)
+        return m
+
+    def test_every_cited_test_name_exists(self):
+        missing = [t for t in self._audit().check_cited_tests() if not t["defined"]]
+        self.assertEqual(missing, [],
+                         "cited but undefined: "
+                         + ", ".join(f"{m['test']} ({m['cited_in']})"
+                                     for m in missing))
+
+    def test_the_check_actually_finds_real_names(self):
+        rows = self._audit().check_cited_tests()
+        self.assertTrue(rows, "no citations found at all -- is the check live?")
+        self.assertTrue(any(r["defined"] for r in rows))
+
+    def test_an_invented_name_is_detected(self):
+        """The check must fail on a name that does not exist, or it proves
+        nothing by passing."""
+        import re
+        docs = list((Path(__file__).resolve().parents[1]
+                     / "docs" / "gap-closure").glob("*.md"))
+        defined = set()
+        for f in (Path(__file__).resolve().parents[1] / "tests").glob("test_*.py"):
+            defined |= set(re.findall(r"def (test_\w+)", f.read_text()))
+        self.assertNotIn("test_this_definitely_does_not_exist", defined)
+        # the same regex the audit uses, over a synthetic citation
+        self.assertEqual(
+            re.findall(r"`(test_[A-Za-z0-9_]+)`",
+                       "see `test_this_definitely_does_not_exist`"),
+            ["test_this_definitely_does_not_exist"])
+
+    def test_drift_reaches_the_audit_exit_code(self):
+        """Reported-and-exited-0 would make the check decorative."""
+        import inspect
+        src = inspect.getsource(self._audit().main)
+        self.assertIn("missing", src)
+        self.assertIn("return 1 if bad or flags or missing else 0", src)

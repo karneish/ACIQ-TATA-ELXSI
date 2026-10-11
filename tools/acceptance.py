@@ -35,7 +35,7 @@ PASS, FAIL, BLOCKED, NOT_RUN = "PASS", "FAIL", "BLOCKED", "NOT RUN"
 #: silently shrunk (a broken import in one test module drops it, and `discover`
 #: reports the rest as a success). Without a floor, deleting a whole test module
 #: would still produce a green acceptance run.
-MIN_TESTS = 819
+MIN_TESTS = 832
 
 
 def parse_unittest(text: str) -> dict:
@@ -238,15 +238,25 @@ def main() -> int:
     env["finished_utc"] = datetime.now(timezone.utc).isoformat()
     env["gates"] = gates
     env["counts"] = counts
-    # A complete acceptance run has no BLOCKED gates. Saying otherwise would be
-    # the one dishonest thing this harness exists to prevent.
-    env["complete"] = counts[BLOCKED] == 0
+    # A complete acceptance run has no BLOCKED gates *and* no skipped tests.
+    #
+    # The second half matters as much as the first. The six live-kernel tests
+    # skip whenever root or iproute2 is missing, and `suite_verdict` counts a
+    # skipped run as PASS because a skip is not a failure. So a run could
+    # report `complete: true` while the mandatory rollback verification had in
+    # fact never executed -- the exact substitution of "did not run" for
+    # "passed" that this harness exists to prevent.
+    mandatory_skipped = int(env.get("tests", {}).get("skipped", 0))
+    env["skipped"] = mandatory_skipped
+    env["complete"] = counts[BLOCKED] == 0 and mandatory_skipped == 0
     (outdir / "acceptance.json").write_text(json.dumps(env, indent=2) + "\n")
     if a.out:
         Path(a.out).write_text(json.dumps(env, indent=2) + "\n")
 
     print(f"\n  PASS {counts[PASS]}  FAIL {counts[FAIL]}  "
           f"BLOCKED {counts[BLOCKED]}  NOT RUN {counts[NOT_RUN]}")
+    if mandatory_skipped:
+        print(f"  {mandatory_skipped} test(s) skipped -- not counted as passed")
     print(f"  complete acceptance run: {env['complete']}")
     print(f"  evidence: {outdir.relative_to(ROOT)}/")
     return 0 if counts[FAIL] == 0 else 1

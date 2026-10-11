@@ -23,9 +23,33 @@ A fourth flow appears (shares 30/30/30/10, 10 Mbps):
 > exactly divided across the classes that exist.** No class can exceed its
 > weight's proportion of the link.
 
-Covered by `test_three_way_split_sums_to_capacity`,
-`test_two_thousand_flows_still_sum_to_capacity`, and
-`test_demand_below_capacity_does_not_inflate_rates`.
+**Citation correction.** This paragraph previously cited three tests that do
+not exist — "test_three_way_split_sums_to_capacity",
+"test_two_thousand_flows_still_sum_to_capacity" and
+"test_demand_below_capacity_does_not_inflate_rates" (written without code
+quoting, because a backticked `test_*` name is now itself a checked citation).
+The property is real and
+tested; the names were not. Found by the new traceability check in
+`tools/audit_claims.py`, which verifies every `test_*` identifier cited in this
+directory against the actual test sources.
+
+What genuinely exists:
+
+| claim | real test |
+|---|---|
+| `sum(rates) <= capacity` across the range | `test_invariant_across_capacity_sweep` (10 capacities, 100 Mbps down to 0.1) |
+| ...and with a lease active | `test_invariant_holds_for_every_class_of_lease` |
+| a ceil never exceeds capacity | `test_ceil_never_exceeds_capacity` |
+| higher weight means more capacity | `test_higher_weight_means_more_capacity` |
+| idle does not inflate anything | `test_idle_samples_do_not_change_capacity` |
+| floors that cannot all fit | `test_degenerate_capacity_reports_degraded` |
+
+**What is genuinely not covered:** there is no test for **many simultaneous
+flows**. The invariant is checked over *capacities*, not over flow counts,
+because `build_plan` splits by weight per class rather than per flow — so the
+"2000 flows" claim was describing coverage that does not exist. Class-level
+splitting means flow count is not an input to the arithmetic; per-flow fairness
+is a question the current policy does not answer, and one no test asks.
 
 ## The limit that cannot be bypassed by this formula
 
@@ -52,7 +76,7 @@ edge cases were not workbenchable here.
 | shares proportional, ceiling divided | **yes** |
 | bulk limited when capacity exhausted | **yes** |
 | correction class outranks learned class | **yes** |
-| degradation over many flows | **yes** (2000 flows) |
+| degradation over many flows | **no** — not tested; flow count is not an input to `build_plan` |
 | max parallel flows per band | **yes** |
 | reserve a guaranteed minimum | **not implemented**, deliberately |
 | no starvation over a long run | **BLOCKED** -- needs >= 30 min |

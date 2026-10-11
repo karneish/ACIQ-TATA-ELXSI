@@ -80,6 +80,38 @@ in read-back is reported as not installed.
 checks only the two fields after the handle, since a child's `parent` is often
 `1:`.
 
+## A third defect, found by tracing the baseline's provenance
+
+Phase 7.1 of the acceptance brief asks whether the rollback target is derived
+from a trustworthy baseline rather than from the same state being checked.
+Traced, it is: `_last_good_state` is the read-back captured at commit, and that
+read-back had already been checked against `tree` by `verify()`. The target is
+therefore an observation cross-checked against intent — not the post-rollback
+state, and not derived only from the path under test.
+
+**But the trace found something else.** `verify()` deliberately tolerates fields
+the reader cannot see, records them in `unverified_fields`, and **commits
+anyway**. Under a reader that reports classes but no rates, the stored baseline
+is structurally incapable of failing a comparison:
+
+```
+baseline stored : {'1:1': {}, '1:10': {}, '1:20': {}, '1:30': {}}
+ROLLBACK VERDICT: verified      fields compared: 0      rolled_back: True
+```
+
+A rollback reporting success after comparing **nothing**. Same defect family as
+the original `return True`, one level deeper, invisible to every existing test
+because they all used a reader that reports rates.
+
+Fixed by `_comparable_pairs()`; zero comparable pairs is now `unverifiable`,
+never `verified`.
+
+**The fix immediately introduced a false negative, also caught.** Comparing raw
+keys meant a baseline keyed `1:10` and a read-back keyed `1:0010` shared zero
+fields, so a genuinely verified restore was reported unverifiable.
+`test_zero_padded_handles_do_not_trigger_a_false_mismatch` caught it; both sides
+are now canonicalised.
+
 ## Two defects the tests caught in the fix itself
 
 1. **`_read_class_state` returns raw `ClassState` objects.** The rollback path
@@ -96,11 +128,11 @@ checks only the two fields after the handle, since a child's `parent` is often
 
 | file | contents | status |
 |---|---|---|
-| `tests/test_rollback.py` | 29 tests | **MOCKED — all of them** |
+| `tests/test_rollback.py` | 33 tests | **MOCKED — all of them** |
 | `tests/test_rollback_live.py` | 6 tests | **LIVE, skipped here** |
 | `artifacts/validation/<rev>/rollback-live.log` | live run | **will not exist until run with root** |
 
-### Mocked coverage (29)
+### Mocked coverage (33)
 
 All 14 required scenarios: matching read-back, command failure, commands-ok-state-wrong,
 malformed output, missing interface, partial restoration, residual class, divergent
@@ -109,7 +141,7 @@ preservation, audit output. Plus comparison-rule tests and two asserting the aud
 reason leaks no environment or credential.
 
 **They have teeth — measured, not assumed.** Reinstating the original
-`return True` fails **14 of 29**:
+`return True` fails **14 of the 29** that existed at the time:
 
 ```
 FAIL test_cleanup_failure_alone_is_still_reported

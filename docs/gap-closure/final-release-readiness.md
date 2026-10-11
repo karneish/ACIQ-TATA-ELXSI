@@ -1,6 +1,6 @@
 # Final release readiness
 
-**Revision:** see `git log -1` · **Suite:** 819 pass, 0 fail, 6 skipped · **Claim audit:** exit 0
+**Revision:** see `git log -1` · **Suite:** 832 pass, 0 fail, 6 skipped · **Claim audit:** exit 0
 
 ## Verdict
 
@@ -61,8 +61,17 @@ target is the canonical state **observed** at commit, not a re-rendering of
 intent. `force_safe()` is verified too, by reading the root qdisc — the safe
 state is class-free, so `class show` cannot distinguish it from no qdisc at all.
 
-**Unit-test evidence.** 29 tests in `tests/test_rollback.py`, **all mocked and
-labelled as such**, covering all 14 required scenarios. They have teeth: the
+**Unit-test evidence.** 33 tests in `tests/test_rollback.py`, **all mocked and
+labelled as such**, covering all 14 required scenarios.
+
+**A third defect, found this pass by tracing the baseline's provenance (7.1).**
+`verify()` tolerates fields the reader cannot see and commits anyway, so a
+baseline captured under a reader that reports no rates is structurally incapable
+of failing a comparison — and rollback reported `verified` having compared
+**zero** fields, with `rolled_back=True`. Same family as the original
+`return True`, one level deeper, invisible to every test using a normal reader.
+Now zero comparable pairs is `unverifiable`. The fix's first version introduced
+a false negative on `1:10` vs `1:0010`, caught immediately by an existing test. They have teeth: the
 original defect was reinstated and **14 of the 29 failed**, then the fix was
 restored and all 29 pass.
 
@@ -86,16 +95,17 @@ by another subsystem.
 
 | suite | command | exit | count |
 |---|---|---|---|
-| full | `python3 -m unittest discover -s tests -t .` | 0 | **819 pass, 0 fail, 6 skipped** |
-| rollback (mocked) | `python3 -m unittest tests.test_rollback` | 0 | 29 pass |
+| full | `python3 -m unittest discover -s tests -t .` | 0 | **832 pass, 0 fail, 6 skipped** |
+| rollback (mocked) | `python3 -m unittest tests.test_rollback` | 0 | 33 pass |
 | rollback (live) | `sudo python3 -m unittest tests.test_rollback_live -v` | — | **6 skipped — and 5 defects found on first real run** |
 | live-vs-double | `python3 -m unittest tests.test_rollback_live_sim` | 0 | 6 pass |
 | harness | `python3 -m unittest tests.test_acceptance` | 0 | 21 pass |
 | acceptance | `python3 tools/acceptance.py` | 0 | 6 PASS · 0 FAIL · **7 BLOCKED** |
-| claim audit | `python3 tools/audit_claims.py` | 0 | clean |
+| claim audit | `python3 tools/audit_claims.py` | 0 | clean, incl. 18 test citations resolved |
 
 Count reconciliation: 746 (`6a22208c`) → 757 (+11 classifier) → 809 (+29 rollback,
-+16 harness, +6 live) → 813 (+4 claim-audit parser) → **819** (+6 live-vs-double). **Nothing was deleted or weakened at any point.**
++16 harness, +6 live) → 813 (+4 audit parser) → 819 (+6 live-vs-double) → 828
+(+5 vacuous-verification, +5 completion/skips) → **832** (+4 citation traceability). **Nothing was deleted or weakened at any point.**
 
 ## D. Live QoS evidence
 
@@ -161,6 +171,15 @@ python3 tools/audit_claims.py     # exit 0
    acceptance run**. Fixed with a floor; regression-tested.
 3. `min_rate` scope rationale corrected — see E.
 4. `rollback-failure-injection.md` marked the verification gap fixed.
+5. **Seven invented test names removed** from two documents. The tests were
+   real; the names were not. `audit_claims.py` now resolves every backticked
+   `test_*` citation in `docs/gap-closure/` against the real test sources, and
+   an unresolvable citation reaches the exit code — reporting DRIFT and exiting
+   0 would make the check decorative, the third instance of that shape here.
+6. Correcting those names revealed that **`test_two_thousand_flows_still_sum_to_capacity`
+   never existed**, so "degradation over many flows: yes (2000 flows)" was
+   wrong. `build_plan` splits per *class*, so flow count is not an input to the
+   arithmetic. Per-flow fairness is unasked and untested.
 
 ## G. Verdict rationale and what would change it
 

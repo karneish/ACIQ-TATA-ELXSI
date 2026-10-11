@@ -18,8 +18,8 @@ from dataclasses import dataclass, field
 from .model import RatePlan
 from .qdisc import parse_qdisc_text, read_class_state
 from .shield import Mode, Shield, Violation
-from .tc import (TcTree, Mismatch, build_tree, compare_states, parse_class_state,
-                 render, verify, unverified_fields)
+from .tc import (TcTree, Mismatch, build_tree, canon_classid, compare_states,
+                 parse_class_state, render, verify, unverified_fields)
 
 
 class Runner:
@@ -121,6 +121,28 @@ class FakeRunner:
         if "stats" in argv or "statistics" in argv:
             pass
         return 0, "", ""
+
+
+def _comparable_pairs(target: dict, actual: dict) -> int:
+    """How many (class, field) pairs BOTH sides actually report.
+
+    Presence of a class is not comparability: `tc` can print a class without
+    its rates, and a baseline captured under one kernel's output format can
+    therefore be structurally incapable of failing a comparison.
+    """
+    # Canonicalise both sides. Without this, a baseline keyed `1:10` and a
+    # read-back keyed `1:0010` -- the same class, printed the other way --
+    # compare as zero shared fields and a genuinely verified restore would be
+    # reported unverifiable. The padding test caught exactly that.
+    tgt = {canon_classid(k): v for k, v in target.items()}
+    act = {canon_classid(k): v for k, v in actual.items()}
+    n = 0
+    for cid, want in tgt.items():
+        got = act.get(cid) or {}
+        for key in ("rate", "ceil"):
+            if want.get(key) is not None and got.get(key) is not None:
+                n += 1
+    return n
 
 
 #: Rollback outcome vocabulary. Each is a distinct condition with a different
@@ -448,6 +470,27 @@ class TransactionManager:
             self.last_rollback = res
             self._log(self.clock(), f"rollback_{res.outcome}",
                       reason=res.reason, source=source, failed=failed[:6])
+            return res
+
+        # Count what can actually be compared *before* trusting an empty
+        # mismatch list. If the reader exposes no rate/ceil on either side,
+        # compare_states returns [] -- which means "nothing was wrong", not
+        # "everything was checked and matched". Reporting `verified` there
+        # would make the check pass precisely when it has no content, and the
+        # project's own rule for unverifiable fields says they must never read
+        # as a pass.
+        comparable = _comparable_pairs(target, actual)
+        if not comparable:
+            res = RollbackResult(
+                False, UNVERIFIABLE,
+                reason="the read-back exposed no comparable rate/ceil fields "
+                       f"(target {len(target)} classes, actual "
+                       f"{len(actual)} classes), so the restored state cannot "
+                       "be confirmed -- an empty comparison is not a match",
+                source=source, target="known-good")
+            self.last_rollback = res
+            self._log(self.clock(), "rollback_unverifiable", reason=res.reason,
+                      source=source)
             return res
 
         mism, unver = compare_states(target, actual)

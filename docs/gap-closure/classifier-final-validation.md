@@ -6,17 +6,28 @@ The `89b87758` changes were re-inspected and re-measured, not rewritten.
 
 | property | where | test |
 |---|---|---|
-| EF alone cannot grant interactive priority | `aciq/classify.py:281` — `not_interactive` gates the claim | `test_ef_marked_bulk_is_denied_interactive_priority` |
-| bulk behaviour considered independently of the EF mark | `FlowFeatures.looks_interactive()` (`:193`) reads rate and asymmetry only; it never inspects DSCP | `test_ef_denies_bulk_shape_independently_of_mark` |
-| port fallback cannot override stronger evidence | rate rules (step 3) precede port hints (step 4); `:387` requires `looks_interactive()` | `test_small_interactive_flow_on_a_bulk_port_is_not_demoted` |
-| conflicting signals follow explicit precedence | documented 6-step tree in `classifier-policy.md` | `test_rate_evidence_takes_precedence_over_a_port_hint` |
-| low confidence does not get priority | `abstain` at `conf=0.35` for insufficient/too-young/idle | `test_insufficient_*`, `test_very_low_rate_tcp_is_not_adaptive` |
-| missing/stale handled explicitly | `mature()` gate; missing `age_s`/`rx_bytes` → abstain | `test_missing_*` |
+| EF alone cannot grant interactive priority | `aciq/classify.py:281` — `not_interactive` gates the claim | `test_sustained_bulk_claiming_ef_is_not_interactive` |
+| bulk behaviour considered independently of the EF mark | `FlowFeatures.looks_interactive()` (`:193`) reads rate and asymmetry only; it never inspects DSCP | `test_asymmetry_is_the_separator_not_duty_cycle` |
+| port fallback cannot override stronger evidence | rate rules (step 3) precede port hints (step 4); `:387` requires `looks_interactive()` | `test_a_small_flow_on_a_bulk_port_is_not_bulk` |
+| conflicting signals follow explicit precedence | documented 6-step tree in `classifier-policy.md` | `test_rate_evidence_outranks_the_port_hint` |
+| low confidence does not get priority | `abstain` at `conf=0.35` for insufficient/too-young/idle | `test_bulk_threshold_is_relative_adaptive_is_absolute`, `test_insufficient_*` |
+| missing/stale handled explicitly | `mature()` gate; missing `age_s`/`rx_bytes` → abstain | `test_immature_ef_flow_is_not_judged_a_conflict`, `test_insufficient_*` |
 | inference independent of ground truth | `classify(f, capacity_mbps, trust)` — no label parameter exists | signature check |
 | evaluation labels independent of predictions | `tools/eval_classifier.py` builds truth from the case constructor, never from `Classification` | `:40`, `:170` |
 
 `classify()` has no label, truth or expected argument, so ground truth cannot
 reach inference even accidentally.
+
+**Correction.** An earlier revision of this table cited four test names that do
+not exist (the invented names are recorded in `acceptance-harness-audit.md`
+rather than here, so they are not re-cited as evidence). The tests were real and
+the behaviour was correct; the *names* were invented while writing the
+document. That is exactly the failure the brief's traceability rule exists to
+catch, and it survived because nothing checked it.
+
+`tools/audit_claims.py` now verifies every `test_*` identifier cited in
+`docs/gap-closure/` against the actual test sources, so a citation that names
+nothing is a DRIFT like any other.
 
 ## Measured result — `tools/eval_classifier.py`, revision `507ed7af`
 

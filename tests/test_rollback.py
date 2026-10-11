@@ -430,3 +430,88 @@ class TestDiagnostics(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class NoRatesBase(FakeRunner):
+    """A reader that reports classes but never their rates."""
+
+    def run(self, argv):
+        if "class" in argv and "show" in argv:
+            self.commands.append(argv)
+            return 0, ("" if "-j" not in argv
+                       else TestVacuousVerification.NO_RATE_READBACK), ""
+        return super().run(argv)
+
+
+class TestVacuousVerification(unittest.TestCase):
+    """A comparison with nothing to compare must not read as a pass.
+
+    Found by tracing where the rollback target comes from, as the brief asks:
+    `_last_good_state` is the read-back captured at commit, and `verify()`
+    deliberately tolerates fields the reader cannot see. So a commit under a
+    reader that reports classes but no rates stores a baseline with **no
+    comparable fields**, and `compare_states` then returns an empty mismatch
+    list -- meaning "nothing was wrong", not "everything matched".
+    """
+
+    NO_RATE_READBACK = json.dumps(
+        [{"kind": "htb", "handle": h} for h in ("1:1", "1:10", "1:20", "1:30")])
+
+    def _blind_commit(self):
+        tm = TransactionManager(NoRatesBase(), Shield())
+        tm.remember_capacity(CAP)
+        out = tm.apply(plan(), now=1000.0)
+        self.assertTrue(out.ok)
+        # the commit succeeded, but stored nothing comparable
+        self.assertEqual(tm._last_good_state,
+                         {"1:1": {}, "1:10": {}, "1:20": {}, "1:30": {}})
+        return tm
+
+    def test_a_baseline_with_no_comparable_fields_is_not_a_pass(self):
+        tm = self._blind_commit()
+        res = tm._rollback()
+        self.assertFalse(res.ok)
+        self.assertEqual(res.outcome, UNVERIFIABLE)
+        self.assertIn("no comparable", res.reason)
+        self.assertIn("not a match", res.reason)
+
+    def test_outcome_rolled_back_is_false_when_nothing_was_comparable(self):
+        """The verdict must reach Outcome.rolled_back, not just the audit log."""
+        tm = self._blind_commit()
+
+        class FailNext(NoRatesBase):
+            """Same blind reader, but the next apply is refused."""
+            def run(self, argv):
+                if "class" in argv and "add" in argv and self.commands:
+                    self.commands.append(argv)
+                    return 1, "", "injected apply failure"
+                return super().run(argv)
+
+        tm.runner = FailNext()
+        out = tm.apply(plan(), now=2000.0)
+        self.assertFalse(out.ok)
+        self.assertIsNotNone(out.rollback)
+        self.assertEqual(out.rollback.outcome, UNVERIFIABLE)
+        self.assertFalse(out.rolled_back,
+                         "a rollback that compared nothing must not be "
+                         "reported as rolled back")
+
+    def test_a_partially_visible_baseline_still_verifies(self):
+        """The fix must not reject a baseline where only *some* fields are
+        invisible -- that is a weaker but genuine comparison."""
+        tm = CommitThen()
+        good = dict(tm._last_good_state)
+        partial = {k: dict(v) for k, v in good.items()}
+        first = sorted(partial)[0]
+        partial[first] = {}                      # this class reports no rates
+        tm._last_good_state = partial
+        tm.runner = FakeRunner(auto_readback=True)
+        res = tm._rollback()
+        self.assertEqual(res.outcome, VERIFIED, res.reason)
+
+    def test_comparable_pairs_counts_only_shared_fields(self):
+        from aciq.txn import _comparable_pairs
+        self.assertEqual(_comparable_pairs(
+            {"1:10": {"rate": 6.0, "ceil": 6.0}}, {"1:10": {"rate": 6.0}}), 1)
+        self.assertEqual(_comparable_pairs(
+            {"1:10": {"rate": 6.0}}, {"1:10": {}}), 0)
+        self.assertEqual(_comparable_pairs({}, {}), 0)

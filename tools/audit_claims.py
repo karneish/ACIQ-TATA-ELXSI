@@ -102,6 +102,35 @@ def check_code_claims() -> list[dict]:
             for n, c, d in checks]
 
 
+def check_cited_tests() -> list[dict]:
+    """Every `test_*` name cited in docs/gap-closure/ must exist.
+
+    Citing a test that does not exist is the documentation equivalent of a
+    number that does not reconcile: it reads as evidence and checks nothing.
+    This caught four invented test names in classifier-final-validation.md.
+    """
+    import re as _re
+    tests = ROOT / "tests"
+    defined: set[str] = set()
+    for f in sorted(tests.glob("test_*.py")):
+        defined |= set(_re.findall(r"def (test_\w+)", f.read_text()))
+    cited: dict[str, list[str]] = {}
+    for doc in sorted((ROOT / "docs" / "gap-closure").glob("*.md")):
+        for name in _re.findall(r"`(test_[A-Za-z0-9_]+)`", doc.read_text()):
+            cited.setdefault(name, []).append(doc.name)
+    out = []
+    for name, where in sorted(cited.items()):
+        # a trailing `*` is a deliberate wildcard, e.g. `test_missing_*`
+        if name.endswith("*"):
+            prefix = name[:-1]
+            found = any(d.startswith(prefix) for d in defined)
+        else:
+            found = name in defined
+        out.append({"test": name, "defined": found,
+                    "cited_in": sorted(set(where))})
+    return out
+
+
 def parse_suite_status(text: str) -> dict:
     """Read unittest's summary. Pure, so it can be unit-tested.
 
@@ -143,6 +172,15 @@ def main() -> int:
         print(f"  [{'ok ' if c['agrees'] else 'DRIFT'}] {c['constant']:<32} "
               f"code={c['code']} documented={c['documented']}")
 
+    print("\n-- test names cited in docs/gap-closure/ --")
+    tc = check_cited_tests()
+    for t in tc:
+        if t["test"].endswith("*"):
+            continue
+        mark = "ok " if t["defined"] else "DRIFT"
+        print(f"  [{mark}] {t['test']:<56} {', '.join(t['cited_in'])}")
+    missing = [t for t in tc if not t["defined"]]
+
     print("\n-- evidence cited by claims --")
     ec = scan_evidence()
     for e in ec:
@@ -163,11 +201,19 @@ def main() -> int:
           + (f", {t['skipped']} skipped" if t['skipped'] else ""))
 
     summary = {"constants_disagree": bad, "evidence": ec,
-               "red_flags": flags, "tests": t}
+               "red_flags": flags, "tests": t,
+               "cited_tests_missing": missing}
     (ROOT / "docs" / "gap-closure" / "claim-audit.json").write_text(
         json.dumps(summary, indent=2, default=str) + "\n")
     print("\n  wrote docs/gap-closure/claim-audit.json")
-    return 1 if bad or flags else 0
+    if missing:
+        print(f"  {len(missing)} cited test name(s) do not exist")
+    # A test-name citation that resolves to nothing is exactly as much a
+    # documentation defect as a constant that disagrees with the code, so it
+    # has to reach the exit code. Reporting DRIFT and exiting 0 would make the
+    # check decorative -- the same "recorded, printed, never consulted" shape
+    # already found in this file and in tools/acceptance.py.
+    return 1 if bad or flags or missing else 0
 
 
 if __name__ == "__main__":
