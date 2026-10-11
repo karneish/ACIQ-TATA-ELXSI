@@ -760,10 +760,32 @@ three TVs are provably symmetric (17.92 MB each), so the counterfactual is
 measured rather than assumed. Class-side: `tv1` alone classifies `leased` and
 the other three keep their own classes.
 
+### Replicated across three paired seeds
+
+| seed | tv1 no-lease | tv1 leased | change | parent_max (no-lease / leased) |
+|---|---|---|---|---|
+| 42 | 17.99 MB | 23.05 MB | **+28.14%** | 10.19 / 10.07 |
+| 43 | 17.96 MB | 23.00 MB | **+28.08%** | 10.15 / 10.11 |
+| 44 | 17.99 MB | 23.05 MB | **+28.16%** | 10.08 / 10.10 |
+
+Three-device total: 53.97 -> 53.93, 53.88 -> 53.74, 53.92 -> 53.89 MB. The link
+is saturated in every run and delivery is redistributed, not added. The ceiling
+held in all six runs at 10.07-10.19 Mbps against a 10 Mbps cap, which is the
+independent confirmation that the over-subscription fix works.
+
+**The exact paired Wilcoxon is p = 0.25 at n = 3 — and that is the floor, not a
+result.** Two-sided exact Wilcoxon over 3 pairs cannot go below 0.25 however
+large the effect, because it enumerates 2^3 sign flips; `aciq/report.py` already
+notes that 6 pairs are needed before p < 0.05 is reachable at all. The effect is
+consistent to within 0.08 percentage points across every seed, but consistency
+across three is not significance, and reporting it as such would be the exact
+error this project has been correcting all along.
+
 Caveats, stated rather than smoothed over:
 
-* **one seed.** A difference this size warrants more, and this is a single
-  paired comparison.
+* **three seeds.** The direction is unanimous and the magnitude is stable, but
+  **six paired seeds are needed for an exact p < 0.05**, and that is the next
+  run.
 * **M2 is still dead.** The plan comes from the requested drop, not from a
   measurement, so this shows the lease mechanism working on a correct plan --
   not adaptation working.

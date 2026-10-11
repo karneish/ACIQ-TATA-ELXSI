@@ -56,9 +56,13 @@ Read this before quoting a number.
    17.92 MB without the lease (+28.5%), while the two un-leased devices fell to
    15.40 and 15.36 MB (-14%). Total delivered is unchanged (53.76 vs 53.80 MB) --
    the link is the constraint, so a lease redistributes rather than adds.
-   Measured by the senders, not by our own class accounting. **One seed**, and
-   M2 is still dead, so this is the lease mechanism working on a correct plan,
-   not adaptation working.
+   Measured by the senders, not by our own class accounting. Replicated on three
+   paired seeds at +28.14% / +28.08% / +28.16%, with the ceiling holding at
+   10.07-10.19 Mbps in all six runs. **The exact paired Wilcoxon is p = 0.25 at
+   n = 3, which is the floor rather than a result** -- two-sided exact Wilcoxon
+   over 3 pairs cannot go below 0.25, so six paired seeds are needed before
+   p < 0.05 is reachable. M2 is still dead, so this is the lease mechanism
+   working on a correct plan, not adaptation working.
 6. **Classification accuracy is measured on self-generated traffic**, and the
    link is an HTB token-bucket emulation rather than real access hardware.
 
