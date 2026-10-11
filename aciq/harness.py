@@ -329,7 +329,9 @@ class Harness:
             # reclassify into a queue that has none. Cheap once applied: the
             # call is a no-op while the lease is unchanged and already in effect.
             self.sync_lease(self._lease_book.to_policy_lease(),
-                            self._configured_capacity)
+                            self._capacity_mbps
+                            if self._capacity_mbps is not None
+                            else self._configured_capacity)
         measured = self._estimator.current.mbps
         cap = measured if measured else self._configured_capacity
         if self._enforcer.capacity_mbps != cap:
@@ -358,12 +360,6 @@ class Harness:
 
     # ---------------- the invariant ----------------
     def set_capacity(self, capacity_mbps: float) -> tuple[tuple[str, ...], ...]:
-        # Remember what the link is *now*. Without this a lease applied later
-        # rebuilt its plan from the capacity the run started at and quietly
-        # restored a dropped link: measured 15.1-15.4 Mbps against a 10 Mbps
-        # cap for six seconds after the lease plan committed.
-        self._capacity_mbps = capacity_mbps
-
         """Change the emulated link capacity: class 1:1, and the children's ceil.
 
         **The parent alone does not bound the link.** HTB lets a child borrow up
@@ -423,8 +419,16 @@ class Harness:
         # value that was asked for rather than one the link ever reached.
         self._capacity_change_ok = not failures
         self._capacity_change_error = "; ".join(failures)
+        # Only on success. A refused change is not the link's capacity, and
+        # recording it as one is how "tc said no" turned into the system
+        # confidently planning for a link that does not exist.
+        #
+        # `_capacity_mbps` is what a later lease rebuild reads. Without it the
+        # rebuild used the capacity the run started at, and the retry after a
+        # shield deferral re-applied a 100 Mbps plan onto a link capped to 10.
         if not failures:
             self._configured_capacity = capacity_mbps
+            self._capacity_mbps = capacity_mbps
         return tuple(cmds)
 
     #: Whether the last `set_capacity` actually took effect.
@@ -515,14 +519,21 @@ class Harness:
         if same and self._lease_in_effect:
             return True
 
-        if not same:
-            # The caller's capacity is the one the run *started* at. Once a drop
-            # has been applied, rebuilding the lease plan from it would undo the
-            # drop -- the plan carries the parent rate. The link's current
-            # capacity is the only correct input here.
-            effective = (self._capacity_mbps
-                         if self._capacity_mbps is not None else capacity_mbps)
-            self.set_lease(lease, effective)
+        # Rebuild against the link's *current* capacity whenever we are about to
+        # apply -- not only when the lease changed.
+        #
+        # The retry after a shield deferral takes the `same` path: the lease has
+        # not changed, but it is not yet in effect. Guarding only the
+        # "changed" branch left that retry applying whatever `_current_plan`
+        # already held, which was the plan built at the start of the run:
+        #
+        #     classid 1:1  htb rate 100.0000mbit ceil 100.0000mbit
+        #     classid 1:40 htb rate  39.0984mbit ceil 100.0000mbit
+        #
+        # on a link that had been capped to 10.
+        effective = (self._capacity_mbps
+                     if self._capacity_mbps is not None else capacity_mbps)
+        self.set_lease(lease, effective)
         if self._current_plan is None:
             self._lease_in_effect = False
             return False

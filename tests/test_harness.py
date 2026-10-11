@@ -464,3 +464,82 @@ class TestALeaseCannotUndoACapacityDrop(unittest.TestCase):
         self.assertIsNone(h._capacity_mbps)
         h.apply_system(SystemSpec.ACIQ, 50.0)
         self.assertEqual(h._capacity_mbps, 50.0)
+
+
+class TestTheShieldRetryCannotReapplyAStalePlan(unittest.TestCase):
+    """A lease applied at t=0 is deferred by the shield's change window and
+    retried each tick. The retry takes the "lease unchanged" path, which skipped
+    the plan rebuild -- so it applied the plan built at the start of the run:
+
+        classid 1:1  htb rate 100.0000mbit ceil 100.0000mbit
+        classid 1:40 htb rate  39.0984mbit ceil 100.0000mbit
+
+    on a link that had been capped to 10 Mbps. Measured 12.27 Mbps against a
+    10 Mbit parent, 23% over.
+    """
+
+    def _deferred_lease_then_drop(self):
+        clock = [0.0]
+        h = Harness(runner=FakeRunner(auto_readback=True), clock=lambda: clock[0])
+        h.reset_for_run()
+        h.set_lease(None, 100.0)
+        h.apply_system(SystemSpec.ACIQ, 100.0)
+        lease = Lease(id="l", target="device", ip="203.0.113.4", weight=0.6)
+        first = h.sync_lease(lease, 100.0)
+        self.assertFalse(first, "the first apply should be deferred by the shield")
+        return h, lease, clock
+
+    def test_a_drop_updates_the_configured_capacity(self):
+        """Both the enforcer and the per-tick lease sync read this. Left at the
+        run's starting value, a dropped link kept being treated as 100 Mbps."""
+        h, _lease, _c = self._deferred_lease_then_drop()
+        self.assertEqual(h._configured_capacity, 100.0)
+        h.set_capacity(10.0)
+        self.assertEqual(h._configured_capacity, 10.0)
+        self.assertEqual(h._capacity_mbps, 10.0)
+
+    def test_the_retry_rebuilds_the_plan_for_the_dropped_link(self):
+        h, lease, clock = self._deferred_lease_then_drop()
+        clock[0] = 5.0
+        h.set_capacity(10.0)
+        clock[0] = 6.13
+        h.runner.commands.clear()
+        self.assertTrue(h.sync_lease(lease, 100.0), "the retry should now succeed")
+        self.assertEqual(h._current_plan.capacity_mbps, 10.0,
+                         "the retry re-applied the start-of-run plan")
+
+    def test_no_class_is_promised_more_than_the_link_has(self):
+        h, lease, clock = self._deferred_lease_then_drop()
+        clock[0] = 5.0
+        h.set_capacity(10.0)
+        clock[0] = 6.13
+        h.sync_lease(lease, 100.0)
+        self.assertLessEqual(sum(h._current_plan.rates.values()), 10.0)
+
+    def test_no_ceiling_is_promised_past_the_link(self):
+        h, lease, clock = self._deferred_lease_then_drop()
+        clock[0] = 5.0
+        h.set_capacity(10.0)
+        clock[0] = 6.13
+        h.sync_lease(lease, 100.0)
+        for v in h._current_plan.rates.values():
+            self.assertLessEqual(v, 10.0)
+
+    def test_an_unchanged_lease_still_reapplies_rather_than_going_quiet(self):
+        """The fix must not turn the retry into a no-op: that was the original
+        bug where class 1:40 was never created at all."""
+        h, lease, clock = self._deferred_lease_then_drop()
+        clock[0] = 6.13
+        self.assertTrue(h.sync_lease(lease, 100.0))
+        self.assertIn(TrafficClass.LEASED, h._current_plan.rates)
+
+    def test_an_already_effective_lease_is_still_a_cheap_no_op(self):
+        """The fast path matters: enforce() calls this every tick, and rebuilding
+        every tick is the loop that destroyed the filters repeatedly."""
+        h, lease, clock = self._deferred_lease_then_drop()
+        clock[0] = 6.13
+        self.assertTrue(h.sync_lease(lease, 100.0))
+        h.runner.commands.clear()
+        self.assertTrue(h.sync_lease(lease, 100.0))
+        self.assertEqual(h.runner.commands, [],
+                         "an unchanged, already-applied lease rebuilt the qdisc")
