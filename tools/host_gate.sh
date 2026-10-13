@@ -33,6 +33,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
 
 REV="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+# Every results directory gets stamped with the revision that produced it, so
+# evidence can never be silently combined with a report for a different commit.
+stamp() { mkdir -p "$1" && git rev-parse HEAD > "$1/REVISION" 2>/dev/null || true; }
 OUT="artifacts/validation/${REV}/host"
 mkdir -p "$OUT" || exit 1
 
@@ -134,6 +137,7 @@ log ""
 if [ "$FULL" -eq 1 ]; then
   log "== gate 3: capacity-change adaptation (s2_wan_drop) =="
   log "  ~40s plus testbed build"
+  stamp data/host_gate_adapt
   python3 run_experiments.py --scenario s2_wan_drop --system aciq --enforce \
       --drop 10 --drop-at 5 --seed 42 --results-dir data/host_gate_adapt 2>&1 \
       | tee "$OUT/adaptation.log" | tail -5
@@ -143,6 +147,7 @@ if [ "$FULL" -eq 1 ]; then
   log "== gate 4: FIFO / CAKE / ACIQ comparison, 7 paired seeds =="
   log "  ~20 min plus testbed build"
   for sysname in b0_fifo b1_cake95 aciq; do
+    stamp "data/host_gate_${sysname}"
     python3 run_experiments.py --scenario s3_tv_and_gaming --system "$sysname" \
         --seeds 7 --seed 42 --results-dir "data/host_gate_${sysname}" 2>&1 \
         | tee -a "$OUT/comparison.log" | tail -2
@@ -152,6 +157,7 @@ if [ "$FULL" -eq 1 ]; then
 
   log "== gate 5: 30-minute soak =="
   log "  the shipped scenarios are 30-40s; --duration-s is what makes this possible"
+  stamp data/host_gate_soak
   python3 run_experiments.py --scenario s3_tv_and_gaming --system aciq \
       --enforce --duration-s 1800 --results-dir data/host_gate_soak 2>&1 \
       | tee "$OUT/soak.log" | tail -5

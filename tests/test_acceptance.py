@@ -547,3 +547,81 @@ class TestEvidenceMustBeTracked(unittest.TestCase):
             self.assertNotEqual(r.returncode, 0,
                                 f"{cited} is excluded by .gitignore but cited "
                                 f"by tracked documentation")
+
+
+class TestExperimentEvidenceGates(unittest.TestCase):
+    """The five long-running gates must be judged from artefacts, not hardcoded.
+
+    Two failure modes had to be excluded at once:
+      - hardcoded NOT_RUN, so running them changed nothing in the summary;
+      - blind PASS, so a stale or thin run would be reported as a detection.
+
+    The adaptation directory on disk had 3 samples and an estimator reading
+    47.66 Mbps for a link that was actually 10 Mbps. That is not a detection."""
+
+    def test_a_thin_run_is_not_a_detection(self):
+        self.assertGreaterEqual(A.MIN_ADAPT_SAMPLES, 10)
+
+    def test_an_off_by_more_than_tolerance_is_inconclusive(self):
+        self.assertEqual(A.ADAPT_TOLERANCE_X, 2.0)
+        # 47.66 for a 10 Mbps link is 4.8x: far outside
+        self.assertGreater(47.66, A.ADAPT_TOLERANCE_X * 10.0)
+
+    def test_unstamped_evidence_is_flagged_unbound(self):
+        note = A._revision_note("data/does_not_exist_at_all", "abc12345")
+        self.assertIn("UNBOUND", note)
+
+    def test_evidence_from_another_revision_is_flagged(self):
+        import tempfile
+        from pathlib import Path as _P
+        d = tempfile.mkdtemp()
+        (_P(d) / "REVISION").write_text("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n")
+        saved = A.ROOT
+        try:
+            A.ROOT = _P(d)
+            note = A._revision_note("", "a" * 40)
+        finally:
+            A.ROOT = saved
+        self.assertIn("evidence from revision deadbeef", note)
+
+    def test_matching_revision_produces_no_caveat(self):
+        """A stamp from the CURRENT commit must not be flagged.
+
+        This caught a real bug: the stamp holds a full SHA while the caller
+        passed a short one, so every stamp compared unequal and even
+        same-revision evidence was reported as a mismatch."""
+        import tempfile
+        from pathlib import Path as _P
+        d = tempfile.mkdtemp()
+        sha = "a" * 40
+        (_P(d) / "REVISION").write_text(sha + "\n")
+        saved = A.ROOT
+        try:
+            A.ROOT = _P(d)
+            note = A._revision_note("", sha)
+            short = A._revision_note("", sha[:8])
+        finally:
+            A.ROOT = saved
+        self.assertEqual(note, "")
+        self.assertEqual(short, "", "a short SHA is the same revision, not a mismatch")
+
+    def test_comparison_below_the_seed_floor_is_not_a_result(self):
+        self.assertGreaterEqual(A.MIN_COMPARISON_SEEDS, 6)
+
+    def test_soak_floor_is_thirty_minutes(self):
+        self.assertEqual(A.MIN_SOAK_S, 1800.0)
+
+    def test_host_gate_stamps_every_results_directory(self):
+        from pathlib import Path as _P
+        src = (_P(__file__).resolve().parents[1]
+               / "tools" / "host_gate.sh").read_text()
+        self.assertIn("stamp()", src)
+        # the loop variable is quoted in the shell, so match either form
+        for d in ("data/host_gate_adapt", "data/host_gate_${sysname}",
+                  "data/host_gate_soak"):
+            self.assertTrue(f"stamp {d}" in src or f'stamp "{d}"' in src,
+                            f"{d} is not revision-stamped")
+        # three call sites; the definition is `stamp()`, which does not match
+        self.assertEqual(src.count("stamp "), 3,
+                         "all three results dirs must be revision-stamped")
+        self.assertIn("git rev-parse HEAD", src)

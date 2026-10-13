@@ -35,7 +35,7 @@ PASS, FAIL, BLOCKED, NOT_RUN = "PASS", "FAIL", "BLOCKED", "NOT RUN"
 #: silently shrunk (a broken import in one test module drops it, and `discover`
 #: reports the rest as a success). Without a floor, deleting a whole test module
 #: would still produce a green acceptance run.
-MIN_TESTS = 849
+MIN_TESTS = 857
 
 
 #: Test modules covering mandatory release requirements. A skip in one of
@@ -92,6 +92,195 @@ def suite_verdict(rc: int, text: str, min_tests: int = MIN_TESTS) -> tuple:
     if p["skipped"]:
         detail += f", {p['skipped']} skipped"
     return PASS, detail
+
+
+#: Minimum paired seeds before a FIFO/CAKE/ACIQ comparison means anything.
+#: The report refuses to emit a p-value below 6; 7 is what the gate collects.
+MIN_COMPARISON_SEEDS = 6
+#: Minimum soak duration for a stability claim, in seconds.
+MIN_SOAK_S = 1800.0
+#: A run with fewer observations than this has not converged, whatever the
+#: estimator happened to print. The adaptation evidence on disk had 3.
+MIN_ADAPT_SAMPLES = 10
+#: Estimator further than this multiple of the true post-drop capacity is not a
+#: detection, it is a guess.
+ADAPT_TOLERANCE_X = 2.0
+
+
+def _results(sub: str) -> list[dict]:
+    """Every result.json under a results directory, parsed."""
+    import json as _json
+    out = []
+    for f in sorted((ROOT / sub).glob("*/result.json")):
+        try:
+            d = _json.loads(f.read_text())
+            # Stamp the run directory so evidence can be tied to a revision.
+            d["_dir"] = str(f.parent.relative_to(ROOT))
+            out.append(d)
+        except (OSError, ValueError):
+            continue
+    return out
+
+
+def _stamped_revision(sub: str) -> str:
+    """The revision `host_gate.sh` recorded when it produced this evidence."""
+    p = ROOT / sub / "REVISION"
+    try:
+        return p.read_text().strip()
+    except OSError:
+        return ""
+
+
+def _revision_note(sub: str, current: str) -> str:
+    """Say which revision the evidence came from, or that it is unbound.
+
+    An evidence directory with no revision stamp cannot be attributed to any
+    commit, and combining it with a current-revision report is exactly what
+    makes a release claim unfalsifiable.
+    """
+    got = _stamped_revision(sub)
+    if not got:
+        return " [UNBOUND: no REVISION stamp]"
+    # Prefix-tolerant on purpose. The stamp is written with `git rev-parse HEAD`
+    # (full SHA) while callers naturally hold the short form, and comparing them
+    # for equality made *every* stamp look like a mismatch -- including evidence
+    # produced by the commit being reported on. A revision prefix is the same
+    # revision.
+    if got == current or got.startswith(current) or current.startswith(got):
+        return ""
+    return f" [evidence from revision {got[:8]}, not {current[:8]}]"
+
+
+def check_experiment_evidence() -> list[tuple]:
+    """Turn real experiment artefacts into gate verdicts.
+
+    The five long-running gates were recorded as NOT RUN because nothing in the
+    harness runs them. But the opposite is equally wrong: once someone HAS run
+    them, the harness kept saying NOT RUN, because it never looked at what was
+    on disk. So `sudo tools/host_gate.sh --full` would produce the evidence and
+    change nothing in the summary.
+
+    Each gate below states exactly what artefact counts as evidence and what
+    would make it insufficient. A directory with the right name is not evidence;
+    a partially-completed comparison is reported as INCONCLUSIVE rather than
+    quietly counted.
+    """
+    rows: list[tuple] = []
+
+    # 1. live enforcement -- the 21-check traffic gate
+    log = None
+    for cand in sorted((ROOT / "docs" / "evidence").glob("gate-*.log")):
+        log = cand
+    if log is None:
+        rows.append(("live enforcement", NOT_RUN,
+                     "no docs/evidence/gate-*.log; run sudo tools/host_gate.sh"))
+    else:
+        txt = log.read_text(errors="replace")
+        fails = txt.count("[FAIL]")
+        measured = txt.count("[MEASURED]")
+        passed = txt.count("[PASS]")
+        if fails:
+            rows.append(("live enforcement", FAIL,
+                         f"{fails} FAIL in {log.name}"))
+        else:
+            rows.append(("live enforcement", PASS,
+                         f"{passed} PASS, {measured} MEASURED, 0 FAIL ({log.name})"))
+
+    # 2. rollback under real tc failure -- the live rollback log
+    rl = sorted((ROOT / "docs" / "evidence").glob("rollback-live-*.log"))
+    if not rl:
+        rows.append(("rollback under real tc failure", NOT_RUN,
+                     "no docs/evidence/rollback-live-*.log"))
+    else:
+        txt = rl[-1].read_text(errors="replace")
+        if "skipped=" in txt.splitlines()[-1] if txt.strip() else True:
+            rows.append(("rollback under real tc failure", NOT_RUN,
+                         f"{rl[-1].name}: live tests skipped, no evidence"))
+        elif "OK" in txt.splitlines()[-1] if txt.strip() else False:
+            rows.append(("rollback under real tc failure", PASS,
+                         f"live rollback tests passed ({rl[-1].name})"))
+        else:
+            rows.append(("rollback under real tc failure", FAIL,
+                         f"{rl[-1].name} did not pass"))
+
+    # 3. live adaptation -- a capacity drop that was actually detected
+    cur = rev()[:8]
+    res = _results("data/host_gate_adapt")
+    if not res:
+        rows.append(("live adaptation loop", NOT_RUN,
+                     "no data/host_gate_adapt; run: sudo tools/host_gate.sh --full"))
+    else:
+        r = res[0]
+        applied = r.get("capacity_change_applied")
+        est = r.get("estimator_mbps")
+        target = r.get("link_end_mbps")
+        n = len(r.get("samples") or [])
+        note = _revision_note("data/host_gate_adapt", cur)
+        detail = (f"{r.get('link_start_mbps')} -> {target} Mbps, "
+                  f"estimator {est}, {n} samples{note}")
+        if not applied:
+            rows.append(("live adaptation loop", FAIL,
+                         f"capacity change was not applied: "
+                         f"{r.get('capacity_change_error') or 'no detail'}{note}"))
+        elif est is None:
+            rows.append(("live adaptation loop", FAIL,
+                         f"estimator produced no reading after the drop{note}"))
+        elif n < MIN_ADAPT_SAMPLES:
+            # Not FAIL -- the run happened -- but not a detection either.
+            rows.append(("live adaptation loop", NOT_RUN,
+                         f"only {n} samples (need {MIN_ADAPT_SAMPLES}); the "
+                         f"estimator has not converged, so this is INCONCLUSIVE "
+                         f"rather than a detection{note}"))
+        elif target and est > ADAPT_TOLERANCE_X * float(target):
+            rows.append(("live adaptation loop", NOT_RUN,
+                         f"estimator reported {est} Mbps for a link that is "
+                         f"{target} Mbps ({est / float(target):.1f}x off); "
+                         f"INCONCLUSIVE, not a detection{note}"))
+        else:
+            rows.append(("live adaptation loop", PASS, detail))
+
+    # 4. FIFO / CAKE / ACIQ comparison
+    dirs = {"b0_fifo": "data/host_gate_b0_fifo",
+            "b1_cake95": "data/host_gate_b1_cake95",
+            "aciq": "data/host_gate_aciq"}
+    counts = {k: len(_results(v)) for k, v in dirs.items()}
+    have = {k: v for k, v in counts.items() if v}
+    if not have:
+        rows.append(("FIFO/CAKE/ACIQ comparison", NOT_RUN,
+                     "no comparison runs; run: sudo tools/host_gate.sh --full"))
+    elif len(have) < 3:
+        rows.append(("FIFO/CAKE/ACIQ comparison", NOT_RUN,
+                     f"only {sorted(have)} present; all three systems required "
+                     f"({counts})"))
+    elif min(have.values()) < MIN_COMPARISON_SEEDS:
+        rows.append(("FIFO/CAKE/ACIQ comparison", NOT_RUN,
+                     f"{min(have.values())} paired seeds, need "
+                     f"{MIN_COMPARISON_SEEDS}; a comparison below that is "
+                     f"INCONCLUSIVE, not a result"))
+    else:
+        notes = {_revision_note(v, rev()[:8]) for v in dirs.values()}
+        rows.append(("FIFO/CAKE/ACIQ comparison", PASS,
+                     ", ".join(f"{k}={v}" for k, v in sorted(counts.items()))
+                     + " paired seeds" + "".join(sorted(notes))))
+
+    # 5. sustained stability
+    res = _results("data/host_gate_soak")
+    if not res:
+        rows.append(("30-minute stability", NOT_RUN,
+                     "no data/host_gate_soak; run: sudo tools/host_gate.sh --full"))
+    else:
+        r = res[0]
+        dur = float(r.get("duration_s") or 0.0)
+        if dur < MIN_SOAK_S:
+            rows.append(("30-minute stability", NOT_RUN,
+                         f"soak ran {dur:.0f}s, need {MIN_SOAK_S:.0f}s; a "
+                         f"shorter run is not a stability result"))
+        else:
+            rows.append(("30-minute stability", PASS,
+                         f"{dur:.0f}s sustained, "
+                         f"{r.get('policy_changes')} policy changes"
+                         + _revision_note("data/host_gate_soak", rev()[:8])))
+    return rows
 
 
 def rev() -> str:
@@ -261,22 +450,11 @@ def main() -> int:
         # the worst behaviour this harness could have: the summary looked
         # complete -- 8 PASS, 0 BLOCKED -- while five mandatory gates had never
         # run. An absent gate is not a passing gate.
-        for g, cmd in (
-            ("live enforcement",
-             "sudo ./tools/host_gate.sh   (21-check traffic gate; see gate.sh)"),
-            ("rollback under real tc failure",
-             "sudo python3 -m unittest tests.test_rollback_live -v"),
-            ("live adaptation loop",
-             "sudo python3 run_experiments.py --scenario s2_wan_drop "
-             "--system aciq --enforce --drop 10 --drop-at 5"),
-            ("FIFO/CAKE/ACIQ comparison",
-             "sudo python3 run_experiments.py --scenario s3_tv_and_gaming "
-             "--system b0_fifo|b1_cake95|aciq --seeds 7"),
-            ("30-minute stability",
-             "sudo python3 run_experiments.py --scenario s3_tv_and_gaming "
-             "--system aciq --duration-s 1800"),
-        ):
-            record(g, NOT_RUN, f"not executed by this harness -- {cmd}")
+        # Judged from artefacts on disk, so that running them actually closes
+        # them. Previously these were hardcoded NOT_RUN, which meant
+        # `host_gate.sh --full` could produce the evidence and change nothing.
+        for g, st, detail in check_experiment_evidence():
+            record(g, st, detail)
 
     # 7. claim audit
     print("\nphase 7: claim audit")
