@@ -20,6 +20,16 @@ estimate falls below the true capacity.
 
 **That is a replay.** It is not a live experiment and is not reported as one.
 
+**Command correction.** This section previously paired `--drop` with
+`s3_tv_and_gaming`. Only `s2_wan_drop` is about a capacity change; the driver
+warns when a drop is requested without `--drop-at` for exactly this reason.
+
+**The 30-minute requirement was not reachable** through the CLI: every shipped
+scenario is 30-40 seconds and `duration_s` was hardcoded per scenario. Rather
+than document the gap and stop, `--duration-s` was added, which replaces the
+scenario without mutating it and without touching the defaults. Verified:
+overriding to 1800s preserves every workload and DSCP marking.
+
 ## Timings the prompt asks for
 
 | quantity | status |
@@ -46,12 +56,13 @@ rate-limit table, filter residue.
 
 ```bash
 # detection + policy install, with the applied tree in the audit
-sudo python3 run_experiments.py --scenario s3_tv_and_gaming --system aciq \
+sudo python3 run_experiments.py --scenario s2_wan_drop --system aciq \
   --enforce --drop 10 --drop-at 5 --seed 42 --results-dir data/adapt42
 
-# 30-minute soak
+# 30-minute soak. No shipped scenario is longer than 40s, so the override is
+# what makes this possible at all.
 sudo python3 run_experiments.py --scenario s3_tv_and_gaming --system aciq \
-  --enforce --lease 203.0.113.4 --results-dir data/soak
+  --enforce --duration-s 1800 --results-dir data/soak
 
 # while it runs, in another terminal -- watch the parent rate
 for i in $(seq 1 60); do

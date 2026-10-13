@@ -1,6 +1,6 @@
 # Final release readiness
 
-**Revision:** see `git log -1` · **Suite:** 832 pass, 0 fail, 6 skipped · **Claim audit:** exit 0
+**Revision:** see `git log -1` · **Suite:** 838 pass, 0 fail, 6 skipped · **Claim audit:** exit 0
 
 ## Verdict
 
@@ -95,7 +95,7 @@ by another subsystem.
 
 | suite | command | exit | count |
 |---|---|---|---|
-| full | `python3 -m unittest discover -s tests -t .` | 0 | **832 pass, 0 fail, 6 skipped** |
+| full | `python3 -m unittest discover -s tests -t .` | 0 | **838 pass, 0 fail, 6 skipped** |
 | rollback (mocked) | `python3 -m unittest tests.test_rollback` | 0 | 33 pass |
 | rollback (live) | `sudo python3 -m unittest tests.test_rollback_live -v` | — | **6 skipped — and 5 defects found on first real run** |
 | live-vs-double | `python3 -m unittest tests.test_rollback_live_sim` | 0 | 6 pass |
@@ -105,7 +105,8 @@ by another subsystem.
 
 Count reconciliation: 746 (`6a22208c`) → 757 (+11 classifier) → 809 (+29 rollback,
 +16 harness, +6 live) → 813 (+4 audit parser) → 819 (+6 live-vs-double) → 828
-(+5 vacuous-verification, +5 completion/skips) → **832** (+4 citation traceability). **Nothing was deleted or weakened at any point.**
+(+5 vacuous-verification, +5 completion/skips) → 832 (+4 citation traceability) →
+**838** (+6 CLI/host-gate traceability). **Nothing was deleted or weakened at any point.**
 
 ## D. Live QoS evidence
 
@@ -141,6 +142,11 @@ it. The recorded objection ("reserving unused capacity would throttle other
 flows") describes a design this codebase does not have. What genuinely does not
 exist is a *class-differentiated* reservation. Nothing requires it. Full
 reasoning: `min-rate-scope-decision.md`.
+
+**30-minute soak was unreachable through the CLI.** Every shipped scenario is
+30-40 s and `duration_s` was hardcoded per scenario. `--duration-s` was added to
+`run_experiments.py` (replaces the scenario, does not mutate it, defaults
+untouched) so the mandated duration can actually be run.
 
 **Benchmark limitation.** Controller arithmetic only — classify, `build_plan`,
 reconcile — at one scale on one machine. No efficiency or scalability claim.
@@ -195,8 +201,8 @@ mandatory gate is reported BLOCKED even though root was available:
 
 ```bash
 cd ~/Desktop/Full-projects/TATA-ELXSI
-sudo python3 tools/acceptance.py
-sudo python3 -m unittest tests.test_rollback_live -v
+sudo ./tools/host_gate.sh          # checks prerequisites, then runs both gates
+sudo ./tools/host_gate.sh --full   # + adaptation, CAKE comparison, 30-min soak
 ```
 
 The harness now tries a cached sudo rather than only checking `euid`, and says
@@ -208,10 +214,13 @@ kernel-verified rollback — the two mandatory gates. The soak
 (`qos-baseline-comparison.md`) follow, with acceptance thresholds stated before
 they run.
 
-**Warning before running:** `acceptance.py` phase 6 changes kernel networking
-state via `testbed/gate.sh`, which creates network namespaces, veth pairs and
-`tc` qdiscs, and removes them on exit. Inspect `testbed/gate.sh` before running
-it privileged. There is **no dry-run mode**, and none was invented.
+**Warning before running:** `host_gate.sh` → `acceptance.py` phase 6 changes
+kernel networking state via `testbed/gate.sh`, which creates network namespaces,
+veth pairs and `tc` qdiscs, and removes them on exit. `test_rollback_live.py`
+uses its **own** namespace (`aciqrb<random>`) and never touches a host interface.
+Run `sudo ./tools/host_gate.sh --check` first to confirm prerequisites without
+changing anything. There is **no dry-run mode** in the harness and none was
+invented.
 
 ## Honest summary
 

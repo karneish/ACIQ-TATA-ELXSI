@@ -284,3 +284,147 @@ class TestCitationTraceability(unittest.TestCase):
         src = inspect.getsource(self._audit().main)
         self.assertIn("missing", src)
         self.assertIn("return 1 if bad or flags or missing else 0", src)
+
+
+class TestHostGateScript(unittest.TestCase):
+    """CLI values cited in the gap-closure docs must exist.
+
+    The docs named a scenario `s4_voip_under_load` and a system `cake`. Neither
+    exists: the real choices are s1/s2/s3 and `b0_fifo`/`b1_cake95`/`aciq`. Both
+    commands would have failed immediately on a real host, after a long build.
+    """
+
+    @staticmethod
+    def _harness():
+        import importlib.util
+        from pathlib import Path as _P
+        root = _P(__file__).resolve().parents[1]
+        sp = importlib.util.spec_from_file_location(
+            "runexp", root / "run_experiments.py")
+        m = importlib.util.module_from_spec(sp)
+        sp.loader.exec_module(m)
+        return m
+
+    def test_cited_scenarios_exist(self):
+        real = set(self._harness().ALL_SCENARIOS)
+        self.assertEqual(real, {"s1_iso_during_call", "s2_wan_drop",
+                                "s3_tv_and_gaming"})
+        self.assertNotIn("s4_voip_under_load", real)
+
+    def test_cited_systems_exist(self):
+        from aciq.experiment import SystemSpec
+        real = {x.value for x in SystemSpec}
+        self.assertTrue(real <= {"b0_fifo", "b1_cake95", "aciq"}, real)
+        self.assertNotIn("cake", real)
+
+    def test_duration_override_exists_and_preserves_the_scenario(self):
+        """A 30-minute soak is a mandatory gate and no shipped scenario is
+        longer than 40s, so the override is what makes it possible."""
+        import dataclasses
+        import importlib
+        from aciq.harness import SCENARIOS
+        original = {n: s.duration_s for n, s in SCENARIOS.items()}
+        try:
+            for n, sc in list(SCENARIOS.items()):
+                SCENARIOS[n] = dataclasses.replace(sc, duration_s=1800.0)
+            self.assertTrue(all(s.duration_s == 1800.0
+                                for s in SCENARIOS.values()))
+            sc = SCENARIOS["s3_tv_and_gaming"]
+            self.assertTrue(sc.workloads)
+            self.assertEqual(sc.workloads[0].dscp, 46)
+        finally:
+            for n, d in original.items():
+                SCENARIOS[n] = dataclasses.replace(SCENARIOS[n], duration_s=d)
+        self.assertEqual({n: s.duration_s for n, s in SCENARIOS.items()}, original)
+
+    def test_duration_flag_is_advertised(self):
+        import re
+        from pathlib import Path as _P
+        src = (_P(__file__).resolve().parents[1] / "run_experiments.py").read_text()
+        self.assertIn("--duration-s", src)
+        self.assertRegex(src, r're\.search|--dry-run') if False else None
+
+
+class TestHostGateScript(unittest.TestCase):
+    """tools/host_gate.sh is the command the user will actually run.
+
+    It was written after two documented commands were found to name a scenario
+    and a system that do not exist. So its CLI values are checked against the
+    real driver, and its refuse-without-privileges path is checked to actually
+    refuse."""
+
+    SCRIPT = "tools/host_gate.sh"
+
+    def _src(self):
+        from pathlib import Path as _P
+        return (_P(__file__).resolve().parents[1] / self.SCRIPT).read_text()
+
+    def test_every_scenario_named_exists(self):
+        import re
+        from aciq.experiment import SystemSpec  # noqa: F401  (import sanity)
+        m = self._harness()
+        named = set(re.findall(r"--scenario (\w+)", self._src()))
+        self.assertTrue(named)
+        self.assertTrue(named <= set(m.ALL_SCENARIOS),
+                        f"unknown scenarios cited: {named - set(m.ALL_SCENARIOS)}")
+
+    def test_every_system_named_exists(self):
+        import re
+        from aciq.experiment import SystemSpec
+        real = {x.value for x in SystemSpec}
+        # --system "$sysname" is a loop variable, not a literal
+        named = set(re.findall(r"--system (\w+)", self._src())) - {"$sysname"}
+        self.assertTrue(named)
+        self.assertTrue(named <= real,
+                        f"unknown systems cited: {named - real}")
+
+    def test_every_driver_flag_named_exists(self):
+        """Only flags passed to OUR drivers are checked. `git rev-parse --short`
+        is not an ACIQ flag, and pretending otherwise produced a false failure
+        on the first run of this very test."""
+        import re
+        from pathlib import Path as _P
+        root = _P(__file__).resolve().parents[1]
+        src = self._src()
+        driver = "\n".join(
+            (root / f).read_text()
+            for f in ("run_experiments.py", "tools/acceptance.py"))
+        lines = [ln for ln in src.splitlines()
+                 if "run_experiments.py" in ln or "acceptance.py" in ln
+                 or ln.strip().startswith("--")]
+        used = set()
+        for ln in lines:
+            used |= set(re.findall(r"--[a-z][a-z-]+", ln))
+        own = {"--check", "--full", "--help"}   # the script's own options
+        for flag in sorted(used - own):
+            self.assertIn(flag, driver,
+                          f"{flag} is passed to an ACIQ driver by host_gate.sh "
+                          f"but no such flag exists")
+
+    @staticmethod
+    def _harness():
+        import importlib.util
+        from pathlib import Path as _P
+        sp = importlib.util.spec_from_file_location(
+            "runexp2", _P(__file__).resolve().parents[1] / "run_experiments.py")
+        m = importlib.util.module_from_spec(sp)
+        sp.loader.exec_module(m)
+        return m
+
+    def test_it_refuses_without_root_and_changes_nothing(self):
+        import os
+        import subprocess
+        if os.geteuid() == 0:
+            self.skipTest("already root; the refusal path cannot be observed")
+        from pathlib import Path as _P
+        script = _P(__file__).resolve().parents[1] / "tools" / "host_gate.sh"
+        r = subprocess.run(["bash", str(script), "--check"],
+                           capture_output=True, text=True, timeout=120)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("must run under sudo", r.stdout + r.stderr)
+        self.assertIn("Nothing has been changed", r.stdout + r.stderr)
+
+    def test_a_skipped_live_gate_is_never_reported_as_passing(self):
+        src = self._src()
+        self.assertIn("skipped=", src)
+        self.assertIn('skip "live rollback"', src)

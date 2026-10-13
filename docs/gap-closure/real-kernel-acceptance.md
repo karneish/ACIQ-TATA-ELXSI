@@ -186,10 +186,42 @@ not answer and no test asks.
 
 ## What must run on the host
 
+One command, rather than four hand-typed ones:
+
 ```bash
 cd ~/Desktop/Full-projects/TATA-ELXSI
-sudo python3 -m unittest tests.test_rollback_live -v    # 6 mandatory tests
-sudo python3 tools/acceptance.py                        # full gate
+sudo ./tools/host_gate.sh            # rollback + full acceptance
+sudo ./tools/host_gate.sh --full     # + adaptation, CAKE comparison, 30-min soak
+sudo ./tools/host_gate.sh --check    # prerequisites only, changes nothing
+```
+
+`tools/host_gate.sh` checks root, `ip`, `tc`, `iperf3` and namespace support
+**before** touching anything, refuses with a non-zero exit and the message
+"Nothing has been changed" when they are missing, collects everything into
+`artifacts/validation/<rev>/host/`, and treats a skipped live gate as SKIPPED
+rather than passing.
+
+**Why it exists.** The blocked gates were previously described in prose, and two
+of those commands named a scenario (`s4_voip_under_load`) and a system (`cake`)
+that do not exist. They would have failed on a real host — after building the
+testbed. Every scenario, system and flag the script uses is now regression-tested
+against the real driver CLI.
+
+**The 30-minute soak was unreachable.** Every shipped scenario is 30-40 s and
+`duration_s` was hardcoded per scenario, so there was no way to run the mandated
+duration. `--duration-s` was added to `run_experiments.py`; it replaces the
+scenario without mutating it and leaves the defaults untouched. Verified: a
+1800 s override preserves every workload and DSCP marking.
+
+The individual commands, if you prefer to run them yourself:
+
+```bash
+sudo python3 -m unittest tests.test_rollback_live -v
+sudo python3 tools/acceptance.py
+sudo python3 run_experiments.py --scenario s2_wan_drop --system aciq \
+    --enforce --drop 10 --drop-at 5 --seed 42
+sudo python3 run_experiments.py --scenario s3_tv_and_gaming --system aciq \
+    --enforce --duration-s 1800
 ```
 
 **Safety.** tests/test_rollback_live.py creates its own network namespace

@@ -11,7 +11,7 @@ BLOCKED — bubblewrap sandbox, `CapEff=0000000000000000`, `ip`/`tc`/`iperf3` no
 
 | | FIFO | CAKE | ACIQ |
 |---|---|---|---|
-| needs kernel module | no | `sch_cake` | no |
+| needs kernel module | no | `sch_cake` (b1_cake95) | no |
 | configures per-flow rates | no | no | yes |
 | deployable in this container | n/a | n/a | no (`tc` absent) |
 
@@ -47,12 +47,22 @@ flatter the result.
 
 ## Command
 
+Verified against `run_experiments.py --help`:
+
 ```bash
-sudo python3 run_experiments.py --scenario s4_voip_under_load --system cake \
-  --enforce --results-dir data/cake
-sudo python3 run_experiments.py --scenario s4_voip_under_load --system aciq \
-  --enforce --results-dir data/aciq_cmp
+sudo python3 run_experiments.py --scenario s3_tv_and_gaming \
+  --system b1_cake95 --seeds 7 --seed 42 --results-dir data/cake
+sudo python3 run_experiments.py --scenario s3_tv_and_gaming \
+  --system aciq --seeds 7 --seed 42 --results-dir data/aciq_cmp
 ```
+
+**Correction.** This section previously named a scenario `s4_voip_under_load`
+and a system `cake`. Neither exists — the real choices are
+`s1_iso_during_call`, `s2_wan_drop`, `s3_tv_and_gaming` and `b0_fifo`,
+`b1_cake95`, `aciq`. Both commands would have failed immediately on a real
+host, after the testbed had already been built. Found by checking
+`--help` rather than trusting prose written earlier, and the choices are now
+regression-tested.
 
 ## Even a favourable result would not justify a claim
 

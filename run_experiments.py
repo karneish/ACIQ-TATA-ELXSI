@@ -63,6 +63,12 @@ def main() -> int:
     ap.add_argument("--drop", type=float, default=20.0)
     ap.add_argument("--drop-at", type=float, default=None,
                     help="seconds into the run at which capacity drops")
+    ap.add_argument("--duration-s", type=float, default=None,
+                    help="override each scenario's duration. The shipped "
+                         "scenarios are 30-40s, which cannot demonstrate "
+                         "stability; this is what makes a sustained soak "
+                         "possible without editing the scenario table. "
+                         "Omitted, each scenario keeps its own duration.")
     ap.add_argument("--settle", type=float, default=None,
                     help="seconds of interactive-only warmup before measurement "
                          "begins (default: the scenario's own settle time)")
@@ -107,6 +113,16 @@ def main() -> int:
             print("setup.sh failed; see its output above", file=sys.stderr)
             return 1
         print("=== testbed up ===")
+
+    if args.duration_s is not None:
+        # Replace rather than mutate: Scenario is a frozen-ish dataclass and
+        # editing SCENARIOS in place would leak across scenarios.
+        import dataclasses
+        from aciq.harness import SCENARIOS
+        for name, sc in list(SCENARIOS.items()):
+            SCENARIOS[name] = dataclasses.replace(sc, duration_s=args.duration_s)
+        print(f"note: scenario durations overridden to {args.duration_s}s",
+              file=sys.stderr)
 
     scenarios = args.scenario or ["s1_iso_during_call", "s3_tv_and_gaming"]
     if args.scenario and any(sc in NEEDS_DROP_AT for sc in args.scenario) \
