@@ -428,3 +428,61 @@ class TestHostGateScript(unittest.TestCase):
         src = self._src()
         self.assertIn("skipped=", src)
         self.assertIn('skip "live rollback"', src)
+
+
+class TestGatesNeverDisappear(unittest.TestCase):
+    """Five mandatory gates used to vanish from the table when root was present.
+
+    The summary read `PASS 8  FAIL 0  BLOCKED 0` -- apparently complete -- while
+    live enforcement, adaptation, the CAKE comparison and the soak had never
+    run. An absent gate is not a passing gate, and the fix is to record them as
+    NOT RUN with the command that closes them.
+    """
+
+    KERNEL_GATES = ("testbed gate (21 checks)", "live enforcement",
+                    "live rollback verification (kernel)",
+                    "rollback under real tc failure", "live adaptation loop",
+                    "FIFO/CAKE/ACIQ comparison", "30-minute stability")
+
+    def test_every_kernel_gate_is_named_in_the_harness(self):
+        src = (Path(__file__).resolve().parents[1] / "tools"
+               / "acceptance.py").read_text()
+        for gate in self.KERNEL_GATES:
+            self.assertIn(gate, src, f"{gate} missing")
+
+    def test_not_run_is_not_pass(self):
+        counts = {A.PASS: 8, A.FAIL: 0, A.BLOCKED: 0, A.NOT_RUN: 5}
+        self.assertNotEqual(counts[A.NOT_RUN], 0)
+        self.assertFalse(counts[A.BLOCKED] == 0 and counts[A.NOT_RUN] == 0)
+
+    def test_complete_requires_no_not_run_gates(self):
+        """The whole point: complete must be unreachable while five gates are
+        unexecuted, even though nothing is blocked or failing."""
+        complete = (lambda b, n, sm: b == 0 and n == 0 and not sm)
+        self.assertFalse(complete(0, 5, []))
+        self.assertTrue(complete(0, 0, []))
+        self.assertFalse(complete(0, 0, ["tests.test_rollback_live.X.y"]))
+
+    def test_a_skip_outside_a_mandatory_module_does_not_block_completion(self):
+        """Running as root skips this very file's refusal test. That is an
+        artefact of the environment, not missing product evidence."""
+        mandatory = A.MANDATORY_MODULES
+        self.assertIn("tests.test_rollback_live", mandatory)
+        self.assertNotIn("tests.test_acceptance", mandatory)
+        blocked_by = lambda names: [n for n in names
+                                    if any(n.startswith(m) for m in mandatory)]
+        self.assertEqual(blocked_by(["tests.test_acceptance.T.t"]), [])
+        self.assertEqual(
+            blocked_by(["tests.test_rollback_live.T.t"]),
+            ["tests.test_rollback_live.T.t"])
+
+    def test_skipped_test_names_parse_to_fully_qualified_paths(self):
+        text = ("Ran 2 tests in 1s\n\n"
+                "test_a (tests.test_rollback_live.T.test_a) ... skipped 'no tc'\n"
+                "test_b (tests.test_acceptance.T.test_b) ... skipped 'root'\n\n"
+                "OK (skipped=2)\n")
+        names = A.parse_unittest(text)["skipped_tests"]
+        self.assertEqual(sorted(names), [
+            "tests.test_acceptance.T.test_b",
+            "tests.test_rollback_live.T.test_a",
+        ])

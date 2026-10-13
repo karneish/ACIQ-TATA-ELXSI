@@ -35,7 +35,12 @@ PASS, FAIL, BLOCKED, NOT_RUN = "PASS", "FAIL", "BLOCKED", "NOT RUN"
 #: silently shrunk (a broken import in one test module drops it, and `discover`
 #: reports the rest as a success). Without a floor, deleting a whole test module
 #: would still produce a green acceptance run.
-MIN_TESTS = 840
+MIN_TESTS = 845
+
+
+#: Test modules covering mandatory release requirements. A skip in one of
+#: these means the requirement is unverified, whatever the reason.
+MANDATORY_MODULES = ("tests.test_rollback_live",)
 
 
 def parse_unittest(text: str) -> dict:
@@ -63,6 +68,14 @@ def parse_unittest(text: str) -> dict:
         m = re.search(rf"{field}=(\d+)", text)
         if m:
             out[field] = int(m.group(1))
+    # Which tests were skipped, as fully-qualified names, so a skip can be
+    # attributed to a module rather than merely counted.
+    names = []
+    for m in re.finditer(r"^(test_\w+) \((tests[\w.]+)\)\s+\.\.\.\s+skipped",
+                         text, re.M):
+        # the parenthesised group is the full dotted path including the method
+        names.append(m.group(2))
+    out["skipped_tests"] = names
     return out
 
 
@@ -133,7 +146,24 @@ def main() -> int:
 
     run_id = rev()[:8]
     outdir = OUT / run_id
-    outdir.mkdir(parents=True, exist_ok=True)
+    try:
+        outdir.mkdir(parents=True, exist_ok=True)
+        probe = outdir / ".writable"
+        probe.write_text("")
+        probe.unlink()
+    except PermissionError:
+        # Running once under sudo leaves root-owned evidence here, and the next
+        # unprivileged run then dies with a bare PermissionError that looks like
+        # an unrelated bug. Say what happened and what to do about it.
+        print(f"cannot write evidence to {outdir}")
+        print("  it was probably created by an earlier `sudo` run and is owned "
+              "by root.")
+        print(f"  fix: sudo chown -R $(id -u):$(id -g) {outdir}")
+        print("  or re-run the whole harness as: sudo python3 tools/acceptance.py")
+        return 1
+    except OSError as e:
+        print(f"cannot prepare {outdir}: {e}")
+        return 1
     env = {
         "run_id": run_id, "revision": rev(),
         "started_utc": datetime.now(timezone.utc).isoformat(),
@@ -154,7 +184,7 @@ def main() -> int:
     # 1. unit + integration + socket
     print("phase 1: environment-independent tests")
     rc, txt = run([sys.executable, "-m", "unittest", "discover",
-                   "-s", "tests", "-t", "."])
+                   "-s", "tests", "-t", ".", "-v"])
     (outdir / "unittest.log").write_text(txt)
     status, detail = suite_verdict(rc, txt, a.min_tests)
     p = parse_unittest(txt)
@@ -226,6 +256,28 @@ def main() -> int:
         record("testbed gate (21 checks)", PASS if rc == 0 else FAIL,
                f"exit {rc}", "gate.log")
 
+        # The five long-running gates are NOT done by anything above. They used
+        # to simply not appear in the table when root was available, which is
+        # the worst behaviour this harness could have: the summary looked
+        # complete -- 8 PASS, 0 BLOCKED -- while five mandatory gates had never
+        # run. An absent gate is not a passing gate.
+        for g, cmd in (
+            ("live enforcement",
+             "sudo ./tools/host_gate.sh   (21-check traffic gate; see gate.sh)"),
+            ("rollback under real tc failure",
+             "sudo python3 -m unittest tests.test_rollback_live -v"),
+            ("live adaptation loop",
+             "sudo python3 run_experiments.py --scenario s2_wan_drop "
+             "--system aciq --enforce --drop 10 --drop-at 5"),
+            ("FIFO/CAKE/ACIQ comparison",
+             "sudo python3 run_experiments.py --scenario s3_tv_and_gaming "
+             "--system b0_fifo|b1_cake95|aciq --seeds 7"),
+            ("30-minute stability",
+             "sudo python3 run_experiments.py --scenario s3_tv_and_gaming "
+             "--system aciq --duration-s 1800"),
+        ):
+            record(g, NOT_RUN, f"not executed by this harness -- {cmd}")
+
     # 7. claim audit
     print("\nphase 7: claim audit")
     rc, txt = run([sys.executable, str(ROOT / "tools" / "audit_claims.py")])
@@ -246,17 +298,30 @@ def main() -> int:
     # report `complete: true` while the mandatory rollback verification had in
     # fact never executed -- the exact substitution of "did not run" for
     # "passed" that this harness exists to prevent.
-    mandatory_skipped = int(env.get("tests", {}).get("skipped", 0))
-    env["skipped"] = mandatory_skipped
-    env["complete"] = counts[BLOCKED] == 0 and mandatory_skipped == 0
+    # A skip is only disqualifying if it hides a *mandatory* gate. Running as
+    # root skips test_acceptance's own "refuses without root" test -- that is an
+    # artefact of the environment, not missing evidence about the product, and
+    # treating it as blocking would make `complete` unreachable in exactly the
+    # environment where it should become reachable.
+    skipped = int(env.get("tests", {}).get("skipped", 0))
+    skipped_mandatory = [n for n in env.get("tests", {}).get("skipped_tests", [])
+                         if any(n.startswith(m) for m in MANDATORY_MODULES)]
+    env["skipped"] = skipped
+    env["skipped_mandatory"] = skipped_mandatory
+    env["complete"] = (counts[BLOCKED] == 0
+                       and counts[NOT_RUN] == 0
+                       and not skipped_mandatory)
     (outdir / "acceptance.json").write_text(json.dumps(env, indent=2) + "\n")
     if a.out:
         Path(a.out).write_text(json.dumps(env, indent=2) + "\n")
 
     print(f"\n  PASS {counts[PASS]}  FAIL {counts[FAIL]}  "
           f"BLOCKED {counts[BLOCKED]}  NOT RUN {counts[NOT_RUN]}")
-    if mandatory_skipped:
-        print(f"  {mandatory_skipped} test(s) skipped -- not counted as passed")
+    if skipped:
+        detail = (f"{skipped} test(s) skipped"
+                  + (f", {len(skipped_mandatory)} of them mandatory"
+                     if skipped_mandatory else " (none mandatory)"))
+        print(f"  {detail} -- not counted as passed")
     print(f"  complete acceptance run: {env['complete']}")
     print(f"  evidence: {outdir.relative_to(ROOT)}/")
     return 0 if counts[FAIL] == 0 else 1
