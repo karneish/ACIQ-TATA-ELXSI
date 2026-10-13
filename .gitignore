@@ -60,3 +60,23 @@ venv/
 .env
 *.key
 *.pem
+
+# docs/evidence is cited BY TRACKED DOCUMENTATION as the source of published
+# numbers -- docs/PROJECT.md, docs/gap-closure/claim-audit.md and
+# final-validation-report.md all name specific files in it. The blanket `*.log`
+# rule above excluded them, so none of them was ever committed and a fresh clone
+# got broken citations. Same failure the v0 comment above describes, one
+# directory over. A later pattern wins, so the negation has to come after.
+!docs/evidence/
+!docs/evidence/**
+!docs/evidence/**/*.log
+!docs/evidence/**/*.json
+
+# The lease A/B evidence is cited by name in the gap-closure reports (the
+# Wilcoxon p-value and its seven paired seeds come from data/ab_lease_42), and
+# `data/*` excluded it. Same defect as docs/evidence: the number is published,
+# the data behind it is not.
+!data/ab_lease/
+!data/ab_lease/**
+!data/ab_lease_42/
+!data/ab_lease_42/**

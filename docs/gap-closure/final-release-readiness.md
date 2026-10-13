@@ -122,26 +122,34 @@ Count reconciliation: 746 (`6a22208c`) → 757 (+11 classifier) → 809 (+29 rol
 (+5 vacuous-verification, +5 completion/skips) → 832 (+4 citation traceability) →
 **838** (+6 CLI/host-gate traceability). **Nothing was deleted or weakened at any point.**
 
-## D. Live QoS evidence
+## D. Live QoS evidence — real, at this revision
 
-**None at this revision.** Kernel 7.1.5 is present but unreachable; no `tc`.
+Kernel `7.1.5-76070105-generic`, iproute2 `6.1.0`. Evidence:
+`docs/evidence/gate-20261013-135720.log`, `docs/evidence/rollback-live-20261013.log`,
+`docs/evidence/acceptance/acceptance-8aecc3a8.json`.
 
-| step | status |
-|---|---|
-| traffic generated in topology | BLOCKED |
-| collector observes it | BLOCKED |
-| classifier selects class | PASS (16 constructed cases) |
-| policy decision | PASS |
-| `tc` config updated | BLOCKED |
-| filters/classes exist | BLOCKED |
-| counters show activity | BLOCKED |
-| behaviour matches policy | BLOCKED |
-| measurements return | PASS (live socket) |
-| control loop responds | BLOCKED |
+| step | status | evidence |
+|---|---|---|
+| traffic generated in topology | **PASS** | gate 3, 11, 13 |
+| collector observes it | **PASS** | gate 3, 11, 13; socket tests |
+| classifier selects class | **PASS** | 16 constructed cases; gate 14 |
+| controller decision | **PASS** | `build_plan` tests |
+| `tc` config updated | **PASS** | gate 15 |
+| filters/classes exist | **PASS** | gate 15, 16, 18 |
+| counters show activity | **PASS** | gate 16/18 class growth; check 12 |
+| behaviour matches policy | **PASS** | gate 6 `ping avg 20.059 ms` under 20 ms netem |
+| measurements return | **PASS** | gate + socket |
+| control loop responds | **NOT RUN** | needs the adaptation run |
 
-Historical gate evidence (20 PASS / 1 MEASURED / 0 FAIL) exists at `705cdd5` on a
-privileged host. It is **stale by construction** — the collector and classifier
-have both changed since — and is not re-attributed to this revision.
+**21 checks: 20 PASS, 1 MEASURED, 0 FAIL.**
+
+Two checks are the substance of this release:
+
+- **gate 17 — a rejected EF-claiming flow does not reach `1:10`.** The classifier
+  change from `89b87758`, now enforced by the kernel rather than asserted
+  in-process.
+- **gate 19 — removing the filter returns the flow to the default class**, which
+  is the enforcement half of the rollback story.
 
 ## E. Remaining limitations
 

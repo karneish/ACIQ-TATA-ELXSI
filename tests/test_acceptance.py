@@ -282,8 +282,14 @@ class TestCitationTraceability(unittest.TestCase):
         """Reported-and-exited-0 would make the check decorative."""
         import inspect
         src = inspect.getsource(self._audit().main)
-        self.assertIn("missing", src)
-        self.assertIn("return 1 if bad or flags or missing else 0", src)
+        # Assert the *conditions*, not the literal return line: matching exact
+        # source text broke the moment another failure mode was added, which is
+        # a test that punishes correct edits.
+        ret = [ln for ln in src.splitlines() if ln.strip().startswith("return 1")]
+        self.assertEqual(len(ret), 1, src)
+        for condition in ("bad", "flags", "missing", "untracked_ev"):
+            self.assertIn(condition, ret[0],
+                          f"{condition} must reach the audit exit code")
 
 
 class TestHostGateScript(unittest.TestCase):
@@ -486,3 +492,58 @@ class TestGatesNeverDisappear(unittest.TestCase):
             "tests.test_acceptance.T.test_b",
             "tests.test_rollback_live.T.test_a",
         ])
+
+
+class TestEvidenceMustBeTracked(unittest.TestCase):
+    """Cited evidence must be committed, not merely present on disk.
+
+    `docs/evidence/*.log` and `data/ab_lease_42/` were both excluded by blanket
+    ignore rules, while tracked documentation cites them by exact filename as
+    the source of published numbers. A fresh clone got citations pointing at
+    files that were not in the repository, and the audit passed anyway because
+    it only ever asked "does this exist on this machine".
+    """
+
+    @staticmethod
+    def _audit():
+        import importlib.util
+        from pathlib import Path as _P
+        sp = importlib.util.spec_from_file_location(
+            "audit_mod3", _P(__file__).resolve().parents[1] / "tools" / "audit_claims.py")
+        m = importlib.util.module_from_spec(sp)
+        sp.loader.exec_module(m)
+        return m
+
+    def test_every_cited_evidence_path_is_tracked(self):
+        rows = self._audit().scan_evidence()
+        self.assertTrue(rows)
+        bad = [r for r in rows if r["evidence_present"]
+               and not r.get("evidence_tracked", True)]
+        self.assertEqual(bad, [],
+                         "cited but uncommitted: "
+                         + ", ".join(r["evidence"] for r in bad))
+
+    def test_the_audit_records_tracked_state_at_all(self):
+        row = self._audit().scan_evidence()[0]
+        self.assertIn("evidence_tracked", row)
+
+    def test_untracked_evidence_fails_the_audit(self):
+        """The check has to reach the exit code, or it is decorative."""
+        import inspect
+        src = inspect.getsource(self._audit().main)
+        self.assertIn("untracked_ev", src)
+        self.assertIn("ev_missing or untracked_ev", src)
+
+    def test_gitignore_does_not_exclude_cited_evidence(self):
+        """The ignore rules are the root cause; assert they stay fixed."""
+        import subprocess
+        from pathlib import Path as _P
+        root = _P(__file__).resolve().parents[1]
+        for cited in ("docs/evidence/gate-20261011-165455.log",
+                      "data/ab_lease_42"):
+            r = subprocess.run(["git", "-C", str(root), "check-ignore",
+                                "-q", "--no-index", cited],
+                               capture_output=True)
+            self.assertNotEqual(r.returncode, 0,
+                                f"{cited} is excluded by .gitignore but cited "
+                                f"by tracked documentation")

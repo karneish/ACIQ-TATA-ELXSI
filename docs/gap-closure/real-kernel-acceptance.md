@@ -72,6 +72,34 @@ it exposed.
 | CAKE / FIFO comparison | **BLOCKED** | |
 | sustained stability | **BLOCKED** | |
 
+## Real-kernel enforcement: 21/21 checks PASS at `8aecc3a8`
+
+The traffic gate ran on the user's host and every check passed:
+
+```
+docs/evidence/gate-20261013-135720.log
+PASS 1..11, 13..20   MEASURED 12 (a measurement, not a pass/fail check)
+FAIL none
+```
+
+Checks that matter most for this work:
+
+| check | result | what it establishes |
+|---|---|---|
+| 6 | **PASS** — `ping avg 20.059 ms` under 20 ms netem | shaping and impairment are both live on the shaped link |
+| 11, 13 | PASS | per-flow counters via conntrack, **v4 and v6** |
+| 14 | PASS | an IPv6 EF-marked flow is routed to `1:10` |
+| 15 | PASS | per-flow flower filters install |
+| 16 | PASS | a steered **IPv4** flow reaches `1:20` and ADAPTIVE receives traffic |
+| **17** | **PASS** | **a rejected EF-claiming flow does not reach `1:10`** |
+| 18 | PASS | a steered **IPv6** flow reaches `1:20` |
+| 19 | PASS | removing the filter returns the flow to the default class |
+| 20 | PASS | teardown removes the bridge's filters |
+
+Check 17 is the classifier fix of `89b87758` being enforced by the **kernel**:
+an EF claim is refused, and the refused flow does not land in the interactive
+class. Until this run, that behaviour had only ever been asserted in-process.
+
 ## What the first real run exposed
 
 3 of 6 failed initially. **Every one was a defect in the test**, and one revealed

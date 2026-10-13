@@ -72,10 +72,39 @@ def scan_evidence() -> list[dict]:
                 list(target.glob("*.json")))
         else:
             present = target.exists()
+        # Present on disk is not enough. docs/evidence/*.log was covered by the
+        # blanket `*.log` ignore rule, so every gate log the documentation
+        # cites was absent from the repository -- a fresh clone got citations
+        # pointing at files that were not there. Presence must mean *tracked*.
+        tracked = _is_tracked(where)
         out.append({"claim": phrase, "what": what, "evidence": where,
                     "evidence_present": present,
+                    "evidence_tracked": tracked,
                     "cited_in": found_in})
     return out
+
+
+def _is_tracked(where: str) -> bool:
+    """Is the cited evidence actually committed?
+
+    Uses `git ls-files` on the *tracked* view rather than the filesystem: a
+    file that exists locally but is ignored will not be in a clone, and a
+    citation into it does not survive publication.
+    """
+    import subprocess
+    path = ROOT / where
+    try:
+        if path.is_dir():
+            r = subprocess.run(["git", "-C", str(ROOT), "ls-files", "--",
+                                where], capture_output=True, text=True,
+                               timeout=30)
+            return any(l.strip() for l in r.stdout.splitlines())
+        r = subprocess.run(["git", "-C", str(ROOT), "ls-files", "--error-unmatch",
+                            str(path.relative_to(ROOT))],
+                           capture_output=True, text=True, timeout=30)
+        return r.returncode == 0
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return False
 
 
 def check_code_claims() -> list[dict]:
@@ -193,8 +222,19 @@ def main() -> int:
     print("\n-- evidence cited by claims --")
     ec = scan_evidence()
     for e in ec:
-        st = "present" if e["evidence_present"] else "MISSING"
-        print(f"  [{st:<7}] {e['claim']:<12} ({e['what']}) -> {e['evidence']}")
+        if not e["evidence_present"]:
+            st = "MISSING"
+        elif not e.get("evidence_tracked", True):
+            st = "UNTRACKED"
+        else:
+            st = "present"
+        print(f"  [{st:<9}] {e['claim']:<12} ({e['what']}) -> {e['evidence']}")
+    untracked_ev = [e for e in ec
+                    if e["evidence_present"] and not e.get("evidence_tracked", True)]
+    ev_missing = [e for e in ec if not e["evidence_present"]]
+    if untracked_ev:
+        print("  ^ cited evidence exists locally but is NOT committed; a "
+              "clone would have a broken citation")
 
     print("\n-- red-flag phrases --")
     flags = scan_flags()
@@ -210,6 +250,7 @@ def main() -> int:
           + (f", {t['skipped']} skipped" if t['skipped'] else ""))
 
     summary = {"constants_disagree": bad, "evidence": ec,
+               "evidence_untracked": untracked_ev,
                "red_flags": flags, "tests": t,
                "cited_tests_missing": missing}
     (ROOT / "docs" / "gap-closure" / "claim-audit.json").write_text(
@@ -222,7 +263,7 @@ def main() -> int:
     # has to reach the exit code. Reporting DRIFT and exiting 0 would make the
     # check decorative -- the same "recorded, printed, never consulted" shape
     # already found in this file and in tools/acceptance.py.
-    return 1 if bad or flags or missing else 0
+    return 1 if (bad or flags or missing or ev_missing or untracked_ev) else 0
 
 
 if __name__ == "__main__":
