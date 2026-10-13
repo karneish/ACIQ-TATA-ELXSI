@@ -1,7 +1,18 @@
 # Real-kernel acceptance
 
-**Verdict on this document: the real-kernel gates have NOT been executed.**
-Everything below records what was attempted, what was proven, and what remains.
+**Verdict on this document: the live rollback gate HAS been executed and passed
+on real hardware. The remaining kernel gates have not.**
+
+| | |
+|---|---|
+| host | Pop!_OS, kernel `7.1.5-76070105-generic` |
+| iproute2 | `6.1.0`, libbpf `1.3.0` |
+| revision | `7250aa58` |
+| command | `sudo python3 -m unittest tests.test_rollback_live -v` |
+| result | **`Ran 6 tests ... OK`** |
+
+Everything below records what was attempted, what is now proven, and what
+remains blocked.
 
 ## The environment, established rather than assumed
 
@@ -53,13 +64,43 @@ it exposed.
 | claim audit | **supported** | constants, evidence, citations, phrases |
 | **simulated rollback** | **supported** | 33 mocked tests |
 | **live-test-vs-double** | **supported** | 6 tests |
-| kernel traffic control | **BLOCKED** | no `tc`, no `CAP_NET_ADMIN` |
-| network namespaces | **BLOCKED** | `unshare --net` EPERM |
-| live enforcement | **BLOCKED** | |
-| real rollback read-back | **BLOCKED** | |
-| live adaptation | **BLOCKED** | |
+| kernel traffic control | **BLOCKED** (sandbox) / **PASS** (host) | host ran it; see above |
+| network namespaces | **BLOCKED** (sandbox) / **PASS** (host) | namespace created and removed |
+| **real rollback read-back** | **PASS on host** | 6/6, `tc` read-back in a real namespace |
+| live enforcement (21-check gate) | **NOT YET RUN** | next step |
+| live adaptation | **BLOCKED** / not yet run |
 | CAKE / FIFO comparison | **BLOCKED** | |
 | sustained stability | **BLOCKED** | |
+
+## What the first real run exposed
+
+3 of 6 failed initially. **Every one was a defect in the test**, and one revealed
+that the in-memory double was certifying behaviour the kernel does not have.
+
+Two facts were measured, not assumed:
+
+| probe | result |
+|---|---|
+| `tc -j` on iproute2 6.1.0 | **accepted, but prints TEXT** |
+| after `tc qdisc del dev X root` | veth reverts to **`qdisc noqueue 0: root`** |
+
+The controller was correct throughout — it reads text first, and the diagnostic
+confirmed it verified all four classes (`1:1 1:10 1:20 1:30`) with
+`read-back source: tc-text`. The failures were:
+
+1. the test's reader called `json.loads()` on text, returned `{}`, and every
+   downstream assertion failed against a tree the kernel had actually installed;
+2. "clean" was defined as *no qdisc at all*, when a veth correctly shows
+   `noqueue`;
+3. the double modelled `-j` as JSON, so it passed while reality failed three
+   times over.
+
+Correcting the double then exposed two more real bugs in the test — `rstrip("bit")`
+strips a character *set*, so `"100000Kbit"` became `"100000K"` and `float()` raised;
+and the unit table scaled Mbit by 1e-3, parsing `"100Mbit"` as 0.1 Mbps.
+
+**This is the argument for having the double at all** — once it was made
+faithful it caught bugs that would otherwise have waited for the next host run.
 
 ## Phase 7.1 — is the rollback baseline trustworthy?
 

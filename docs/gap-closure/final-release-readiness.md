@@ -75,10 +75,24 @@ a false negative on `1:10` vs `1:0010`, caught immediately by an existing test. 
 original defect was reinstated and **14 of the 29 failed**, then the fix was
 restored and all 29 pass.
 
-**Live integration evidence. NONE.** `tests/test_rollback_live.py` contains 6
-tests with no mocks — isolated network namespace, fault injected by genuinely not
-sending a command, state read back with `tc -j` called directly rather than
-through `TransactionManager`. **All 6 skip here.**
+**Live integration evidence: PASS on real hardware.**
+`tests/test_rollback_live.py` contains 6 tests with no mocks — isolated network
+namespace, fault injected by genuinely not sending a command, state read back
+with `tc` called directly rather than through `TransactionManager`.
+
+```
+$ sudo python3 -m unittest tests.test_rollback_live -v
+Ran 6 tests in 0.755s
+OK
+```
+
+Pop!_OS, kernel `7.1.5-76070105-generic`, iproute2 `6.1.0`, revision `7250aa58`.
+
+The first run failed 3 of 6. All three were test defects, and one showed the
+in-memory double had been certifying a code path the host never takes: `tc -j` is
+accepted but prints **text** on iproute2 6.1.0, so the test's `json.loads()`
+returned `{}`. The controller needed no change — it reads text first and had
+already verified all four classes.
 
 **Read-back comparison rules.** Kernel rounding within 1% absorbed; `1:0010` vs
 `1:10` normalised. Those are the only two equivalences. Missing class = mismatch;
@@ -97,7 +111,7 @@ by another subsystem.
 |---|---|---|---|
 | full | `python3 -m unittest discover -s tests -t .` | 0 | **838 pass, 0 fail, 6 skipped** |
 | rollback (mocked) | `python3 -m unittest tests.test_rollback` | 0 | 33 pass |
-| rollback (live) | `sudo python3 -m unittest tests.test_rollback_live -v` | — | **6 skipped — and 5 defects found on first real run** |
+| rollback (live) | `sudo python3 -m unittest tests.test_rollback_live -v` | **0** | **6 PASS on host** — 3 defects on first run |
 | live-vs-double | `python3 -m unittest tests.test_rollback_live_sim` | 0 | 6 pass |
 | harness | `python3 -m unittest tests.test_acceptance` | 0 | 21 pass |
 | acceptance | `python3 tools/acceptance.py` | 0 | 6 PASS · 0 FAIL · **7 BLOCKED** |
@@ -189,9 +203,14 @@ python3 tools/audit_claims.py     # exit 0
 
 ## G. Verdict rationale and what would change it
 
-**VALIDATION BLOCKED.** Six dimensions PASS, one PARTIAL, seven BLOCKED, zero
-FAIL. The blocked set contains every dimension that separates a working QoS
-controller from a correct-looking one.
+**VALIDATION BLOCKED.** Six dimensions PASS, one PARTIAL, six BLOCKED, zero FAIL,
+and one dimension that was blocked has now been **closed by direct real-kernel
+evidence**: rollback is verified against an actual kernel, both for a successful
+restoration and for the failure verdict.
+
+What remains blocked contains the rest of the enforcement chain — a 21-check
+traffic gate, live adaptation, the CAKE comparison and a sustained soak. Those
+need the host but are ordinary test runs rather than open questions.
 
 ### To reach READY FOR RELEASE
 

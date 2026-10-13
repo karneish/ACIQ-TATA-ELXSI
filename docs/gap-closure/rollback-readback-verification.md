@@ -219,5 +219,31 @@ All 6 skip here: `iproute2 not on PATH`.
 sudo python3 -m unittest tests.test_rollback_live -v
 ```
 
-**A skipped live test is not evidence of rollback correctness.** Until that runs,
-rollback is verified in control flow only.
+### LIVE RESULT — PASSED on real hardware
+
+```
+$ sudo python3 -m unittest tests.test_rollback_live -v
+Ran 6 tests in 0.755s
+OK
+```
+
+Pop!_OS, kernel `7.1.5-76070105-generic`, iproute2 `6.1.0`, revision `7250aa58`.
+
+**Rollback against a real kernel is now verified**, not merely modelled: the
+namespace is real, the `tc` tree is real, the fault is injected by genuinely not
+sending a command, and the state is read back with `tc` rather than through the
+code under test. Both directions of the verdict are exercised on a real kernel —
+a genuine restoration confirming `verified`, and a lying runner producing
+`verification_failed`.
+
+The first run failed 3 of 6. All three were defects in the test, and one showed
+the in-memory double had been certifying a code path the host never takes:
+
+- `tc -j` is **accepted but prints text** on iproute2 6.1.0, so the test's
+  `json.loads()` returned `{}`;
+- a veth reverts to **`noqueue`** after `qdisc del`, not to nothing;
+- correcting the double then exposed `rstrip("bit")` breaking on `"100000Kbit"`
+  and an Mbit scale that read `"100Mbit"` as 0.1 Mbps.
+
+The controller itself needed no change: it reads text first and had already
+verified all four classes.
