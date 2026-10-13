@@ -27,6 +27,9 @@ import tests.test_rollback_live as L
 class Kernel:
     """Minimal model of `tc` qdisc/class state."""
 
+    #: Off by default because the host does not honour it; see the note below.
+    json_mode = False
+
     def __init__(self) -> None:
         self.qdiscs: dict[str, str] = {}
         self.classes: dict[str, dict[str, float]] = {}
@@ -57,8 +60,15 @@ def fake_ns_run(*argv, check: bool = False):
 
     if kind == "qdisc" and "del" in a:
         K.clear()
+        # A veth reverts to the kernel default, not to nothing at all.
+        K.qdiscs["0:"] = "noqueue"
         return done()
     if kind == "qdisc" and "add" in a:
+        # A root qdisc REPLACES any existing root. Leaving `noqueue` behind
+        # alongside the new one modelled two simultaneous roots, which the
+        # kernel never has -- and made the helper report the stale default.
+        if "root" in a:
+            K.qdiscs = {}
         if "handle" in a:
             h = a.index("handle") + 1
             K.qdiscs[a[h]] = a[h + 1] if h + 1 < len(a) else "?"
@@ -72,14 +82,21 @@ def fake_ns_run(*argv, check: bool = False):
                           "ceil": _num(a[a.index("ceil") + 1])}
         return done()
     if kind == "class" and "show" in a:
-        if "-j" in a:
+        # MEASURED on the real host (iproute2 6.1.0, kernel 7.1.5): `tc -j`
+        # is accepted but still prints TEXT. This double used to return JSON
+        # for `-j`, which is why it passed while the live test failed for
+        # three real tests -- the double was not faithful, and a double that
+        # is not faithful is worse than none, because it certifies.
+        if "-j" in a and K.json_mode:
             return done(out=json.dumps(
                 [{"kind": "htb", "handle": k, "rate": int(v["rate"] * 1e6),
                   "ceil": int(v["ceil"] * 1e6)} for k, v in K.classes.items()]))
-        # Text is the primary reader in the real code, so model that shape.
+        # Text is what the host actually prints, and what the real code reads
+        # first. Rates are printed as Kbit, exactly as the host does.
         return done(out="".join(
-            f"class htb {k} root prio 0 rate {v['rate']:g}Mbit "
-            f"ceil {v['ceil']:g}Mbit burst 15Kb\n  Sent 0 bytes 0 pkt\n"
+            f"class htb {k} root prio 0 rate {v['rate'] * 1000:.0f}Kbit "
+            f"ceil {v['ceil'] * 1000:.0f}Kbit burst 1600b\n"
+            f" Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0)\n\n"
             for k, v in K.classes.items()))
     return done()
 
@@ -130,6 +147,36 @@ class TestLiveModuleAgainstADouble(unittest.TestCase):
         state = L.tc_state()
         self.assertEqual(sorted(state),
                          sorted(c.classid for c in tree.classes))
+
+    def test_the_double_matches_what_the_host_actually_prints(self):
+        """Regression for the mis-specified double.
+
+        It modelled `tc -j` as returning JSON. On the real host `-j` is
+        accepted but prints text, so the double certified a code path the host
+        never takes. Rates are also printed as Kbit there, not Mbit."""
+        self.assertFalse(K.json_mode,
+                         "the host does not honour -j; modelling JSON by "
+                         "default would certify a path it never takes")
+        with mock.patch.object(L, "_ns_run", fake_ns_run):
+            K.clear()
+            L._ns_run("tc", "class", "add", "dev", "veth-t", "parent", "1:",
+                      "classid", "1:10", "rate", "6mbit", "ceil", "6mbit")
+            raw = fake_ns_run("tc", "-s", "-j", "class", "show",
+                              "dev", "veth-t").stdout
+        self.assertIn("Kbit", raw)
+        self.assertEqual(L._mbps("100000Kbit"), 100.0)
+        self.assertEqual(L._mbps("53571Kbit"), 53.571)
+        self.assertEqual(L._mbps("100Mbit"), 100.0)
+        self.assertEqual(L._mbps("6000bit"), 0.006)
+        with self.assertRaises(ValueError):
+            json.loads(raw)
+        # and the live helper recovers from it rather than returning {}
+        with mock.patch.object(L, "_ns_run", fake_ns_run), \
+                mock.patch.object(L, "DEV", "veth-t", create=True):
+            self.assertEqual(L.tc_state()["1:10"]["rate"], 6.0)
+
+    def test_clean_means_noqueue_not_nothing(self):
+        self.assertIn("noqueue", L.CLEAN_QDISC_KINDS)
 
     def test_live_module_is_gated_on_a_real_kernel(self):
         """The double must not have disabled the root gate for real runs."""

@@ -24,6 +24,7 @@ from __future__ import annotations
 import atexit
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -91,23 +92,60 @@ def skip_reason() -> str | None:
     return None
 
 
+#: `class htb 1:10 parent 1:1 leaf 10: prio 0 rate 53571Kbit ceil 100Mbit`
+_CLASS_RE = re.compile(
+    r"^class\s+\S+\s+(\S+)\s+.*?\brate\s+(\S+)\s+ceil\s+(\S+)", re.M)
+
+
+#: tc prints whichever unit is shortest: "100Mbit", "53571Kbit", "6000bit".
+#: rstrip() is wrong here -- it strips a *character set*, so rstrip("bit") turns
+#: "100000Kbit" into "100000K" and float() raises. Caught by the kernel double
+#: once it was corrected to print Kbit as the host does.
+_RATE_UNITS = (("gbit", 1e3), ("mbit", 1.0), ("kbit", 1e-3),
+               ("bit", 1e-6))
+
+
+def _mbps(token: str) -> float:
+    t = token.strip().lower()
+    for suffix, scale in _RATE_UNITS:
+        if t.endswith(suffix):
+            return float(t[: -len(suffix)]) * scale
+    return float(t) * 1e-6
+
+
 def tc_state() -> dict:
-    """Independent read-back: plain `tc class show`, parsed by hand here."""
+    """Independent read-back, parsed by hand here rather than by the code under
+    test -- a bug shared between the two would otherwise hide.
+
+    **Measured, not assumed:** on iproute2 6.1.0 / kernel 7.1.5 this machine
+    accepts `tc -j` but still prints *text*. The first version of this helper
+    called json.loads() on that output, caught the ValueError and returned {},
+    so every assertion below failed while the controller's own text read-back
+    had already verified the same tree. Ask for JSON, but do not require it.
+    """
     r = _ns_run("tc", "-s", "-j", "class", "show", "dev", DEV)
-    out = {}
+    out: dict = {}
     try:
         data = json.loads(r.stdout or "[]")
     except ValueError:
+        data = None
+    if isinstance(data, list):
+        for c in data:
+            handle = str(c.get("handle", ""))
+            rate, ceil = c.get("rate"), c.get("ceil")
+            out[handle] = {"rate": None if rate is None else rate / 1e6,
+                           "ceil": None if ceil is None else ceil / 1e6}
         return out
-    for c in data if isinstance(data, list) else []:
-        handle = str(c.get("handle", ""))
-        rate = c.get("rate")
-        ceil = c.get("ceil")
-        out[handle] = {
-            "rate": None if rate is None else rate / 1e6,
-            "ceil": None if ceil is None else ceil / 1e6,
-        }
+    for handle, rate, ceil in _CLASS_RE.findall(r.stdout or ""):
+        out[handle] = {"rate": _mbps(rate), "ceil": _mbps(ceil)}
     return out
+
+
+#: What a clean veth reverts to. Deleting the root qdisc does not leave a
+#: device with no qdisc at all -- the kernel puts the default `noqueue` back.
+#: Asserting an empty string here failed on real hardware while the device was,
+#: in fact, clean.
+CLEAN_QDISC_KINDS = ("", "noqueue", "pfifo_fast")
 
 
 def tc_qdisc_kind() -> str:
@@ -117,6 +155,11 @@ def tc_qdisc_kind() -> str:
         if len(p) >= 4 and p[0] == "qdisc" and "root" in p[2:4]:
             return p[1]
     return ""
+
+
+def tc_is_clean() -> bool:
+    """No shaping left behind -- as opposed to no qdisc object at all."""
+    return tc_qdisc_kind() in CLEAN_QDISC_KINDS
 
 
 @unittest.skipUnless(shutil.which("tc"), "iproute2 not on PATH")
@@ -204,6 +247,8 @@ class TestLiveRollback(unittest.TestCase):
         self.assertEqual(tm.last_rollback.outcome, VERIFIED)
         # Independent read: a root qdisc of the expected kind exists.
         self.assertIn(tc_qdisc_kind(), ("cake", "fq_codel", "pfifo"))
+        # ...and it replaced the tree rather than joining it.
+        self.assertFalse(tc_is_clean())
         # ...and the class tree is gone, which is what the safe state means.
         self.assertEqual(tc_state(), {})
 
@@ -244,7 +289,8 @@ class TestLiveRollback(unittest.TestCase):
         tm.apply(build_plan(100.0, lease=None), now=2000.0)
         _ns_run("tc", "qdisc", "del", "dev", DEV, "root")
         self.assertEqual(tc_state(), {})
-        self.assertEqual(tc_qdisc_kind(), "")
+        # `noqueue`, not "": a veth reverts to the kernel default.
+        self.assertIn(tc_qdisc_kind(), CLEAN_QDISC_KINDS)
 
 
 class Runner:
