@@ -518,6 +518,16 @@ class ExperimentRunner:
                 # and labelling it "realtime_interactive" put a wrong class name
                 # on every sample of every system.
                 "link": vars(lk) if lk is not None else None,
+                # The out-of-band bottleneck's real state, every tick.
+                #
+                # Added because a 10 Mbps limit WAS applied and verified, was
+                # observed holding at exactly 10.00 Mbps, and then throughput
+                # climbed back to 46.78 and stayed there for the rest of the
+                # run -- with nothing in the tree touching that link. A
+                # capacity that vanishes mid-run is only diagnosable if the
+                # artefact records it, and result.json recorded only the limit
+                # that was asked for.
+                "bottleneck": self.harness.capture_bottleneck(),
                 "estimator_saturated": self.harness._estimator.current.saturated,
                 "fairness": frame.fairness,
                 "cpu_fraction": frame.cpu_fraction,
@@ -612,6 +622,14 @@ class ExperimentRunner:
         # difference between a stale estimate and a wrong one presented as
         # current.
         stale_note = self._stale_note(est)
+        # What the bottleneck actually ended up as. The run reports the link it
+        # was told to build otherwise, which is how a limit that is applied and
+        # then lost can look like a limit that held.
+        try:
+            bottleneck_state = self.harness.capture_bottleneck()
+        except Exception as e:                      # noqa: BLE001
+            bottleneck_state = f"(capture failed: {e})"
+
         res = RunResult(
             scenario=sc.name, system=system.value, capacity_mode=mode.value,
             seed=seed, link_start_mbps=link_mbps,
@@ -630,6 +648,7 @@ class ExperimentRunner:
             # worse than no evidence file, because it looks like a result.
             samples=samples,
             policy_changes=self.harness.policy_changes,
+            bottleneck_state=bottleneck_state,
 notes=(([] if dropped else ["no capacity drop in this run"])
                    + ([stale_note] if stale_note else [])
                    + [enforcement_note]

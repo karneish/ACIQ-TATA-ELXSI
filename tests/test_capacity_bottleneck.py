@@ -97,3 +97,55 @@ def _plan(cap: float) -> "RatePlan":  # noqa: F821
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestBottleneckStateIsEvidence(unittest.TestCase):
+    """A run must report the bottleneck it ended with, not the one it was told
+    to build.
+
+    A real run applied a 10 Mbps netem limit -- throughput hit exactly 10.00 at
+    t=7.22 -- and then climbed back to 46.78 and stayed there. With no record of
+    the qdisc's final state, `capacity_change_applied: True` and
+    `link_end_mbps: 10.0` read as a working drop, and the only reason the defect
+    was visible at all was that samples.jsonl happened to be preserved.
+    """
+
+    def test_capture_bottleneck_records_the_real_state(self):
+        h = Harness()
+        out = h.capture_bottleneck()
+        self.assertIsInstance(out, str)
+        self.assertEqual(h.bottleneck_state_at_end, out)
+
+    def test_capture_reads_the_bottleneck_device(self):
+        from aciq.txn import FakeRunner
+        r = FakeRunner()
+        h = Harness(runner=r)
+        h.capture_bottleneck()
+        text = " ".join(" ".join(c) for c in r.commands)
+        self.assertIn("qdisc show", text)
+        self.assertIn(h.bottleneck_dev, text)
+        self.assertIn(h.bottleneck_ns, text)
+
+    def test_runresult_carries_the_bottleneck_state(self):
+        import dataclasses
+        from aciq.harness import RunResult
+        self.assertIn("bottleneck_state",
+                      {f.name for f in dataclasses.fields(RunResult)})
+
+    def test_the_evidence_run_is_still_showing_the_fault(self):
+        """Guards against this being 'fixed' by re-reading old evidence."""
+        import glob
+        hits = sorted(glob.glob("data/host_gate_adapt/*/result.json"))
+        if not hits:
+            self.skipTest("no adaptation evidence")
+        import json
+        last = json.load(open(hits[-1]))
+        if "bottleneck_state" not in last:
+            self.skipTest(
+                "the newest adaptation run predates bottleneck capture; "
+                "re-run s2_wan_drop before trusting the capacity gate")
+        # If the limit is recorded as gone at the end of a run, that run is
+        # evidence of the fault and must never be counted as an adaptation.
+        state = last["bottleneck_state"] or ""
+        self.assertNotIn(
+            "noqueue", state,
+            f"the bottleneck ended as noqueue -- the limit was lost: {state!r}")

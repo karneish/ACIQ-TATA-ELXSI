@@ -165,6 +165,8 @@ class RunResult:
     estimator_mbps: float | None = None
     samples: list[dict] = field(default_factory=list)
     policy_changes: int = 0
+    #: raw `tc qdisc show` for the out-of-band bottleneck at end of run
+    bottleneck_state: str = ""
     notes: list[str] = field(default_factory=list)
 
     def to_json(self) -> str:
@@ -238,6 +240,11 @@ class Harness:
         # cannot reach, which is the entire point -- see set_capacity.
         self.bottleneck_ns = ns_wan
         self.bottleneck_dev = "veth-w"
+        #: Raw `tc qdisc show` text for the bottleneck, captured at the end of
+        #: every run. A capacity change that is applied and then silently lost
+        #: is invisible without it -- the run reports the link it was told to
+        #: build, not the link it ended up with.
+        self.bottleneck_state_at_end: str = ""
         self.shield = shield or Shield()
         self.dev = dev
         self.ns = ns_router
@@ -446,6 +453,14 @@ class Harness:
             self._configured_capacity = capacity_mbps
             self._capacity_mbps = capacity_mbps
         return tuple(cmds)
+
+    def capture_bottleneck(self) -> str:
+        """Record the bottleneck's real state, for the run's evidence."""
+        pre = ("ip", "netns", "exec", self.bottleneck_ns)
+        rc, out, err = self.runner.run(
+            pre + ("tc", "qdisc", "show", "dev", self.bottleneck_dev))
+        self.bottleneck_state_at_end = (out or "").strip() or f"(rc={rc}) {err.strip()}"
+        return self.bottleneck_state_at_end
 
     #: Whether the last `set_capacity` actually took effect.
     _capacity_change_ok: bool = True
