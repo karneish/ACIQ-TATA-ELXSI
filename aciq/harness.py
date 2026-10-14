@@ -268,13 +268,25 @@ class Harness:
         # wan -> router -> client; ACIQ writes exactly one device,
         # router/veth-lan. So ns wan / dev veth-w is a limit the controller
         # cannot reach, which is the entire point -- see set_capacity.
-        # ns router / veth-wan, NOT ns wan / veth-w. The collector already
-        # reads interfaces in this namespace and the drops have to be visible to
-        # M2; veth-w is in the wan namespace, where nothing reads counters, so a
-        # limit there is invisible to the controller for exactly the same
-        # reason it cannot be overwritten. It has to be both.
-        self.bottleneck_ns = ns_router
-        self.bottleneck_dev = "veth-wan"
+        # ns wan / veth-w -- and the namespace matters for a physical reason.
+        #
+        # `tc qdisc ... root netem` shapes EGRESS. Traffic runs
+        # wan -> router -> client, so only the wan side's egress carries it:
+        #
+        #   wan/veth-w       egress = generator -> router   LIMITS
+        #   router/veth-wan  egress = router -> wan (ACKs)   DOES NOT LIMIT
+        #
+        # Moving it to router/veth-wan for observability produced a run where
+        # the qdisc read `rate 10Mbit`, capacity_change_applied was True, and
+        # steady goodput was 102.44 -- a limit that was applied, verified, and
+        # doing nothing at all.
+        #
+        # Observability does not require the same namespace: the drop/backlog
+        # reader takes ns and dev, so it can read `wan/veth-w` while the
+        # controller writes `router/veth-lan`. Unwritable and observable are
+        # separate properties, and they are satisfied separately.
+        self.bottleneck_ns = ns_wan
+        self.bottleneck_dev = "veth-w"
         #: Raw `tc qdisc show` text for the bottleneck, captured at the end of
         #: every run. A capacity change that is applied and then silently lost
         #: is invisible without it -- the run reports the link it was told to
@@ -499,6 +511,13 @@ class Harness:
                 return None
         return self._bottleneck_src
 
+    def bottleneck_backlog(self) -> int | None:
+        """Queue depth at the out-of-band bottleneck, or None if unreadable."""
+        src = self._bottleneck_drops()
+        if src is None:
+            return None
+        return src.backlog()
+
     def bottleneck_drop_rate(self, dt: float) -> float | None:
         """Drops per second on the out-of-band bottleneck, or None if unreadable."""
         src = self._bottleneck_drops()
@@ -509,8 +528,11 @@ class Harness:
     def capture_bottleneck(self) -> str:
         """Record the bottleneck's real state, for the run's evidence."""
         pre = ("ip", "netns", "exec", self.bottleneck_ns)
+        # -s matters: without it `tc qdisc show` prints the configuration line
+        # and no counters at all, so the per-tick evidence recorded a qdisc
+        # with no queue depth and no drops and could not show the limit failing.
         rc, out, err = self.runner.run(
-            pre + ("tc", "qdisc", "show", "dev", self.bottleneck_dev))
+            pre + ("tc", "-s", "qdisc", "show", "dev", self.bottleneck_dev))
         self.bottleneck_state_at_end = (out or "").strip() or f"(rc={rc}) {err.strip()}"
         return self.bottleneck_state_at_end
 
@@ -675,7 +697,8 @@ class Harness:
             overlimit_rate_per_s=orate,
             link_drop_rate_per_s=ldr, link_overlimit_rate_per_s=lor,
             child_backlog_bytes=backlog,
-            bottleneck_drop_rate_per_s=self.bottleneck_drop_rate(dt)))
+            bottleneck_drop_rate_per_s=self.bottleneck_drop_rate(dt),
+            bottleneck_backlog_bytes=self.bottleneck_backlog()))
         if not cap.changed:
             return None, False
 

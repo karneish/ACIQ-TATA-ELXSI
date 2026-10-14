@@ -678,6 +678,12 @@ class TestCapacityDropCollision(unittest.TestCase):
         target = float(r.get("link_end_mbps") or 0)
         if target <= 0:
             self.skipTest("no drop in that run")
+        # `bottleneck_state` only carries counters once it was read with -s.
+        # A run without it predates the current implementation and cannot
+        # answer the question, so it is neither a pass nor a failure.
+        if "backlog" not in (r.get("bottleneck_state") or ""):
+            self.skipTest("the newest run predates -s bottleneck capture; "
+                          "re-run s2_wan_drop before trusting the clamp")
         self.assertFalse(A._shape_exceeded_truth(r, target),
                          "measured above the clamped capacity again")
         self.assertLessEqual(A._steady_goodput(r), target * 1.1,

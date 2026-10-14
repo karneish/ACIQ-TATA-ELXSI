@@ -120,6 +120,35 @@ class BottleneckDropSource:
             total += int(m.group(1))
         return total if seen else None
 
+    def backlog(self) -> int | None:
+        """Bytes queued at the bottleneck, or None if unreadable.
+
+        `netem rate` shapes by DELAYING, not by dropping -- it only drops once
+        `limit 1000` packets overflows, which at 10 Mbit it does not. So the
+        drop counter stayed at 0 and the link looked unsaturated forever:
+
+            estimator 102.5 Mbps is STALE ... M2 only measures an
+            oversubscribed link
+
+        Queue depth is the signal a rate limiter actually gives, and it is
+        exactly the analogue of `child_backlog_bytes` for the controller's own
+        tree. Offered load exceeding what the link carries leaves the queue
+        non-empty, persistently. That is congestion.
+        """
+        cmd = ["ip", "netns", "exec", self.ns, "tc", "-s", "qdisc", "show",
+               "dev", self.dev] if self.ns else [
+               "tc", "-s", "qdisc", "show", "dev", self.dev]
+        try:
+            r = self._run(cmd, capture_output=True, text=True, timeout=5)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if r.returncode != 0:
+            return None
+        # `backlog 0b 0p requeues 0`
+        for m in re.finditer(r"\bbacklog\s+(\d+)b\s+(\d+)p", r.stdout or ""):
+            return int(m.group(1))
+        return None
+
     def drop_rate(self, dt: float) -> float | None:
         if dt <= 0:
             return None

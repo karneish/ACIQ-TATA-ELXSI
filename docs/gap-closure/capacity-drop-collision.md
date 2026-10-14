@@ -202,12 +202,40 @@ raise.
 
 ### Implemented
 
-`BottleneckDropSource` (aciq/metrics.py) reads the drop counter off the
-bottleneck qdisc every tick, and `Measurement.bottleneck_drop_rate_per_s` feeds
-it to `saturated()`. The bottleneck moved from `wan/veth-w` to
-`router/veth-wan` — still a device `TransactionManager` never writes, but one in
-a namespace the collector reads. Both properties are required: *unwritable*
-stops the controller erasing it, *observable* is what makes it detectable at all.
+`BottleneckDropSource` (aciq/metrics.py) reads the bottleneck qdisc every tick,
+and `Measurement.bottleneck_drop_rate_per_s` / `bottleneck_backlog_bytes` feed
+`saturated()`.
+
+Two things had to be got right, and both were got wrong first.
+
+**Direction.** `tc qdisc ... root netem` shapes **egress**. Traffic runs
+wan → router → client, so only the wan side's egress carries it:
+
+| bottleneck | egress direction | limits the data? |
+|---|---|---|
+| `wan/veth-w` | generator → router | **yes** |
+| `router/veth-wan` | router → wan (ACKs) | **no** |
+
+The bottleneck was briefly moved to `router/veth-wan` to satisfy observability
+and the controller's device-ownership rule at once. That produced a run reading
+`qdisc netem 8002: root ... rate 10Mbit`, `capacity_change_applied: True`, no
+error, and **steady goodput of 102.44 Mbps** — a limit applied, verified, and
+doing nothing whatsoever.
+
+**Observability is a separate property, and it does not require sharing a
+namespace.** The reader takes `ns` and `dev`, so it reads `wan/veth-w` while the
+controller writes `router/veth-lan`.
+
+**Signal: backlog, not drops.** `netem rate` shapes by *delaying*; its drop
+counter stays at 0 until the 1000-packet limit overflows, which at 10 Mbit it
+does not. The first version watched drops, so the link looked permanently
+unsaturated — hence `estimator 102.5 Mbps is STALE` with a working limit in
+place. Queue depth is the signal a rate limiter actually gives, and it is the
+direct analogue of `child_backlog_bytes` for the controller's own tree.
+
+The per-tick bottleneck evidence is also now read with `-s`; without it `tc`
+prints the configuration line and no counters, so the record showed a qdisc with
+no queue depth at all.
 
 **What this deliberately does not do.** It does not tell the estimator the
 bottleneck's rate. `Measurement` has no field for a configured capacity, and

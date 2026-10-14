@@ -129,6 +129,17 @@ class Measurement:
     #: bottleneck could not be read, which is treated as no signal rather than
     #: as no drops.
     bottleneck_drop_rate_per_s: float | None = None
+    #: Bytes queued at the out-of-band bottleneck. The load-bearing signal for
+    #: a bottleneck that *delays* rather than drops.
+    #:
+    #: `netem rate` shapes by delaying. Its drop counter stays at 0 until the
+    #: 1000-packet limit overflows, which at 10 Mbit it does not -- so on the
+    #: host the estimator stayed stuck at "102.5 Mbps is STALE" with a netem
+    #: limit visibly in place and no drop ever recorded. Queue depth is the
+    #: signal a rate limiter actually gives, and it is the direct analogue of
+    #: `child_backlog_bytes` for the controller's own tree: offered load above
+    #: what the link carries leaves the queue non-empty.
+    bottleneck_backlog_bytes: int | None = None
 
     @property
     def saturated(self) -> bool:
@@ -146,6 +157,10 @@ class Measurement:
         # what the link will carry, which is saturation, whatever the
         # controller's own parent class happens to be doing.
         if (self.bottleneck_drop_rate_per_s or 0.0) > 0.0:
+            return True
+        # ...or the bottleneck simply cannot keep up. This is the common case
+        # for a rate limiter, which delays rather than drops.
+        if (self.bottleneck_backlog_bytes or 0) > 0:
             return True
         # A child queue that is not empty means the shaper wanted to send and
         # could not. Note this is consulted *after* the parent counters, so a

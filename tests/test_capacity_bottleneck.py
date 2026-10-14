@@ -69,10 +69,16 @@ class TestCapacityIsEnforcedOutOfBand(unittest.TestCase):
             estimator 103.2 Mbps is STALE: M2 only measures an oversubscribed
             link ... no post-drop reading was possible
 
-        It is now `router/veth-wan`: still a device `TransactionManager` never
-        writes, but one whose drops the controller can actually observe. Both
-        properties are required -- invisible and unwritable is useless, and
-        writable would put the collision back.
+        Unwritable and observable are separate properties. The bottleneck is on
+        `wan/veth-w` because that is the only side whose EGRESS carries the
+        data; the reader takes ns and dev, so it reads that link while the
+        controller writes `router/veth-lan`.
+
+        It was briefly on `router/veth-wan` to satisfy both at once, which was
+        wrong for a physical reason: that qdisc shapes router->wan, i.e. the
+        ACK direction. A run with it there reported `rate 10Mbit` and
+        `capacity_change_applied: True` and measured 102.44 Mbps -- a limit
+        that was applied, verified, and doing nothing.
         """
         h = Harness()
         cmds = [" ".join(c) for c in h.set_capacity(10.0)]
@@ -84,13 +90,24 @@ class TestCapacityIsEnforcedOutOfBand(unittest.TestCase):
                              f"controller writes: {c}")
             self.assertIn(h.bottleneck_dev, c, c)
 
-    def test_the_bottleneck_device_is_one_the_collector_reads(self):
+    def test_the_bottleneck_is_on_the_egress_that_carries_the_data(self):
+        """netem shapes egress, and only the wan side's egress carries traffic.
+
+        wan -> router -> client. `wan/veth-w` egress is generator -> router and
+        limits the data; `router/veth-wan` egress is router -> wan and does not.
+        """
         h = Harness()
-        self.assertEqual(h.bottleneck_dev, "veth-wan")
+        self.assertEqual(h.bottleneck_dev, "veth-w")
+        self.assertEqual(h.bottleneck_ns, "wan")
         self.assertNotEqual(h.bottleneck_dev, h.dev)
-        self.assertEqual(h.bottleneck_ns, h.ns,
-                         "same namespace as the collector reads, different "
-                         "device from the one the controller writes")
+
+    def test_the_drop_reader_reads_the_bottleneck_namespace(self):
+        """Observability comes from the reader's ns argument, not from sharing
+        a namespace with the controller."""
+        h = Harness()
+        src = h._bottleneck_drops()
+        self.assertEqual(src.ns, "wan")
+        self.assertEqual(src.dev, "veth-w")
 
     def test_the_rate_reaches_the_command(self):
         h = Harness()
@@ -224,19 +241,43 @@ class TestBottleneckReadBackIsNumeric(unittest.TestCase):
 class TestTheRunThatExposedIt(unittest.TestCase):
     """The host run this came from, preserved rather than re-described."""
 
-    def test_the_faulty_run_is_marked_as_refused_not_claimed_as_a_drop(self):
-        import glob
-        hits = sorted(glob.glob("data/host_gate_adapt/*/result.json"))
-        if not hits:
-            self.skipTest("no adaptation evidence")
-        import json
-        last = json.load(open(hits[-1]))
-        self.assertFalse(
-            last.get("capacity_change_applied"),
-            "the run recorded a refused capacity change; if this now passes "
-            "the run predates the numeric read-back and must be re-run")
-        self.assertIn("read-back did not show the limit",
-                      last.get("capacity_change_error", ""))
+    def test_a_refusal_is_never_recorded_as_a_drop(self):
+        """The property, asserted directly rather than via a pinned artefact.
+
+        It was originally pinned to the run that exposed the substring bug,
+        which meant it went on failing every time a newer, correct run landed
+        -- a test coupled to a file rather than to a property, which stops
+        testing anything the moment the evidence moves on.
+        """
+        from aciq.txn import FakeRunner
+        from aciq.harness import _qdisc_reports_rate
+
+        class Refuses(FakeRunner):
+            def run(self, argv, **kw):
+                if "qdisc" in argv and "replace" in argv:
+                    return 1, "", "RTNETLINK answers: Operation not permitted"
+                return super().run(argv, **kw)
+
+        h = Harness(runner=Refuses())
+        h.set_capacity(10.0)
+        self.assertFalse(h._capacity_change_ok)
+        self.assertNotEqual(h._capacity_mbps, 10.0,
+                            "a refused change became the configured capacity")
+
+        class Silent(FakeRunner):
+            """Accepts the replace but never installs the limit."""
+
+            def run(self, argv, **kw):
+                if "qdisc" in argv and "replace" in argv:
+                    return 0, "", ""
+                if "qdisc" in argv and "show" in argv:
+                    return 0, "qdisc noqueue 0: root refcnt 2", ""
+                return super().run(argv, **kw)
+
+        h2 = Harness(runner=Silent())
+        h2.set_capacity(10.0)
+        self.assertFalse(h2._capacity_change_ok,
+                         "a limit that never appeared was accepted")
 
 
 class TestBottleneckDropSignal(unittest.TestCase):
