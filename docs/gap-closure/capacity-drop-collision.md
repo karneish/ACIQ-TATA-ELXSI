@@ -123,8 +123,8 @@ have been quietly dropped. They are live assertions now.
 
 Eighteen existing tests asserted the old mechanism. None were deleted. The ones
 that encoded the defect were inverted with the reason recorded
-(`test_set_capacity_changes_the_parent_first` →
-`test_set_capacity_does_not_touch_the_parents_class`); the rest were
+(the old "changes the parent first" test → the new "does not touch the parent's
+class" test); the rest were
 re-pointed at `build_plan`, where the invariant now lives.
 
 Two of them had been quietly testing nothing: the refusal tests in
