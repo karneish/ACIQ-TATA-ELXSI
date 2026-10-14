@@ -35,7 +35,7 @@ PASS, FAIL, BLOCKED, NOT_RUN = "PASS", "FAIL", "BLOCKED", "NOT RUN"
 #: silently shrunk (a broken import in one test module drops it, and `discover`
 #: reports the rest as a success). Without a floor, deleting a whole test module
 #: would still produce a green acceptance run.
-MIN_TESTS = 857
+MIN_TESTS = 865
 
 
 #: Test modules covering mandatory release requirements. A skip in one of
@@ -231,6 +231,18 @@ def check_experiment_evidence() -> list[tuple]:
                          f"only {n} samples (need {MIN_ADAPT_SAMPLES}); the "
                          f"estimator has not converged, so this is INCONCLUSIVE "
                          f"rather than a detection{note}"))
+        elif _shape_exceeded_truth(r, float(target)):
+            # The tell-tale of the set_capacity/controller-write collision: the
+            # measured throughput ends up ABOVE the capacity the link was
+            # clamped to. That is not an adaptation, it is the controller having
+            # overwritten the bottleneck it was supposed to be measuring.
+            shape = _steady_goodput(r)
+            rows.append(("live adaptation loop", FAIL,
+                         f"measured {shape:.1f} Mbps on a link clamped to "
+                         f"{target} Mbps: the policy write overwrote the "
+                         f"capacity drop (1:1 is written by both the plan and "
+                         f"set_capacity); adaptation is UNTESTABLE until the "
+                         f"bottleneck is enforced out of band"))
         elif target and est > ADAPT_TOLERANCE_X * float(target):
             rows.append(("live adaptation loop", NOT_RUN,
                          f"estimator reported {est} Mbps for a link that is "
@@ -281,6 +293,28 @@ def check_experiment_evidence() -> list[tuple]:
                          f"{r.get('policy_changes')} policy changes"
                          + _revision_note("data/host_gate_soak", rev()[:8])))
     return rows
+
+
+def _steady_goodput(result: dict) -> float:
+    """Median throughput over the middle of the run, ignoring ramp edges."""
+    import statistics
+    vals = [sum((v or {}).get("goodput_mbps", 0.0)
+                for v in (s.get("per_class") or {}).values())
+            for s in (result.get("samples") or [])]
+    vals = [v for v in vals if v > 0.0]
+    return statistics.median(vals) if vals else 0.0
+
+
+def _shape_exceeded_truth(result: dict, target: float) -> bool:
+    """Did steady-state throughput end up above the emulated capacity?
+
+    `set_capacity` implements the bottleneck by writing the HTB root class
+    rate, and `build_plan` writes the same class from the capacity estimate. So
+    a policy change overwrites the drop, the link stops being 10 Mbps, and the
+    estimator then faithfully reports the larger number. Without this check the
+    run reads as a clean adaptation rather than as a broken experiment.
+    """
+    return _steady_goodput(result) > target * ADAPT_TOLERANCE_X
 
 
 def rev() -> str:

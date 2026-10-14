@@ -224,3 +224,37 @@ class TestLiveModuleHygiene(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestExperimentEvidenceIsNotTruncated(unittest.TestCase):
+    """result.json used to keep only the last 3 samples.
+
+    A real 100 -> 10 -> 47 Mbps run therefore persisted {t=39,40,41} at
+    47 Mbps: an unreadable number with no indication that the link had ever
+    been at 10. The full series was in samples.jsonl all along, which is how the
+    defect was finally seen.
+    """
+
+    @staticmethod
+    def _src():
+        from pathlib import Path as _P
+        return (_P(__file__).resolve().parents[1]
+                / "aciq" / "experiment.py").read_text()
+
+    def test_result_json_keeps_the_whole_series(self):
+        src = self._src()
+        self.assertNotIn("samples=samples[-3:]", src)
+        self.assertIn("samples=samples,", src)
+
+    def test_the_documented_reason_is_present(self):
+        src = self._src()
+        self.assertIn("The WHOLE series, not the tail", src)
+
+    def test_the_transition_would_be_visible(self):
+        """The defect hid a transition; this asserts the shape that hid it is
+        recoverable from the persisted artefact."""
+        series = [{"t": 5.19, "g": 102.0}, {"t": 6.24, "g": 12.35},
+                  {"t": 7.28, "g": 10.03}, {"t": 8.37, "g": 0.0},
+                  {"t": 9.41, "g": 47.11}, {"t": 41.12, "g": 0.0}]
+        kept = series[-3:]
+        self.assertNotIn(10.03, [x["g"] for x in kept])   # what was hidden
+        self.assertIn(10.03, [x["g"] for x in series])   # what must survive

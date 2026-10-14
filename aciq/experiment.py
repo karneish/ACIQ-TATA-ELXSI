@@ -619,7 +619,16 @@ class ExperimentRunner:
             capacity_change_applied=not self._capacity_change_failed,
             capacity_change_error=self.harness._capacity_change_error,
             estimator_mbps=round(est, 2) if est else None,
-            samples=samples[-3:],
+            # The WHOLE series, not the tail.
+            #
+            # This truncated to the last 3 samples, which discarded the entire
+            # transition. A real run dropped 100 -> 10 Mbps and then, because of
+            # a separate defect, went back up to 47. result.json showed only
+            # {t=39,40,41} at 47 -- an unreadable number with no context -- while
+            # samples.jsonl held the 10 Mbps dip that showed what had actually
+            # happened. An evidence file that hides the interesting part is
+            # worse than no evidence file, because it looks like a result.
+            samples=samples,
             policy_changes=self.harness.policy_changes,
 notes=(([] if dropped else ["no capacity drop in this run"])
                    + ([stale_note] if stale_note else [])

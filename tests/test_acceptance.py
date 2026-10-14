@@ -625,3 +625,60 @@ class TestExperimentEvidenceGates(unittest.TestCase):
         self.assertEqual(src.count("stamp "), 3,
                          "all three results dirs must be revision-stamped")
         self.assertIn("git rev-parse HEAD", src)
+
+
+class TestCapacityDropCollision(unittest.TestCase):
+    """set_capacity and build_plan both write the HTB root class.
+
+        aciq/harness.py:389   classid 1:1 rate=<true capacity>
+        aciq/tc.py:138        TcClass(1:1, 1:, cap, cap)
+
+    So a policy change overwrites the capacity drop the controller is supposed
+    to detect. Measured on the host: link clamped to 10 Mbps, goodput dipped to
+    10.03 at t=7.3, then the controller re-planned and throughput settled at 47
+    Mbps -- 4.7x the true capacity -- and the estimator confirmed 47. The run
+    would have read as a successful adaptation.
+    """
+
+    def test_steady_goodput_ignores_ramp_edges(self):
+        r = {"samples": [
+            {"per_class": {"bulk": {"goodput_mbps": 0.0}}},
+            {"per_class": {"bulk": {"goodput_mbps": 102.0}}},
+            {"per_class": {"bulk": {"goodput_mbps": 10.03}}},
+            {"per_class": {"bulk": {"goodput_mbps": 47.11}}},
+            {"per_class": {"bulk": {"goodput_mbps": 47.02}}},
+        ]}
+        self.assertAlmostEqual(A._steady_goodput(r), 47.11, delta=0.5)
+
+    def test_shape_above_truth_is_detected(self):
+        r = {"samples": [{"per_class": {"bulk": {"goodput_mbps": 47.0}}}] * 5}
+        self.assertTrue(A._shape_exceeded_truth(r, 10.0))
+
+    def test_a_correct_adaptation_is_not_flagged(self):
+        r = {"samples": [{"per_class": {"bulk": {"goodput_mbps": v}}}
+                         for v in (12.3, 10.03, 9.9, 10.1, 9.8, 10.0)]}
+        self.assertFalse(A._shape_exceeded_truth(r, 10.0))
+
+    def test_the_adaptation_run_on_disk_is_flagged_as_a_failure(self):
+        """The actual evidence, so this cannot be quietly reclassified."""
+        import glob
+        hits = glob.glob("data/host_gate_adapt/*/result.json")
+        if not hits:
+            self.skipTest("no adaptation evidence on disk")
+        import json
+        r = json.load(open(hits[-1]))
+        target = float(r.get("link_end_mbps") or 0)
+        if target <= 0:
+            self.skipTest("no drop in that run")
+        self.assertTrue(A._shape_exceeded_truth(r, target),
+                        "this run measured above its own clamped capacity; it "
+                        "is a broken experiment, not an adaptation result")
+
+    def test_both_writers_target_the_root_class(self):
+        from pathlib import Path as _P
+        root = _P(__file__).resolve().parents[1]
+        harness = (root / "aciq" / "harness.py").read_text()
+        tc = (root / "aciq" / "tc.py").read_text()
+        self.assertIn('"classid", ROOT_CLASS_ID', harness)
+        self.assertIn("ROOT_CLASS_ID = \"1:1\"", tc)
+        self.assertIn("TcClass(ROOT_CLASS_ID, BARE_CLASS_ID, cap, cap", tc)
