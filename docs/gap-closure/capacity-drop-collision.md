@@ -131,3 +131,77 @@ Two of them had been quietly testing nothing: the refusal tests in
 `test_intent.py` refused `class change`, which the new code never issues, so
 they were refusing nothing. They now refuse the command actually sent — a test
 that cannot fail is the same defect as a gate that cannot be run.
+
+
+## Update: the bottleneck holds, but adaptation is still not demonstrated
+
+Two runs later, with `samples[i]["bottleneck"]` recorded every tick:
+
+```
+t=5.24   qdisc noqueue 0: root refcnt 2
+t=6.26   qdisc netem 8001: root refcnt 5 limit 1000 rate 10Mbit
+t=11.39  qdisc netem 8001: root refcnt 5 limit 1000 rate 10Mbit
+```
+
+**The out-of-band bottleneck holds.** Steady-state goodput is **10.01 Mbps** on a
+link clamped to 10, where the pre-fix run measured **46.78**. The collision is
+closed: the controller can shape as hard as it likes and the link stays where it
+was put.
+
+### A verification bug that invented the fault
+
+The first run with the new bottleneck reported:
+
+```
+CAPACITY CHANGE REFUSED by tc (qdisc replace returned 0 but read-back did not
+show the limit: qdisc netem 8001: root refcnt 5 limit 1000 rate 10Mbit)
+```
+
+while the same qdisc was visibly holding the link. The check was
+
+```python
+applied = "10.0000" in out
+```
+
+`tc` prints the limit **normalised** — `rate 10Mbit` — so that comparison could
+never succeed. It is the worst shape of verification bug: it does not miss a
+fault, it **invents** one, and it makes a working system look broken. Now parsed
+numerically, case-insensitively, with a 1% tolerance.
+
+### What is still unproven, and why
+
+The estimator reported **103.2 Mbps** and the run said so itself:
+
+> estimator 103.2 Mbps is STALE: last measured at t=2.1s, before the link
+> changed at t=5.2s. M2 only measures an oversubscribed link, and this one
+> stopped being oversubscribed once the workload's rate fell with it, so no
+> post-drop reading was possible
+
+This is the remaining design issue, and it is a real one:
+
+- the plan shapes the HTB tree to **100 Mbps**;
+- the real bottleneck is **external** and delivers 10;
+- so the HTB parent is **not overcommitted** — no overlimit, no drop, no backlog;
+- `Measurement.saturated()` is false, and the estimator correctly declines to
+  produce a reading from an unsaturated link.
+
+**M2 detects saturation of its own tree.** With the bottleneck moved out of
+band, a link that is slower than the current plan is no longer detectable by
+that test — which is the price of moving it out of band, and it was previously
+hidden because the collision produced a fake reading instead.
+
+### The fix this implies
+
+The controller needs a saturation signal it can see and cannot overwrite. The
+drops currently happen inside netem on `wan/veth-w`, where the collector does
+not read. Moving the limit to **`router/veth-wan`** -- still a device
+`TransactionManager` never writes, but one the collector already reads -- and
+feeding that interface's drop counter into `Measurement.saturated()` would give
+M2 exactly what it had before, sourced from a bottleneck the controller cannot
+raise.
+
+Not implemented. It changes the measurement contract and needs a host run to
+validate, and it is recorded here rather than attempted blind.
+
+**Current status: the bottleneck is fixed and evidenced. Adaptation to a slower
+link is BLOCKED on M2's saturation test seeing a bottleneck it cannot overwrite.**

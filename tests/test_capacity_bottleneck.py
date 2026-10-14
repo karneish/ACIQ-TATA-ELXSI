@@ -149,3 +149,73 @@ class TestBottleneckStateIsEvidence(unittest.TestCase):
         self.assertNotIn(
             "noqueue", state,
             f"the bottleneck ended as noqueue -- the limit was lost: {state!r}")
+
+
+class TestBottleneckReadBackIsNumeric(unittest.TestCase):
+    """The read-back was a substring test, which is the worst kind of bug.
+
+        applied = "10.0000" in out
+
+    tc prints the limit normalised -- `rate 10Mbit` -- so the check could never
+    succeed. On the host that turned a perfectly applied netem limit into
+    "CAPACITY CHANGE REFUSED ... the link was NOT changed", and the run was
+    then discarded as an undropped run while netem was visibly holding the link
+    at 10 Mbit for the rest of it.
+
+    It does not miss a fault. It invents one, and makes a working system look
+    broken."""
+
+    # verbatim from the user's host, data/host_gate_adapt
+    REAL_OUTPUT = ("qdisc netem 8001: root refcnt 5 limit 1000 "
+                   "rate 10Mbit")
+
+    def test_the_real_host_output_is_accepted(self):
+        from aciq.harness import _qdisc_reports_rate as f
+        self.assertTrue(f(self.REAL_OUTPUT, 10.0))
+
+    def test_unit_variants_are_accepted(self):
+        from aciq.harness import _qdisc_reports_rate as f
+        self.assertTrue(f("qdisc netem 1: root rate 100Mbit", 100.0))
+        self.assertTrue(f("qdisc netem 1: root rate 1000Kbit", 1.0))
+        self.assertTrue(f("qdisc netem 1: root rate 1Gbit", 1000.0))
+
+    def test_a_wrong_rate_is_rejected(self):
+        from aciq.harness import _qdisc_reports_rate as f
+        self.assertFalse(f(self.REAL_OUTPUT, 20.0))
+        self.assertFalse(f(self.REAL_OUTPUT, 100.0))
+
+    def test_no_rate_at_all_is_rejected(self):
+        from aciq.harness import _qdisc_reports_rate as f
+        self.assertFalse(f("qdisc noqueue 0: root refcnt 2", 10.0))
+
+    def test_rounding_within_tolerance_is_accepted(self):
+        from aciq.harness import _qdisc_reports_rate as f
+        self.assertTrue(f("rate 9.9997Mbit", 10.0))
+
+    def test_set_capacity_now_accepts_the_real_output(self):
+        """End to end through FakeRunner, which prints what tc prints."""
+        from aciq.txn import FakeRunner
+        h = Harness(runner=FakeRunner())
+        cmds = h.set_capacity(10.0)
+        self.assertTrue(h._capacity_change_ok,
+                        f"the limit was applied and refused: "
+                        f"{h._capacity_change_error}")
+        self.assertEqual(h._capacity_mbps, 10.0)
+
+
+class TestTheRunThatExposedIt(unittest.TestCase):
+    """The host run this came from, preserved rather than re-described."""
+
+    def test_the_faulty_run_is_marked_as_refused_not_claimed_as_a_drop(self):
+        import glob
+        hits = sorted(glob.glob("data/host_gate_adapt/*/result.json"))
+        if not hits:
+            self.skipTest("no adaptation evidence")
+        import json
+        last = json.load(open(hits[-1]))
+        self.assertFalse(
+            last.get("capacity_change_applied"),
+            "the run recorded a refused capacity change; if this now passes "
+            "the run predates the numeric read-back and must be re-run")
+        self.assertIn("read-back did not show the limit",
+                      last.get("capacity_change_error", ""))

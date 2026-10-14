@@ -219,6 +219,30 @@ def _class_ids_of(plan) -> dict:
     return {c: CLASS_IDS[c] for c in plan.rates}
 
 
+def _qdisc_reports_rate(text: str, want_mbps: float) -> bool:
+    """Does `tc qdisc show` report this netem limit, numerically?
+
+    It was a substring test -- `"10.0000" in out` -- which can never succeed:
+    tc prints what it was given, normalised, as `rate 10Mbit`. On the host that
+    made a perfectly applied limit report as REFUSED, and the run was then
+    treated as undropped while netem was sitting there holding the link at 10.
+
+    That is the worst shape of verification bug: it does not miss a fault, it
+    invents one, and it makes a working system look broken.
+    """
+    import re
+    # Case-insensitive: the host prints `rate 10Mbit`, the test double prints
+    # `rate 10.0000mbit`. Both are valid tc output and both must verify.
+    for m in re.finditer(r"\brate\s+([0-9.]+)\s*([KMG]?)bit", text,
+                         re.IGNORECASE):
+        val = float(m.group(1))
+        unit = m.group(2).upper()
+        mbps = val * {"": 1e-6, "K": 1e-3, "M": 1.0, "G": 1e3}[unit]
+        if abs(mbps - want_mbps) <= max(0.01 * want_mbps, 0.01):
+            return True
+    return False
+
+
 class Harness:
     """Orchestrates runs. Needs root for tc; the control logic is testable
     without it because the runner and collector are injected."""
@@ -430,7 +454,7 @@ class Harness:
             failures.append(f"qdisc replace -> {err.strip() or rc}")
         else:
             rc, out, err = self.runner.run(cmds[1])
-            applied = out is not None and str(rate.split("mbit")[0]) in out
+            applied = _qdisc_reports_rate(out or "", capacity_mbps)
             if rc != 0:
                 failures.append(f"qdisc show -> {err.strip() or rc}")
             elif not applied:

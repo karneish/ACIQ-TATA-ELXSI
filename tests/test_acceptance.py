@@ -659,10 +659,18 @@ class TestCapacityDropCollision(unittest.TestCase):
                          for v in (12.3, 10.03, 9.9, 10.1, 9.8, 10.0)]}
         self.assertFalse(A._shape_exceeded_truth(r, 10.0))
 
-    def test_the_adaptation_run_on_disk_is_flagged_as_a_failure(self):
-        """The actual evidence, so this cannot be quietly reclassified."""
+    def test_the_adaptation_run_on_disk_holds_its_clamp(self):
+        """The actual evidence, so this cannot be quietly reclassified.
+
+        Was the other way round. The run that motivated this assertion measured
+        46.78 on a link clamped to 10 -- the controller had erased the
+        bottleneck. After `set_capacity` moved the limit out of band, and the
+        read-back was made numeric, this run measures **10.01** on the same
+        clamp. The property now asserted is the one we want, and the earlier
+        failure would fail it again.
+        """
         import glob
-        hits = glob.glob("data/host_gate_adapt/*/result.json")
+        hits = sorted(glob.glob("data/host_gate_adapt/*/result.json"))
         if not hits:
             self.skipTest("no adaptation evidence on disk")
         import json
@@ -670,9 +678,10 @@ class TestCapacityDropCollision(unittest.TestCase):
         target = float(r.get("link_end_mbps") or 0)
         if target <= 0:
             self.skipTest("no drop in that run")
-        self.assertTrue(A._shape_exceeded_truth(r, target),
-                        "this run measured above its own clamped capacity; it "
-                        "is a broken experiment, not an adaptation result")
+        self.assertFalse(A._shape_exceeded_truth(r, target),
+                         "measured above the clamped capacity again")
+        self.assertLessEqual(A._steady_goodput(r), target * 1.1,
+                             "the bottleneck did not hold")
 
     def test_the_two_writers_no_longer_collide(self):
         """Inverted when the collision was fixed.
