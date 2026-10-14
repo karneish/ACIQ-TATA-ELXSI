@@ -260,3 +260,61 @@ it is meant to:
 **Current status: the bottleneck holds and is evidenced (10.01 Mbps on a 10 Mbps
 clamp). Adaptation now has a saturation signal from a bottleneck it cannot
 overwrite. NOT YET EVIDENCED — this needs one more host run.**
+
+
+## Resolved: adaptation is demonstrated
+
+Third attempt, and it holds:
+
+```
+  t      goodput  bottleneck_rate  backlog_pkts
+  4.16    102.53   (none)          0
+  5.19    102.88   (none)          0
+  6.22     12.62   10Mbit         30
+  7.25      9.99   10Mbit         34
+  9.35     10.01   10Mbit         40
+  12.42    10.01   10Mbit         48
+  38.32     9.99   10Mbit        276
+  41.40     9.99   10Mbit         14
+```
+
+- `capacity_change_applied: True`, `capacity_change_error: ''`
+- steady goodput **10.00 Mbps** on a link clamped to 10
+- `estimator = 11.03` against a true 10 — **10.3% error**
+- `policy_changes = 6` — it reacted, then settled rather than oscillating
+- netem `dropped 0` throughout, backlog 30 → 330 packets
+
+That last line is the confirmation of the signal decision: a limiter that never
+drops, holding a persistent queue. Watches that monitored drops -- the first
+version of this fix -- saw nothing at all.
+
+The controller no longer erases the bottleneck, and M2 can see a bottleneck it
+cannot overwrite. **The collision is closed.**
+
+### Three failures, in order, all instructive
+
+| attempt | result | cause |
+|---|---|---|
+| 1 | throughput back to 47 Mbps | the controller wrote the same HTB root class as `set_capacity` |
+| 2 | `CAPACITY CHANGE REFUSED`, working limit | read-back compared `"10.0000"` against tc's `rate 10Mbit` |
+| 3 | `STALE`, working limit | watched **drops**; netem **delays** |
+| 4 | `102.44 Mbps`, verified limit | netem placed on the ACK direction |
+| 5 | **`estimator 11.03`** | — |
+
+Not one of the first four could have been found by reasoning alone. Each needed
+the next host run to say which of several plausible mechanisms it was, and each
+failure was a verification signal that reported something other than what it
+was meant to -- the same shape as the ones found in `txn.py`, `acceptance.py`
+and `audit_claims.py` earlier.
+
+### One caveat, caught by the harness itself
+
+```
+PASS  live adaptation loop -- 100.0 -> 10.0 Mbps, estimator 11.03
+      [evidence from revision 798a4fec, not 2f39dbb6]
+```
+
+Correct behaviour: only `host_gate.sh` wrote revision stamps, so a direct
+`run_experiments.py` left the directory carrying an older stamp. The producer
+now stamps its own output (`--no-stamp` to decline deliberately), which is
+where that responsibility belongs.

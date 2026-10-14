@@ -89,6 +89,10 @@ def main() -> int:
                     help="defaults to the whole run, so the measurement is of "
                          "the effect and not of the expiry")
     ap.add_argument("--results-dir", default=str(RESULTS_DIR))
+    ap.add_argument("--no-stamp", action="store_true",
+                    help="do not record the revision in the results "
+                         "directory. Only for deliberately mixing evidence "
+                         "from several revisions in one tree.")
     ap.add_argument("--report", default=None, help="write the Markdown report here")
     ap.add_argument("--report-only", action="store_true",
                     help="rebuild the report from existing artefacts and exit. "
@@ -168,6 +172,27 @@ def main() -> int:
 
     # One seed unless --seeds was given. Kept as a list so the loop reads the same
     # either way, rather than branching inside the inner loop.
+    # Stamp the results directory with the revision that produced it.
+    #
+    # This belongs here, in the producer, and not in tools/host_gate.sh: run
+    # this script directly and the evidence had no revision at all, so the
+    # acceptance check reported it as UNBOUND or, worse, attributed a stale
+    # stamp left by an earlier orchestrator run to a run made with different
+    # code. A run now identifies itself.
+    if not args.no_stamp:
+        try:
+            import subprocess as _sp
+            rev = _sp.run(["git", "rev-parse", "HEAD"],
+                          cwd=ROOT, capture_output=True, text=True,
+                          timeout=10).stdout.strip()
+            if rev:
+                rd = Path(args.results_dir)
+                rd.mkdir(parents=True, exist_ok=True)
+                (rd / "REVISION").write_text(rev + "\n")
+                print(f"evidence stamped with revision {rev[:8]}")
+        except (OSError, ValueError):
+            pass
+
     seeds = ([args.seed] if not args.seeds
              else [args.seed + i for i in range(args.seeds)])
 

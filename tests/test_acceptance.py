@@ -706,3 +706,55 @@ class TestCapacityDropCollision(unittest.TestCase):
             build_tree(build_plan(10.0)), dev="veth-lan", ns="router")]
         self.assertTrue(any("classid 1:1 " in c for c in cmds),
                         "build_plan must still write the root class")
+
+
+class TestEvidenceStampsItself(unittest.TestCase):
+    """The revision stamp is written by the producer, not the orchestrator.
+
+    Only `tools/host_gate.sh` used to stamp results directories, so running
+    `run_experiments.py` directly left the evidence with no revision at all --
+    or attributed a stale stamp from an earlier orchestrated run to a run made
+    with different code. The acceptance check caught exactly that:
+
+        PASS  live adaptation loop -- 100.0 -> 10.0 Mbps, estimator 11.03
+              [evidence from revision 798a4fec, not 2f39dbb6]
+
+    which is the check working, but on a stamp that should not have existed.
+    """
+
+    @staticmethod
+    def _src():
+        from pathlib import Path as _P
+        return (_P(__file__).resolve().parents[1]
+                / "run_experiments.py").read_text()
+
+    def test_the_driver_stamps_its_own_results(self):
+        src = self._src()
+        self.assertIn("REVISION", src)
+        self.assertIn("git", " ".join(
+            l.strip() for l in src.splitlines() if "rev-parse" in l))
+        self.assertIn("evidence stamped with revision", src)
+
+    def test_stamping_can_be_declined_deliberately(self):
+        self.assertIn("--no-stamp", self._src())
+
+    def test_the_orchestrator_still_stamps_too(self):
+        """Belt and braces: the orchestrator stamps before the driver runs."""
+        from pathlib import Path as _P
+        src = (_P(__file__).resolve().parents[1]
+               / "tools" / "host_gate.sh").read_text()
+        self.assertIn("stamp()", src)
+        self.assertIn("git rev-parse HEAD", src)
+
+    def test_the_acceptance_check_reports_a_mismatched_revision(self):
+        import tempfile
+        from pathlib import Path as _P
+        d = tempfile.mkdtemp()
+        (_P(d) / "REVISION").write_text("b" * 40 + "\n")
+        saved = A.ROOT
+        try:
+            A.ROOT = _P(d)
+            note = A._revision_note("", "a" * 40)
+        finally:
+            A.ROOT = saved
+        self.assertIn("evidence from revision bbbbbbbb", note)
