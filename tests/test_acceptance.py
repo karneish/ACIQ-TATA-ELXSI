@@ -674,11 +674,20 @@ class TestCapacityDropCollision(unittest.TestCase):
                         "this run measured above its own clamped capacity; it "
                         "is a broken experiment, not an adaptation result")
 
-    def test_both_writers_target_the_root_class(self):
-        from pathlib import Path as _P
-        root = _P(__file__).resolve().parents[1]
-        harness = (root / "aciq" / "harness.py").read_text()
-        tc = (root / "aciq" / "tc.py").read_text()
-        self.assertIn('"classid", ROOT_CLASS_ID', harness)
-        self.assertIn("ROOT_CLASS_ID = \"1:1\"", tc)
-        self.assertIn("TcClass(ROOT_CLASS_ID, BARE_CLASS_ID, cap, cap", tc)
+    def test_the_two_writers_no_longer_collide(self):
+        """Inverted when the collision was fixed.
+
+        `build_plan` owns the root class and still writes it. `set_capacity`
+        must not -- it was writing the same class, which let the controller
+        erase the bottleneck it was measuring.
+        """
+        from aciq.harness import Harness
+        h = Harness()
+        for argv in h.set_capacity(10.0):
+            self.assertNotIn("classid 1:1", " ".join(argv))
+        from aciq.policy import build_plan
+        from aciq.tc import build_tree, render
+        cmds = [" ".join(c) for c in render(
+            build_tree(build_plan(10.0)), dev="veth-lan", ns="router")]
+        self.assertTrue(any("classid 1:1 " in c for c in cmds),
+                        "build_plan must still write the root class")

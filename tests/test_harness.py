@@ -37,15 +37,48 @@ def saturating(now, rx, over_before, over_after):
 class TestCapacityInvariant(unittest.TestCase):
     """The reason this module exists."""
 
-    def test_set_capacity_changes_the_parent_first(self):
-        h = harness()
-        cmds = h.set_capacity(20.0)
-        argv = cmds[0]
-        self.assertEqual(argv[argv.index("classid") + 1], ROOT_CLASS_ID)
-        self.assertEqual(argv[argv.index("parent") + 1], "1:")
+    def test_set_capacity_does_not_touch_the_parents_class(self):
+        """Inverted deliberately, and this is the whole defect.
 
-    def test_set_capacity_clamps_each_childs_ceil(self):
-        """The fix. The parent rate alone does not cap a subtree: a class borrows
+        It used to assert `set_capacity` wrote class 1:1 first. It does not
+        anymore, because `build_plan` writes 1:1 too -- so the controller's
+        policy change erased the capacity drop it was being asked to detect,
+        and the estimator then reported the number the controller chose.
+        Measured: 100 -> 10 -> 47 Mbps on one run.
+
+        The bottleneck is now netem on ns wan / veth-w, which
+        `TransactionManager` never writes.
+        """
+        h = harness()
+        for argv in h.set_capacity(20.0):
+            text = " ".join(argv)
+            self.assertNotIn(f"classid {ROOT_CLASS_ID}", text,
+                             f"set_capacity must not write {ROOT_CLASS_ID}")
+
+    def test_CAPACITY_IS_ENFORCED_OUT_OF_BAND_NOT_BY_CLAMPING(self):
+        """Superseded by a real bottleneck; the clamp is the collision.
+
+        A class borrows past its parent rate up to its own ceil, so the old
+        implementation clamped every child's ceil to force the link down. That
+        is exactly the write the controller then overwrote on its next policy
+        change. The link is now limited physically by netem, so there is nothing
+        to clamp and nothing for the controller to undo.
+        """
+        h = harness()
+        h.apply_system(SystemSpec.ACIQ, 100.0)
+        before = len(h.runner.commands)
+        h.set_capacity(10.0)
+        added = [" ".join(c) for c in h.runner.commands[before:]]
+        self.assertTrue(any("netem" in c and "10.0000mbit" in c for c in added),
+                        f"expected a netem rate limit: {added}")
+        for c in added:
+            self.assertNotIn("parent 1:1 classid", c,
+                             "no class on the controller's tree may be written")
+
+    def test_OLD_clamp_mechanism_is_gone(self):
+        """The previous test, kept as its own assertion so the clamp cannot
+        creep back.
+        The parent rate alone does not cap a subtree: a class borrows
         past its parent's rate up to its own ceil, and build_plan sets every child
         ceil to the capacity at plan time. Six `--drop-at` experiments reported a
         link state they never reached because this clamp was missing -- measured
@@ -59,12 +92,9 @@ class TestCapacityInvariant(unittest.TestCase):
         before = len(h.runner.commands)
         h.set_capacity(10.0)
         added = [" ".join(c) for c in h.runner.commands[before:]]
-        children = [c for c in added if "parent 1:1 classid" in c]
-        clamped = sorted(c.split("classid ")[1].split(" ")[0] for c in children)
-        self.assertEqual(clamped, ["1:10", "1:20", "1:30"],
-                         "every child ceil must be clamped, one command each")
-        for cmd in children:
-            self.assertIn("ceil 10.0000mbit", cmd)
+        classes = [c for c in added if "parent 1:1 classid" in c]
+        self.assertEqual(classes, [],
+                         "the clamp is the collision; it must not come back")
 
     def test_every_child_command_carries_a_rate(self):
         """tc refuses `class change ... htb ceil X` with `"rate" is required`.
@@ -83,20 +113,27 @@ class TestCapacityInvariant(unittest.TestCase):
             if "parent 1:1 classid" in " ".join(cmd):
                 self.assertIn(" rate ", f" {' '.join(cmd)} ")
 
-    def test_no_child_rate_ever_exceeds_its_clamped_ceil(self):
-        """HTB requires rate <= ceil. Lowering the ceil under a child's existing
-        rate would leave an invalid class, and `rate 0` would be honoured by the
-        kernel and silently delete M3's bandwidth."""
+
+    def test_no_child_rate_ever_exceeds_its_own_ceil(self):
+        """`rate <= ceil` is an HTB requirement, not a clamp artefact.
+
+        The clamp that used to be applied here is gone, but the validity rule
+        the kernel enforces is not: a class whose rate exceeds its own ceil is
+        refused. netem carries a rate and no ceil, so it is skipped rather than
+        mistaken for a class.
+        """
         h = harness()
         h.apply_system(SystemSpec.ACIQ, 100.0)
-        for cmd in h.set_capacity(10.0):
-            text = " ".join(cmd)
-            if " rate " not in f" {text} ":
+        seen = 0
+        for c in h.runner.commands:
+            text = " ".join(c)
+            if " rate " not in f" {text} " or " ceil " not in f" {text} ":
                 continue
             rate = float(text.split(" rate ")[1].split("mbit")[0])
             ceil = float(text.split(" ceil ")[1].split("mbit")[0])
             self.assertLessEqual(rate, ceil, f"invalid HTB class: {text}")
-
+            seen += 1
+        self.assertTrue(seen, "no classes were checked")
     def test_a_clamp_never_raises_a_child_rate(self):
         """min() only. Raising one would hand M3's bandwidth to someone."""
         h = harness()
@@ -115,63 +152,50 @@ class TestCapacityInvariant(unittest.TestCase):
             rate = float(text.split(" rate ")[1].split("mbit")[0])
             self.assertLessEqual(rate, before.get(cid, rate) + 1e-9)
 
+
     def test_child_rates_still_sum_to_the_new_capacity(self):
-        """This test used to assert the opposite, and that is how the bug lived.
+        """The invariant is unchanged; only the enforcer moved.
 
-        `set_capacity` clamped each child with `min(rate, capacity)`, which put
-        *every* child at the full link capacity: a 100 Mbps plan dropped to 10
-        became four classes each guaranteed 10, so 40 Mbps was promised on a
-        10 Mbps link. Gate check 6 has always rescaled instead
-        (`rate 8mbit ceil 20mbit`, sum 16 <= 20); this path did not, and the
-        over-subscribed tree is what stopped the cap being enforced.
-
-        The original rationale -- "rates are policy and belong to M3" -- is
-        sound, but scaling preserves M3's proportions. Clamping flattened them
-        and broke the sum invariant while pretending not to touch policy.
+        The limit is now physical -- netem on `wan/veth-w`, a link the
+        controller never writes -- rather than a rescale that the controller
+        overwrote on its very next policy change. So the sum invariant is a
+        property of build_plan, and is asserted as one.
         """
-        h = harness()
-        h.apply_system(SystemSpec.ACIQ, 100.0)
-        before = len(h.runner.commands)      # only what set_capacity emits
-        h.set_capacity(10.0)
-        child = [c for c in h.runner.commands[before:]
-                 if "parent 1:1 classid" in " ".join(c)]
-        self.assertTrue(child, "no child class command was emitted")
-        total = 0.0
-        for cmd in child:
-            text = " ".join(cmd)
-            rate = float(text.split(" rate ")[1].split("mbit")[0])
-            ceil = float(text.split(" ceil ")[1].split("mbit")[0])
-            self.assertLessEqual(rate, ceil, text)
-            total += rate
-        self.assertLessEqual(total, 10.0 + 1e-6,
-                             f"children promised {total} on a 10 Mbps link")
+        for cap in (100.0, 20.0, 10.0, 3.0):
+            h = harness()
+            h.apply_system(SystemSpec.ACIQ, cap)
+            h.set_capacity(cap)
+            plan = h._current_plan
+            self.assertLessEqual(sum(plan.rates.values()), cap + 1e-6,
+                                 f"children promised more than {cap}")
+            for cid, rate in plan.rates.items():
+                self.assertLessEqual(rate, cap + 1e-6, f"{cid} at {cap}")
 
-    def test_scaling_preserves_the_proportions_m3_chose(self):
+    def test_the_proportions_m3_chose_survive_a_capacity_change(self):
+        """M3 owns the proportions and a drop must not flatten them.
+
+        The rescale that used to live in set_capacity is what preserved them,
+        and it is gone because it was the collision. build_plan computes the
+        same proportions for a capacity, so the property survives -- asserted
+        against build_plan now rather than against commands that are no longer
+        emitted.
+        """
         h = harness()
         h.apply_system(SystemSpec.ACIQ, 100.0)
         before = dict(h._current_plan.rates)
         self.assertTrue(before, "no plan rates to preserve")
-        n = len(h.runner.commands)
-        h.set_capacity(10.0)
-        after = {}
-        for cmd in h.runner.commands[n:]:
-            text = " ".join(cmd)
-            if "parent 1:1 classid" not in text:
-                continue
-            cid = text.split("classid ")[1].split(" ")[0]
-            after[cid] = float(text.split(" rate ")[1].split("mbit")[0])
-        self.assertTrue(after, "no child rates were emitted")
-        self.assertLessEqual(sum(after.values()), 10.0 + 1e-6)
-        # Proportions survive the drop: every child's share of the total should
-        # match its share before it, to within rounding.
-        total_before = sum(before.values())
-        scaled = sorted(before.values(), reverse=True)
-        scaled_after = sorted(after.values(), reverse=True)
-        self.assertEqual(len(scaled), len(scaled_after))
-        for b4, a4 in zip(scaled, scaled_after):
-            self.assertAlmostEqual(b4 / total_before, a4 / sum(after.values()),
-                                   places=3)
 
+        h.set_capacity(10.0)
+        h.apply_system(SystemSpec.ACIQ, 10.0)
+        after = dict(h._current_plan.rates)
+        self.assertTrue(after, "no plan rates after the drop")
+        self.assertEqual(sorted(map(str, before)), sorted(map(str, after)))
+
+        tb, ta = sum(before.values()), sum(after.values())
+        for b4, a4 in zip(sorted(before.values(), reverse=True),
+                          sorted(after.values(), reverse=True)):
+            self.assertAlmostEqual(b4 / tb, a4 / ta, places=6,
+                                   msg="proportions flattened across the drop")
     def test_a_grown_capacity_does_not_rescale_upwards(self):
         """A capacity that grows is M3's to replan. The harness only shrinks."""
         h = harness()
@@ -185,10 +209,25 @@ class TestCapacityInvariant(unittest.TestCase):
                 self.assertLessEqual(rate, 100.0,
                                      f"a capacity change handed out bandwidth: {text}")
 
-    def test_set_capacity_emits_no_qdisc_command(self):
+    def test_set_capacity_emits_no_qdisc_command_on_the_controller_device(self):
+        """The intent survives the mechanism change.
+
+        It originally forbade any qdisc command, because replacing a qdisc on
+        `veth-lan` destroys the tree the controller owns. That is still the
+        rule -- it is now scoped to the controller's device, because the
+        bottleneck has to be a qdisc somewhere and it is deliberately NOT
+        there.
+        """
         h = harness()
         h.set_capacity(20.0)
-        self.assertNotIn("qdisc", " ".join(h.runner.commands[0]))
+        for cmd in h.runner.commands:
+            text = " ".join(cmd)
+            if "qdisc" not in text:
+                continue
+            self.assertNotIn(h.dev, text,
+                             f"qdisc command on the controller's device: {text}")
+            self.assertIn(h.bottleneck_dev, text,
+                          f"qdisc command must be on the bottleneck: {text}")
 
     def test_capacity_value_reaches_the_command(self):
         h = harness()
@@ -434,8 +473,16 @@ class TestCapacityModes(unittest.TestCase):
         h.apply_system(SystemSpec.B1, 100.0)
         before = len(h.runner.commands)
         h.set_capacity(20.0)
-        # the single drop command only; no rebuild telling it the new rate
-        self.assertEqual(len(h.runner.commands) - before, 1)
+        added = [" ".join(c) for c in h.runner.commands[before:]]
+        # Two commands now: apply the out-of-band limit, then read it back.
+        # Still no rebuild of the baseline's tree, which is what this test is
+        # actually about -- a static baseline must not be told the new rate.
+        self.assertEqual(len(added), 2, added)
+        self.assertTrue(any("qdisc replace" in c for c in added))
+        self.assertTrue(any("qdisc show" in c for c in added))
+        for c in added:
+            self.assertNotIn("class add", c)
+            self.assertNotIn("class change", c)
 
     def test_adaptive_path_needs_no_out_of_band_capacity(self):
         """ACIQ reaches its new rate purely by observing counters."""

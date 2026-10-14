@@ -1,8 +1,9 @@
 """The capacity drop must be enforced out of band.
 
-**Spec-first.** These tests describe the behaviour `set_capacity` must have
-*after* the fix. They fail today, on purpose: the defect is real and present in
-the working tree.
+**Spec-first, and they earned it.** These were written before the fix and
+marked `expectedFailure` while the defect was real. When the fix landed they
+reported "unexpected successes" -- which unittest counts as a failure -- so the
+requirement could not have been quietly dropped. They are live assertions now.
 
 The collision, from real host evidence (`s2_wan_drop`, kernel 7.1.5):
 
@@ -31,11 +32,6 @@ from aciq.harness import ROOT_CLASS_ID, Harness
 class TestCapacityIsEnforcedOutOfBand(unittest.TestCase):
     """After the fix these pass; before it they describe the defect."""
 
-    # Expected to FAIL until set_capacity is moved off the root class.
-    # `expectedFailure` is the right semantics here: it keeps the suite
-    # green while the defect is real, and turns into an "unexpected
-    # success" -- which is a failure -- the moment the fix lands.
-    @unittest.expectedFailure
     def test_set_capacity_does_not_write_the_root_class(self):
         """The controller's plan owns 1:1. Nothing else may write it."""
         from aciq.tc import build_tree
@@ -58,22 +54,12 @@ class TestCapacityIsEnforcedOutOfBand(unittest.TestCase):
                         "build_plan must still write the root class -- if it "
                         "stops, the collision argument above is stale")
 
-    # Expected to FAIL until set_capacity is moved off the root class.
-    # `expectedFailure` is the right semantics here: it keeps the suite
-    # green while the defect is real, and turns into an "unexpected
-    # success" -- which is a failure -- the moment the fix lands.
-    @unittest.expectedFailure
     def test_the_bottleneck_is_applied_with_netem(self):
         h = Harness()
         cmds = [" ".join(c) for c in h.set_capacity(10.0)]
         self.assertTrue(any("netem" in c for c in cmds),
                         f"capacity must be limited with netem; got {cmds}")
 
-    # Expected to FAIL until set_capacity is moved off the root class.
-    # `expectedFailure` is the right semantics here: it keeps the suite
-    # green while the defect is real, and turns into an "unexpected
-    # success" -- which is a failure -- the moment the fix lands.
-    @unittest.expectedFailure
     def test_the_bottleneck_is_outside_the_namespace_the_controller_writes(self):
         """ns wan / dev veth-w: ACIQ writes router/veth-lan, never this."""
         h = Harness()
@@ -94,11 +80,6 @@ class TestCapacityIsEnforcedOutOfBand(unittest.TestCase):
         self.assertTrue(any("10" in c and "rate" in c for c in cmds),
                         f"the 10 Mbps limit must appear in the command: {cmds}")
 
-    # Expected to FAIL until set_capacity is moved off the root class.
-    # `expectedFailure` is the right semantics here: it keeps the suite
-    # green while the defect is real, and turns into an "unexpected
-    # success" -- which is a failure -- the moment the fix lands.
-    @unittest.expectedFailure
     def test_a_capacity_change_is_verifiable(self):
         """Same standard as the rollback work: issued is not installed."""
         h = Harness()

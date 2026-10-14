@@ -1399,7 +1399,12 @@ class TestACapacityChangeIsNotTakenOnTrust(unittest.TestCase):
             # wrong one made these refusals silently never fire, which is how the
             # first version of this test passed against code that refused nothing.
             def run(self, argv, **kw):
-                if "class" in argv and "change" in argv:
+                # The refusal has to target whatever set_capacity actually
+                # issues. It used to be `class change`; it is now
+                # `qdisc replace` on the out-of-band bottleneck, and a test that
+                # refused the old command was refusing nothing at all.
+                if ("class" in argv and "change" in argv) or \
+                        ("qdisc" in argv and "replace" in argv):
                     return 1, "", "RTNETLINK answers: Invalid argument"
                 return super().run(argv, **kw)
 
@@ -1413,13 +1418,20 @@ class TestACapacityChangeIsNotTakenOnTrust(unittest.TestCase):
         from aciq.harness import Harness
 
         class Refusing(FakeRunner):
+            # refuse the out-of-band bottleneck command set_capacity now issues
             def run(self, argv, **kw):
-                if "class" in argv and "change" in argv:
+                if ("class" in argv and "change" in argv) or \
+                        ("qdisc" in argv and "replace" in argv):
                     return 1, "", "nope"
                 return super().run(argv, **kw)
 
-        h = Harness(runner=Refusing(auto_readback=True), clock=lambda: 0.0)
+        # Establish a known-good capacity FIRST, with a healthy runner, so the
+        # refused call has something to fail against. Refusing everything would
+        # leave the baseline unset and the assertion below vacuous.
+        h = Harness(runner=FakeRunner(auto_readback=True), clock=lambda: 0.0)
         h.set_capacity(100.0)
+        self.assertEqual(h._configured_capacity, 100.0, "baseline not applied")
+        h.runner = Refusing(auto_readback=True)
         h.set_capacity(10.0)
         self.assertEqual(h._configured_capacity, 100.0,
                          "a refused change was recorded as the new capacity")

@@ -102,17 +102,36 @@ class FakeRunner:
             return 0, self.readback, ""
         if "qdisc" in argv and "del" in argv:
             self._qdiscs.clear()
-        if "qdisc" in argv and "add" in argv:
-            spec = [x for x in argv[argv.index("add") + 1:]
-                    if x not in ("dev", "root", "handle")]
-            handle = argv[argv.index("handle") + 1] if "handle" in argv else "root"
-            self._qdiscs[handle] = spec[0] if spec else "unknown"
+        if "qdisc" in argv and ("add" in argv or "replace" in argv):
+            verb = "add" if "add" in argv else "replace"
+            rest = argv[argv.index(verb) + 1:]
+            # drop dev/<name>, root and handle, then whatever kind comes first
+            kind = "unknown"
+            rate = None
+            for i, tok in enumerate(rest):
+                if tok in ("dev", "root", "handle"):
+                    continue
+                if tok.startswith("veth") or tok.startswith("eth"):
+                    continue
+                kind = tok
+                if "rate" in rest and rest[i + 1:i + 2]:
+                    rate = rest[rest.index("rate") + 1]
+                break
+            handle = (argv[argv.index("handle") + 1]
+                      if "handle" in argv else "root")
+            self._qdiscs[handle] = (kind, rate)
+            if verb == "replace":
+                self._qdiscs = {handle: (kind, rate)}
         if "qdisc" in argv and "show" in argv:
             if not self._qdiscs:
                 return 0, "", ""
+            # tc prints the netem rate limit, which is what the read-back
+            # verification looks for. Without it a correctly applied limit
+            # reads as unconfirmed.
             return 0, "\n".join(
-                f"qdisc {kind} {h}: root refcnt 2" for h, kind
-                in self._qdiscs.items()), ""
+                (f"qdisc {k} {h}: root refcnt 2 rate {r}" if r
+                 else f"qdisc {k} {h}: root refcnt 2")
+                for h, (k, r) in self._qdiscs.items()), ""
         if "class" in argv and "add" in argv:
             cid = argv[argv.index("classid") + 1]
             rate = self._mbps(argv[argv.index("rate") + 1])

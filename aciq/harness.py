@@ -226,10 +226,18 @@ class Harness:
         runner=None,
         shield: Shield | None = None,
         dev: str = "veth-lan",
+        ns_wan: str = "wan",
         ns_router: str = "router",
         clock=time.monotonic,
     ):
         self.runner = runner or Runner()
+        # The bottleneck lives OUTSIDE the namespace and device the controller
+        # writes. Generators run in ns wan, sinks in ns client, and the path is
+        # wan -> router -> client; ACIQ writes exactly one device,
+        # router/veth-lan. So ns wan / dev veth-w is a limit the controller
+        # cannot reach, which is the entire point -- see set_capacity.
+        self.bottleneck_ns = ns_wan
+        self.bottleneck_dev = "veth-w"
         self.shield = shield or Shield()
         self.dev = dev
         self.ns = ns_router
@@ -360,71 +368,68 @@ class Harness:
 
     # ---------------- the invariant ----------------
     def set_capacity(self, capacity_mbps: float) -> tuple[tuple[str, ...], ...]:
-        """Change the emulated link capacity: class 1:1, and the children's ceil.
+        """Change the emulated link capacity, OUT OF BAND.
 
-        **The parent alone does not bound the link.** HTB lets a child borrow up
-        to its own ceil, and `build_plan` sets every child ceil to the capacity at
-        plan time. Changing only the parent left the children at ceil 100 under a
-        10 Mbps parent, so the link kept passing 25 Mbps and the drop did
-        nothing. Measured in `data/leaseB4`:
+        **Why this no longer writes class 1:1.**
 
-            t=19.50  parent rate  4.67 Mbps
-            t=25.66  parent rate 24.68 Mbps   <- the "10 Mbps" link
+        It used to. And `build_plan` writes 1:1 too, from the capacity
+        *estimate*. Two writers on the same class means the controller's policy
+        change erases the bottleneck it is being asked to detect, after which
+        the estimator faithfully reports the number the controller chose.
+        Measured on the host (kernel 7.1.5, `s2_wan_drop`):
 
-        Gate check 6 is the evidence that both are required: it drops the parent
-        *and* rescales the children's ceil, then asserts
-        `max(child ceil) <= capacity`. This now does the same.
+            t=5.19  ~102 Mbps   link at 100
+            t=6.24   12.35 Mbps drop applied
+            t=7.28   10.03 Mbps correctly at the 10 Mbps target
+            t=9.41   47.11 Mbps controller re-planned and raised it back
+            t=13.51  47.02 Mbps and stayed there
 
-        **Ceil only. Child rates are still M3's business.** Clamping ceil is a
-        safety clamp that restores the documented invariant
-        `max(child ceil) <= capacity`; choosing rates is policy, and doing it here
-        would bypass M2 and M3 exactly as the original comment warned. The
-        `set_capacity` docstring's claim that it "touches ONLY class 1:1" was the
-        bug, not the design -- the invariant it left violated was the one it
-        claimed to be protecting.
+        Detection worked; recovery was impossible, because the controller was
+        writing to the bottleneck itself.
+
+        The limit now goes on `netem` at ns `wan` / `veth-w`, which sits on the
+        path the generators use and which `TransactionManager` never writes.
+        The controller can shape as hard as it likes; the link stays at the
+        capacity it was actually given, and the estimator measures a real
+        bottleneck instead of its own output.
+
+        **What is no longer done here, deliberately.** This used to also
+        rescale every child class's ceil, because a bare parent change does not
+        bound an HTB link -- children borrow up to their own ceil. That is still
+        true, and it used to be the reason the drop was enforced at all. It is
+        no longer needed, because a netem limit *does* bound the link
+        physically, and clamping the tree here would reintroduce exactly the
+        collision this change exists to remove: the moment the controller
+        re-plans, it would rewrite the ceils we had just clamped.
+
+        `max(child ceil) <= capacity` remains a property of `build_plan` for a
+        planned capacity; it is no longer the mechanism that enforces one.
         """
-        pre = ("ip", "netns", "exec", self.ns)
-        cmds = [pre + (
-            "tc", "class", "change", "dev", self.dev,
-            "parent", BARE_CLASS_ID, "classid", ROOT_CLASS_ID, "htb",
-            "rate", f"{capacity_mbps:.4f}mbit", "ceil", f"{capacity_mbps:.4f}mbit",
-        )]
-        rates = {cls: _rate_of(self._current_plan, cls)
-                 for cls in _class_ids_of(self._current_plan)}
-        total = sum(rates.values())
-        # Only shrink. A link that grew must not be re-planned by a capacity
-        # change; that is M3's job and it will do it when M2 measures.
-        scale = (capacity_mbps / total) if total > capacity_mbps else 1.0
-        for cls, cid in sorted(_class_ids_of(self._current_plan).items(),
-                               key=lambda kv: kv[1]):
-            # `rate` is passed through unchanged and is not optional. tc refuses
-            # a bare `class change ... htb ceil X` with `"rate" is required`, so
-            # the clamp cannot be expressed on its own. Passing each child's
-            # *existing* rate back satisfies tc without making a policy
-            # decision -- only ceil moves, and only downward.
-            # Scaled, not clamped. `min(child_rate, capacity)` put *every*
-            # child at the full link capacity, so a 100 Mbps plan dropped to 10
-            # became four classes each guaranteed 10 -- 40 Mbps promised on a
-            # 10 Mbps link. Gate check 6 has always rescaled instead
-            # (`rate 8mbit ceil 20mbit`, sum 16 <= 20); this path did not, and
-            # the over-subscribed tree is what stopped the cap being enforced.
-            #
-            # Scaling preserves the proportions M3 chose, which a per-child
-            # clamp does not -- it flattens them. Nothing is raised: the factor
-            # is <= 1 whenever the sum exceeds the capacity.
-            child_rate = rates[cls] * scale if scale < 1.0 else rates[cls]
-            cmds.append(pre + (
-                "tc", "class", "change", "dev", self.dev,
-                "parent", ROOT_CLASS_ID, "classid", cid, "htb",
-                "rate", f"{child_rate:.4f}mbit",
-                "ceil", f"{capacity_mbps:.4f}mbit",
-            ))
-
+        pre = ("ip", "netns", "exec", self.bottleneck_ns)
+        rate = f"{capacity_mbps:.4f}mbit"
+        cmds = [
+            # `replace` so repeated calls are idempotent, matching the way the
+            # controller's own rebuild behaves.
+            pre + ("tc", "qdisc", "replace", "dev", self.bottleneck_dev,
+                   "root", "netem", "rate", rate),
+            # Read back. Applying a bottleneck is no more proof that the link is
+            # limited than a `tc qdisc add` returning 0 -- the same standard the
+            # rollback work established.
+            pre + ("tc", "qdisc", "show", "dev", self.bottleneck_dev),
+        ]
         failures = []
-        for argv in cmds:
-            rc, _out, err = self.runner.run(argv)
+        rc, out, err = self.runner.run(cmds[0])
+        if rc != 0:
+            failures.append(f"qdisc replace -> {err.strip() or rc}")
+        else:
+            rc, out, err = self.runner.run(cmds[1])
+            applied = out is not None and str(rate.split("mbit")[0]) in out
             if rc != 0:
-                failures.append(f"{' '.join(argv[-8:])} -> {err.strip() or rc}")
+                failures.append(f"qdisc show -> {err.strip() or rc}")
+            elif not applied:
+                failures.append(
+                    f"qdisc replace returned 0 but read-back did not show the "
+                    f"limit: {str(out).strip()[:120]}")
         # The return code used to be discarded entirely, so a refused change
         # looked exactly like a successful one and `link_end_mbps` reported the
         # value that was asked for rather than one the link ever reached.
