@@ -60,19 +60,37 @@ class TestCapacityIsEnforcedOutOfBand(unittest.TestCase):
         self.assertTrue(any("netem" in c for c in cmds),
                         f"capacity must be limited with netem; got {cmds}")
 
-    def test_the_bottleneck_is_outside_the_namespace_the_controller_writes(self):
-        """ns wan / dev veth-w: ACIQ writes router/veth-lan, never this."""
+    def test_the_bottleneck_is_not_on_the_device_the_controller_writes(self):
+        """The device is the constraint, not the namespace.
+
+        It started on `wan/veth-w` -- a different namespace, but also a place
+        the collector reads no counters, so M2 was blind to it:
+
+            estimator 103.2 Mbps is STALE: M2 only measures an oversubscribed
+            link ... no post-drop reading was possible
+
+        It is now `router/veth-wan`: still a device `TransactionManager` never
+        writes, but one whose drops the controller can actually observe. Both
+        properties are required -- invisible and unwritable is useless, and
+        writable would put the collision back.
+        """
         h = Harness()
         cmds = [" ".join(c) for c in h.set_capacity(10.0)]
         netem = [c for c in cmds if "netem" in c]
         self.assertTrue(netem)
         for c in netem:
-            self.assertNotIn("router", c,
-                             f"the bottleneck must not live where the "
+            self.assertNotIn(h.dev, c,
+                             f"the bottleneck must not be on the device the "
                              f"controller writes: {c}")
-            self.assertNotIn("veth-lan", c,
-                             f"the bottleneck must not live on the device the "
-                             f"controller writes: {c}")
+            self.assertIn(h.bottleneck_dev, c, c)
+
+    def test_the_bottleneck_device_is_one_the_collector_reads(self):
+        h = Harness()
+        self.assertEqual(h.bottleneck_dev, "veth-wan")
+        self.assertNotEqual(h.bottleneck_dev, h.dev)
+        self.assertEqual(h.bottleneck_ns, h.ns,
+                         "same namespace as the collector reads, different "
+                         "device from the one the controller writes")
 
     def test_the_rate_reaches_the_command(self):
         h = Harness()
@@ -219,3 +237,115 @@ class TestTheRunThatExposedIt(unittest.TestCase):
             "the run predates the numeric read-back and must be re-run")
         self.assertIn("read-back did not show the limit",
                       last.get("capacity_change_error", ""))
+
+
+class TestBottleneckDropSignal(unittest.TestCase):
+    """M2 must see the bottleneck without ever being told its capacity.
+
+    The host, after the out-of-band move:
+
+        estimator 103.2 Mbps is STALE: M2 only measures an oversubscribed
+        link, and this one stopped being oversubscribed once the workload's
+        rate fell with it, so no post-drop reading was possible
+
+    The link was 10 Mbps, the plan was 100, the HTB parent was therefore not
+    overcommitted, and `saturated()` was correctly false. Drops from the
+    bottleneck are the ordinary signal a physical congested link gives.
+    """
+
+    NETEM = ("qdisc netem 8001: root refcnt 5 limit 1000 rate 10Mbit\n"
+             " Sent 1200 bytes 9 pkt (dropped 40, overlimits 0 requeues 0)")
+
+    @staticmethod
+    def _src(outputs):
+        it = iter(outputs)
+
+        class R:
+            def __call__(self, cmd, **kw):
+                import types
+                return types.SimpleNamespace(returncode=0,
+                                             stdout=next(it, ""), stderr="")
+        return R()
+
+    def test_drop_counter_is_parsed(self):
+        from aciq.metrics import BottleneckDropSource
+        src = BottleneckDropSource(dev="veth-wan", ns="router",
+                                   runner=self._src([self.NETEM]))
+        self.assertEqual(src.dropped(), 40)
+
+    def test_drop_rate_needs_two_samples(self):
+        from aciq.metrics import BottleneckDropSource
+        src = BottleneckDropSource(
+            dev="veth-wan", ns="router",
+            runner=self._src([self.NETEM,
+                              self.NETEM.replace("dropped 40", "dropped 90")]))
+        self.assertIsNone(src.drop_rate(1.0), "one sample is not a rate")
+        self.assertEqual(src.drop_rate(1.0), 50.0)
+
+    def test_no_drop_counter_means_no_signal_not_no_drops(self):
+        from aciq.metrics import BottleneckDropSource
+        src = BottleneckDropSource(
+            dev="veth-wan", ns="router",
+            runner=self._src(["qdisc htb 1: root refcnt 5\n"]))
+        self.assertIsNone(src.dropped())
+
+    def test_unreadable_device_means_no_signal(self):
+        from aciq.metrics import BottleneckDropSource
+
+        class Dead:
+            def __call__(self, cmd, **kw):
+                raise FileNotFoundError("ip")
+        src = BottleneckDropSource(dev="veth-wan", ns="router", runner=Dead())
+        self.assertIsNone(src.dropped())
+        self.assertIsNone(src.drop_rate(1.0))
+
+    def test_a_dropping_bottleneck_counts_as_saturation(self):
+        from aciq.capacity import Measurement
+        m = Measurement(t=1.0, goodput_mbps=10.0,
+                        link_drop_rate_per_s=0.0,
+                        link_overlimit_rate_per_s=0.0,
+                        child_backlog_bytes=0,
+                        bottleneck_drop_rate_per_s=250.0)
+        self.assertTrue(m.saturated,
+                        "a bottleneck that is dropping is saturated, whatever "
+                        "the controller's own parent class is doing")
+
+    def test_an_idle_bottleneck_does_not(self):
+        from aciq.capacity import Measurement
+        m = Measurement(t=1.0, goodput_mbps=100.0,
+                        link_drop_rate_per_s=0.0,
+                        link_overlimit_rate_per_s=0.0,
+                        bottleneck_drop_rate_per_s=0.0)
+        self.assertFalse(m.saturated)
+
+    def test_absent_bottleneck_reading_is_treated_as_no_signal(self):
+        """None must never mean 'dropping', or an unreadable device would
+        declare every link saturated."""
+        from aciq.capacity import Measurement
+        m = Measurement(t=1.0, goodput_mbps=100.0,
+                        link_drop_rate_per_s=0.0,
+                        link_overlimit_rate_per_s=0.0,
+                        bottleneck_drop_rate_per_s=None)
+        self.assertFalse(m.saturated)
+
+    def test_the_estimator_is_still_never_told_the_configured_rate(self):
+        """The integrity property, asserted.
+
+        `Measurement` deliberately has no field carrying the bottleneck's
+        configured capacity -- "the estimator cannot read the bottleneck's
+        configured rate even by accident". This must stay true: a drop COUNT is
+        an observation; a rate is the answer.
+        """
+        import dataclasses
+        from aciq.capacity import Measurement
+        names = {f.name for f in dataclasses.fields(Measurement)}
+        self.assertNotIn("configured_mbps", names)
+        self.assertNotIn("bottleneck_mbps", names)
+        self.assertNotIn("link_capacity_mbps", names)
+        self.assertIn("bottleneck_drop_rate_per_s", names)
+
+    def test_harness_asks_the_bottleneck_for_its_drop_rate(self):
+        h = Harness()
+        self.assertTrue(hasattr(h, "bottleneck_drop_rate"))
+        # unreadable here (no `ip`), and that must be None, never 0.0
+        self.assertIsNone(h.bottleneck_drop_rate(1.0))

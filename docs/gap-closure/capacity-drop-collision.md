@@ -200,8 +200,35 @@ feeding that interface's drop counter into `Measurement.saturated()` would give
 M2 exactly what it had before, sourced from a bottleneck the controller cannot
 raise.
 
-Not implemented. It changes the measurement contract and needs a host run to
-validate, and it is recorded here rather than attempted blind.
+### Implemented
 
-**Current status: the bottleneck is fixed and evidenced. Adaptation to a slower
-link is BLOCKED on M2's saturation test seeing a bottleneck it cannot overwrite.**
+`BottleneckDropSource` (aciq/metrics.py) reads the drop counter off the
+bottleneck qdisc every tick, and `Measurement.bottleneck_drop_rate_per_s` feeds
+it to `saturated()`. The bottleneck moved from `wan/veth-w` to
+`router/veth-wan` — still a device `TransactionManager` never writes, but one in
+a namespace the collector reads. Both properties are required: *unwritable*
+stops the controller erasing it, *observable* is what makes it detectable at all.
+
+**What this deliberately does not do.** It does not tell the estimator the
+bottleneck's rate. `Measurement` has no field for a configured capacity, and
+that is asserted by test, not just documented:
+
+> there is no `configured_mbps` field, by design. The estimator cannot read the
+> bottleneck's configured rate even by accident
+
+A drop *count* is what a physically congested link gives you and what every real
+router works from. A *rate* would be handing M2 the answer. The capacity still
+comes from goodput, measured while saturated.
+
+Two parsing bugs were found and fixed on the way, both of the same shape as the
+read-back bug above — a verification path that reports something other than what
+it is meant to:
+
+- the drop parser took the first number on any line containing "dropped", which
+  in `Sent 1200 bytes 9 pkt (dropped 40, ...)` is **bytes, not packets**;
+- the decorator on `CounterSnapshot` was briefly orphaned by an insertion,
+  which made the dataclass take no arguments at all.
+
+**Current status: the bottleneck holds and is evidenced (10.01 Mbps on a 10 Mbps
+clamp). Adaptation now has a saturation signal from a bottleneck it cannot
+overwrite. NOT YET EVIDENCED — this needs one more host run.**

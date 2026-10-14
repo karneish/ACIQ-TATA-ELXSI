@@ -219,6 +219,12 @@ def _class_ids_of(plan) -> dict:
     return {c: CLASS_IDS[c] for c in plan.rates}
 
 
+def _make_bottleneck_source(harness: "Harness"):
+    from .metrics import BottleneckDropSource
+    return BottleneckDropSource(dev=harness.bottleneck_dev,
+                                ns=harness.bottleneck_ns)
+
+
 def _qdisc_reports_rate(text: str, want_mbps: float) -> bool:
     """Does `tc qdisc show` report this netem limit, numerically?
 
@@ -262,13 +268,20 @@ class Harness:
         # wan -> router -> client; ACIQ writes exactly one device,
         # router/veth-lan. So ns wan / dev veth-w is a limit the controller
         # cannot reach, which is the entire point -- see set_capacity.
-        self.bottleneck_ns = ns_wan
-        self.bottleneck_dev = "veth-w"
+        # ns router / veth-wan, NOT ns wan / veth-w. The collector already
+        # reads interfaces in this namespace and the drops have to be visible to
+        # M2; veth-w is in the wan namespace, where nothing reads counters, so a
+        # limit there is invisible to the controller for exactly the same
+        # reason it cannot be overwritten. It has to be both.
+        self.bottleneck_ns = ns_router
+        self.bottleneck_dev = "veth-wan"
         #: Raw `tc qdisc show` text for the bottleneck, captured at the end of
         #: every run. A capacity change that is applied and then silently lost
         #: is invisible without it -- the run reports the link it was told to
         #: build, not the link it ended up with.
         self.bottleneck_state_at_end: str = ""
+        #: lazily built; see BottleneckDropSource for why it exists
+        self._bottleneck_src = None
         self.shield = shield or Shield()
         self.dev = dev
         self.ns = ns_router
@@ -478,6 +491,21 @@ class Harness:
             self._capacity_mbps = capacity_mbps
         return tuple(cmds)
 
+    def _bottleneck_drops(self):
+        if self._bottleneck_src is None:
+            try:
+                self._bottleneck_src = _make_bottleneck_source(self)
+            except Exception:                       # noqa: BLE001
+                return None
+        return self._bottleneck_src
+
+    def bottleneck_drop_rate(self, dt: float) -> float | None:
+        """Drops per second on the out-of-band bottleneck, or None if unreadable."""
+        src = self._bottleneck_drops()
+        if src is None:
+            return None
+        return src.drop_rate(dt)
+
     def capture_bottleneck(self) -> str:
         """Record the bottleneck's real state, for the run's evidence."""
         pre = ("ip", "netns", "exec", self.bottleneck_ns)
@@ -646,7 +674,8 @@ class Harness:
             t=now, goodput_mbps=gbps, drop_rate_per_s=drate,
             overlimit_rate_per_s=orate,
             link_drop_rate_per_s=ldr, link_overlimit_rate_per_s=lor,
-            child_backlog_bytes=backlog))
+            child_backlog_bytes=backlog,
+            bottleneck_drop_rate_per_s=self.bottleneck_drop_rate(dt)))
         if not cap.changed:
             return None, False
 

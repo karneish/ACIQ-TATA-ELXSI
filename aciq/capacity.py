@@ -114,6 +114,21 @@ class Measurement:
     #: shaper queue non-empty", never as a magnitude: the parent's own backlog
     #: is 0 throughout, because the queue lives in the children.
     child_backlog_bytes: int = 0
+    #: Packets per second dropped by the OUT-OF-BAND bottleneck (netem on a
+    #: device the controller never writes). Added because moving the bottleneck
+    #: out of the controller's tree made it invisible to the saturation test:
+    #: with the plan at 100 and the link at 10, the HTB parent is not
+    #: overcommitted, so the link looks unsaturated and the estimator correctly
+    #: declines to produce a reading. The host said so outright --
+    #: "M2 only measures an oversubscribed link ... no post-drop reading was
+    #: possible".
+    #:
+    #: This is a drop count, NOT the bottleneck's configured rate. The estimator
+    #: must infer capacity, never read it; feeding it `netem rate 10mbit` would
+    #: hand it the answer instead of letting it work one out. None means the
+    #: bottleneck could not be read, which is treated as no signal rather than
+    #: as no drops.
+    bottleneck_drop_rate_per_s: float | None = None
 
     @property
     def saturated(self) -> bool:
@@ -126,6 +141,11 @@ class Measurement:
         if (ld or 0.0) > 0.0:
             return True
         if (lo or 0.0) >= SAT_OVERLIMIT_MIN:
+            return True
+        # The out-of-band bottleneck is dropping: the traffic offered exceeds
+        # what the link will carry, which is saturation, whatever the
+        # controller's own parent class happens to be doing.
+        if (self.bottleneck_drop_rate_per_s or 0.0) > 0.0:
             return True
         # A child queue that is not empty means the shaper wanted to send and
         # could not. Note this is consulted *after* the parent counters, so a

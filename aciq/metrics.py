@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import resource
+import re
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -57,6 +58,79 @@ class ClassCounters:
 
 #: HTB class that represents the link itself (the parent of every traffic class).
 LINK_HANDLE = "1:1"
+
+
+class BottleneckDropSource:
+    """Drop counters for the out-of-band bottleneck.
+
+    The controller shapes an HTB tree on `router/veth-lan`. The real bottleneck
+    is netem on `router/veth-wan` -- a device `TransactionManager` never writes,
+    so the controller cannot raise it by re-planning, which is the whole point
+    of having moved it out of band.
+
+    That leaves M2 unable to see it. `Measurement.saturated()` is true when the
+    controller's OWN parent class is overlimit or dropping; with the plan at
+    100 Mbps and the link at 10, the parent is not overcommitted, so the test is
+    correctly false and the estimator declines. Measured on the host:
+
+        estimator 103.2 Mbps is STALE: M2 only measures an oversubscribed link
+
+    So the bottleneck's own drop count is read and reported.
+
+    **This is a drop counter, not the configured rate.** The `Measurement`
+    docstring is emphatic that the estimator must never be able to read the
+    bottleneck's configured capacity "even by accident" -- a real controller
+    infers capacity from observed behaviour. Reading `netem rate 10mbit` would
+    be handing it the answer; reading the packets it dropped is the ordinary
+    saturation signal a physical link gives, and the capacity still comes from
+    goodput.
+    """
+
+    def __init__(self, dev: str = "veth-wan", ns: str | None = "router",
+                 runner=subprocess.run):
+        self.dev = dev
+        self.ns = ns
+        self._run = runner
+        self._last: int | None = None
+
+    def dropped(self) -> int | None:
+        """Cumulative packets dropped by the bottleneck qdisc.
+
+        None when the device or qdisc cannot be read, which the saturation test
+        treats as "no signal" rather than as "no drops".
+        """
+        cmd = ["ip", "netns", "exec", self.ns, "tc", "-s", "qdisc", "show",
+               "dev", self.dev] if self.ns else [
+               "tc", "-s", "qdisc", "show", "dev", self.dev]
+        try:
+            r = self._run(cmd, capture_output=True, text=True, timeout=5)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if r.returncode != 0:
+            return None
+        # Take the number that FOLLOWS "dropped", not the first number on the
+        # line. Real output is
+        #   Sent 1200 bytes 9 pkt (dropped 40, overlimits 0 requeues 0)
+        # and the first figure there is bytes, not packets -- a parser that
+        # grabs it reports a byte count as a drop count.
+        total = 0
+        seen = False
+        for m in re.finditer(r"\bdropped\s+(\d+)", r.stdout or ""):
+            seen = True
+            total += int(m.group(1))
+        return total if seen else None
+
+    def drop_rate(self, dt: float) -> float | None:
+        if dt <= 0:
+            return None
+        cur = self.dropped()
+        if cur is None:
+            return None
+        prev, self._last = self._last, cur
+        if prev is None:
+            return None
+        delta = cur - prev
+        return float(delta) if delta > 0 else 0.0
 
 
 @dataclass(frozen=True)
