@@ -32,6 +32,13 @@ from aciq.metrics import jain_fairness
 
 NS: str | None = None
 DEV = "veth-f"
+PEER = "veth-p"
+#: The sender binds this. It must actually be assigned to PEER -- the first
+#: version bound an address nothing held, so every sender died on bind() and
+#: the "unfair" result was two zeroes. It only ever ran under root, which is
+#: exactly why it was not caught before.
+SRC_ADDR = "10.9.9.2"
+DST_ADDR = "10.9.9.1"
 A_PORT, B_PORT = 47311, 47312
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -42,8 +49,9 @@ FAIRNESS_FLOOR = 0.95
 _SENDER = r"""
 import socket, sys, time
 port = int(sys.argv[1]); dst = sys.argv[2]; dur = float(sys.argv[3])
+SRC = sys.argv[4]
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-s.bind(("10.9.9.2", 0))
+s.bind((SRC, 0))
 s.settimeout(0.2)
 payload = b"x" * 1400
 end = time.monotonic() + dur
@@ -57,9 +65,9 @@ while time.monotonic() < end:
 
 _SINK = r"""
 import socket, sys
-port = int(sys.argv[1]); dur = float(sys.argv[2])
+port = int(sys.argv[1]); dur = float(sys.argv[2]); SRC = sys.argv[3]
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-s.bind(("10.9.9.1", port)); s.settimeout(0.3)
+s.bind((SRC, port)); s.settimeout(0.3)
 total = 0; end = time.monotonic() + dur
 while time.monotonic() < end:
     try:
@@ -90,9 +98,12 @@ def setUpModule() -> None:
                       capture_output=True, timeout=20).returncode != 0:
         return
     NS = name
-    for argv in (["ip", "link", "add", DEV, "type", "veth", "peer", "name", "veth-p"],
-                 ["ip", "addr", "add", "10.9.9.1/24", "dev", DEV],
+    for argv in (["ip", "link", "add", DEV, "type", "veth",
+                  "peer", "name", PEER],
+                 ["ip", "addr", "add", f"{DST_ADDR}/24", "dev", DEV],
+                 ["ip", "addr", "add", f"{SRC_ADDR}/24", "dev", PEER],
                  ["ip", "link", "set", DEV, "up"],
+                 ["ip", "link", "set", PEER, "up"],
                  ["ip", "link", "set", "lo", "up"]):
         if _ns(*argv).returncode != 0:
             return
@@ -119,13 +130,13 @@ class TestPerFlowFairness(unittest.TestCase):
     def _run_two_flows(self, duration=6.0):
         sinks = [
             subprocess.Popen(["ip", "netns", "exec", NS, "python3", "-c", _SINK,
-                              str(p), str(duration)],
+                              str(p), str(duration), DST_ADDR],
                              stdout=subprocess.PIPE, text=True)
             for p in (A_PORT, B_PORT)]
         time.sleep(0.4)
         senders = [
             subprocess.Popen(["ip", "netns", "exec", NS, "python3", "-c", _SENDER,
-                              str(p), "10.9.9.1", str(duration)],
+                              str(p), DST_ADDR, str(duration), SRC_ADDR],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             for p in (A_PORT, B_PORT)]
         for s in senders:
@@ -135,6 +146,15 @@ class TestPerFlowFairness(unittest.TestCase):
             out, _ = s.communicate(timeout=duration + 30)
             got.append(int((out or "0").strip() or 0))
         return got
+
+    def test_both_senders_and_sinks_are_reachable_first(self):
+        """A run where a sender died on bind() must not look like an unfair
+        scheduler. Check the plumbing before scoring anything."""
+        a, b = self._run_two_flows(duration=3.0)
+        self.assertGreater(a, 0, f"flow A received nothing -- sender may have "
+                                  f"failed to bind {SRC_ADDR}")
+        self.assertGreater(b, 0, f"flow B received nothing -- sender may have "
+                                  f"failed to bind {SRC_ADDR}")
 
     def test_two_flows_in_one_class_are_served_fairly(self):
         a, b = self._run_two_flows()

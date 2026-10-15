@@ -33,6 +33,9 @@ def main() -> int:
     ap.add_argument("--pps", type=float, default=50.0, help="packets/sec (50 = one per 20ms)")
     ap.add_argument("--bytes", type=int, default=256)
     ap.add_argument("--dscp", type=int, default=None, help="e.g. 46 for EF")
+    ap.add_argument("--src", default=None,
+                    help="bind this source address, so one workload maps to "
+                         "one device and a lease can match it alone")
     ap.add_argument("-6", "--ipv6", action="store_true")
     ap.add_argument("--json-out", default=None)
     ap.add_argument("--partial-out", default=None,
@@ -57,7 +60,7 @@ def main() -> int:
     probe = UdpProbe(
         dst=args.dst, port=args.port, pps=args.pps,
         payload_bytes=args.bytes, family=family, label="call",
-        partial_path=args.partial_out,
+        src=args.src, partial_path=args.partial_out,
     )
     print(
         f"call -> {args.dst}:{args.port} for {args.duration}s "

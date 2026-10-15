@@ -180,6 +180,19 @@ Against CAKE the margin is ~5% (0.563 vs 0.592 ms), consistent 7/7 paired seeds.
 with `--drop 20`, and the acceptance harness judges it separately, requiring
 measurements rather than run counts.
 
+**The interactive workload never ran in any s1/s2 experiment.** `spawn_source`
+appends `--src` whenever a workload has a device address; `call.py` was the one
+workload that never declared it, so on every run it died on
+
+    call.py: error: unrecognized arguments: --src 203.0.113.3
+
+argparse wrote that to `call.log`, which nothing reads, and the run continued.
+So the adaptation gate reported PASS with **no interactive traffic in it** — only
+bulk ever moved. The capacity estimate is unaffected (it is bulk-driven), but no
+s1/s2 result exercised a mixed workload, and the congested comparison has no
+latency data because `call.json` was never produced. Fixed, and covered by a
+flag-contract test that hands each workload exactly the launcher's argv.
+
 **Latency telemetry — fixed, not yet evidenced.** `_ingest_probes` read
 `<label>.partial.json`, which no workload ever wrote: `UdpProbe` supported
 `partial_path` and rewrote it every `PARTIAL_EVERY_S`, but nothing passed a

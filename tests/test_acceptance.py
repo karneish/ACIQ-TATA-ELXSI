@@ -14,6 +14,7 @@ acceptance run.
 from __future__ import annotations
 
 import importlib.util
+import re as _re
 import unittest
 from pathlib import Path
 
@@ -849,3 +850,107 @@ class TestCongestedComparisonIsAGate(unittest.TestCase):
     def test_it_requires_measurements_not_just_runs(self):
         self.assertIn("cmeas", (_P_src()))
         self.assertIn("chave", (_P_src()))
+
+
+class TestWorkloadFlagContract(unittest.TestCase):
+    """Every workload must accept every flag the launcher sends it.
+
+    `spawn_source` appends `--src` whenever the workload has a device address.
+    `call.py` never declared it, so on every s1/s2 run the interactive workload
+    died on `unrecognized arguments` and argparse wrote that to its log -- which
+    nothing reads. The runs completed and the gates passed; there was simply no
+    interactive traffic in any of them.
+
+    This is the same shape as the rest: a check that could not fail, because
+    nothing compared the two lists.
+    """
+
+    WORKLOADS = ("bulk", "call", "video", "game")
+
+    @staticmethod
+    def _root():
+        from pathlib import Path as _P
+        return _P(__file__).resolve().parents[1]
+
+    @staticmethod
+    def _flags(kind: str) -> set[str]:
+        import subprocess
+        r = subprocess.run(
+            ["python3", f"testbed/workloads/{kind}.py", "--help"],
+            capture_output=True, text=True, timeout=60)
+        out = set()
+        for tok in r.stdout.split():
+            if tok.startswith("--"):
+                out.add(tok.rstrip(",;"))
+        return out
+
+    def _launcher_flags(self) -> set[str]:
+        from pathlib import Path as _P
+        src = (_P(__file__).resolve().parents[1] / "aciq"
+               / "experiment.py").read_text()
+        # the flags spawn_source actually appends
+        found = set()
+        for m in _re.finditer(r'argv \+= \["(--[a-z0-9-]+)"', src):
+            found.add(m.group(1))
+        for m in _re.finditer(r'argv = self\._argv\([^)]*"(--[a-z0-9-]+)"', src):
+            found.add(m.group(1))
+        # flags inside that argv literal
+        for m in _re.finditer(r'self\._argv\(self\.ns_wan, f"\{kind\}\.py", ([^)]*)\)',
+                              src):
+            found |= set(_re.findall(r'"(--[a-z0-9-]+)"', m.group(1)))
+        return found
+
+    #: Sent only to PROBE_KINDS, by the launcher's own condition. bulk and
+    #: video implement their own senders and have no round trip to report.
+    PROBE_ONLY = {"--partial-out"}
+
+    def test_no_workload_rejects_a_flag_the_launcher_sends(self):
+        """The contract is two-sided, and both sides must hold.
+
+        A flag sent to every workload must be accepted by every workload.
+        A probe-only flag must be accepted by every probe workload -- and must
+        NOT be sent to the others, which is the launcher's condition rather
+        than a promise in the workload.
+        """
+        from aciq.experiment import PROBE_KINDS
+        launcher = self._launcher_flags()
+        self.assertIn("--src", launcher,
+                      "the launcher no longer sends --src? re-check this test")
+        self.assertIn("--partial-out", launcher)
+
+        for kind in self.WORKLOADS:
+            common = (launcher - self.PROBE_ONLY) - self._flags(kind)
+            self.assertFalse(
+                common, f"{kind}.py would abort on {sorted(common)}")
+
+        for kind in PROBE_KINDS:
+            probe_only = self.PROBE_ONLY - self._flags(kind)
+            self.assertFalse(
+                probe_only,
+                f"{kind}.py is a probe kind and would abort on "
+                f"{sorted(probe_only)}")
+
+        src = (self._root() / "aciq" / "experiment.py").read_text()
+        self.assertIn("if kind in PROBE_KINDS:", src,
+                      "the probe-only flags must be gated on PROBE_KINDS, or "
+                      "bulk and video abort on --partial-out")
+
+    def test_every_workload_parses_a_full_launcher_argv(self):
+        """The end-to-end version: hand each workload exactly what the launcher
+        would and require it not to print a usage error."""
+        import subprocess
+        args = ["--dst", "127.0.0.1", "--port", "47555", "--duration", "0.2",
+                "--json-out", "/tmp/opencode/wl.json",
+                "--partial-out", "/tmp/opencode/wl.partial.json",
+                "--src", "127.0.0.1"]
+        for kind in self.WORKLOADS:
+            if "--partial-out" not in self._flags(kind):
+                args = [a for i, a in enumerate(args)
+                        if a not in ("--partial-out",
+                                     "/tmp/opencode/wl.partial.json")]
+            r = subprocess.run(
+                ["python3", f"testbed/workloads/{kind}.py", *args],
+                capture_output=True, text=True, timeout=90)
+            self.assertNotIn(
+                "unrecognized arguments", r.stderr,
+                f"{kind}.py aborted on the launcher's argv:\n{r.stderr.strip()}")
