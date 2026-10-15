@@ -618,12 +618,16 @@ class TestExperimentEvidenceGates(unittest.TestCase):
         self.assertIn("stamp()", src)
         # the loop variable is quoted in the shell, so match either form
         for d in ("data/host_gate_adapt", "data/host_gate_${sysname}",
-                  "data/host_gate_soak"):
+                  "data/host_gate_soak",
+                  "data/host_gate_congested_${sysname}"):
             self.assertTrue(f"stamp {d}" in src or f'stamp "{d}"' in src,
                             f"{d} is not revision-stamped")
-        # three call sites; the definition is `stamp()`, which does not match
-        self.assertEqual(src.count("stamp "), 3,
-                         "all three results dirs must be revision-stamped")
+        # one call site per results directory; the definition is `stamp()`
+        # which does not match "stamp ".
+        n = src.count("stamp ")
+        self.assertGreaterEqual(n, 4,
+                                "adaptation, both comparisons and the soak "
+                                "must all be revision-stamped")
         self.assertIn("git rev-parse HEAD", src)
 
 
@@ -813,3 +817,35 @@ class TestComparisonNeedsMeasurements(unittest.TestCase):
 def _P_src():
     from pathlib import Path
     return (Path(__file__).resolve().parents[1] / "tools" / "acceptance.py").read_text()
+
+
+class TestCongestedComparisonIsAGate(unittest.TestCase):
+    """A comparison on a free link is not the comparison that matters.
+
+    Every light-load run had an uncongested 100 Mbps link and 30 pps of
+    interactive traffic -- the regime CAKE is built for, where the measured
+    margin was about 5%. Nothing has been measured under load.
+    """
+
+    def test_the_orchestrator_runs_a_congested_comparison(self):
+        from pathlib import Path as _P
+        src = (_P(__file__).resolve().parents[1]
+               / "tools" / "host_gate.sh").read_text()
+        self.assertIn("host_gate_congested_", src)
+        self.assertIn("CONGESTED comparison", src)
+        # a dropped link, and all three systems
+        self.assertIn("--scenario s2_wan_drop", src)
+        self.assertIn("--drop 20", src)
+        for s in ("b0_fifo", "b1_cake95", "aciq"):
+            self.assertIn(s, src)
+
+    def test_it_is_a_separate_gate_not_a_reuse_of_the_light_one(self):
+        from pathlib import Path as _P
+        src = (_P(__file__).resolve().parents[1]
+               / "tools" / "acceptance.py").read_text()
+        self.assertIn("congested FIFO/CAKE/ACIQ comparison", src)
+        self.assertIn("data/host_gate_congested_", src)
+
+    def test_it_requires_measurements_not_just_runs(self):
+        self.assertIn("cmeas", (_P_src()))
+        self.assertIn("chave", (_P_src()))

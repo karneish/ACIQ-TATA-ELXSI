@@ -21,7 +21,8 @@
 #
 # USAGE
 #   sudo ./tools/host_gate.sh              # rollback + full acceptance
-#   sudo ./tools/host_gate.sh --full       # + adaptation and CAKE comparison
+#   sudo ./tools/host_gate.sh --full       # + adaptation, CAKE comparison
+#                                           #   (light-load AND congested), soak
 #   sudo ./tools/host_gate.sh --check      # prerequisites only, changes nothing
 #
 # Exits non-zero if any executed gate fails. Gates that could not run are
@@ -153,6 +154,19 @@ if [ "$FULL" -eq 1 ]; then
         | tee -a "$OUT/comparison.log" | tail -2
   done
   log "  evidence: data/host_gate_{b0_fifo,b1_cake95,aciq}"
+  log ""
+
+  log "== gate 4b: CONGESTED comparison (s2_wan_drop), 7 paired seeds =="
+  log "  ~20 min plus testbed build, on top of gate 4"
+  log "  this is the one that matters: a dropped link, not a free one"
+  for sysname in b0_fifo b1_cake95 aciq; do
+    stamp "data/host_gate_congested_${sysname}"
+    python3 run_experiments.py --scenario s2_wan_drop --system "$sysname" \
+        --drop 20 --drop-at 5 --seeds 7 --seed 42 \
+        --results-dir "data/host_gate_congested_${sysname}" 2>&1 \
+        | tee -a "$OUT/comparison-congested.log" | tail -2
+  done
+  log "  evidence: data/host_gate_congested_{b0_fifo,b1_cake95,aciq}"
   log ""
 
   log "== gate 5: 30-minute soak =="

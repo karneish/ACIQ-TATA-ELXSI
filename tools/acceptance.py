@@ -35,7 +35,7 @@ PASS, FAIL, BLOCKED, NOT_RUN = "PASS", "FAIL", "BLOCKED", "NOT RUN"
 #: silently shrunk (a broken import in one test module drops it, and `discover`
 #: reports the rest as a success). Without a floor, deleting a whole test module
 #: would still produce a green acceptance run.
-MIN_TESTS = 901
+MIN_TESTS = 915
 
 
 #: Test modules covering mandatory release requirements. A skip in one of
@@ -280,6 +280,31 @@ def check_experiment_evidence() -> list[tuple]:
         rows.append(("FIFO/CAKE/ACIQ comparison", PASS,
                      ", ".join(f"{k}={v}" for k, v in sorted(counts.items()))
                      + f" paired seeds, {med}" + "".join(sorted(notes))))
+
+    # 4b. the same comparison on a DROPPED link
+    cdirs = {"b0_fifo": "data/host_gate_congested_b0_fifo",
+             "b1_cake95": "data/host_gate_congested_b1_cake95",
+             "aciq": "data/host_gate_congested_aciq"}
+    ccounts = {k: len(_results(v)) for k, v in cdirs.items()}
+    cmeas = {k: _probe_summary(v) for k, v in cdirs.items()}
+    chave = {k: v for k, v in ccounts.items() if v and cmeas[k]["n"]}
+    if not chave:
+        rows.append(("congested FIFO/CAKE/ACIQ comparison", NOT_RUN,
+                     "no congested runs; run: sudo tools/host_gate.sh --full"))
+    elif len(chave) < 3:
+        rows.append(("congested FIFO/CAKE/ACIQ comparison", NOT_RUN,
+                     f"only {sorted(chave)} have runs AND measurements "
+                     f"({ccounts})"))
+    elif min(chave.values()) < MIN_COMPARISON_SEEDS:
+        rows.append(("congested FIFO/CAKE/ACIQ comparison", NOT_RUN,
+                     f"{min(chave.values())} paired seeds, need "
+                     f"{MIN_COMPARISON_SEEDS}"))
+    else:
+        med = "; ".join(f"{k} p95={cmeas[k]['p95']:.3f}ms"
+                        for k in sorted(cmeas) if cmeas[k]["n"])
+        rows.append(("congested FIFO/CAKE/ACIQ comparison", PASS,
+                     ", ".join(f"{k}={v}" for k, v in sorted(ccounts.items()))
+                     + f" paired seeds on a dropped link, {med}"))
 
     # 5. sustained stability
     res = _results("data/host_gate_soak")

@@ -170,18 +170,24 @@ reasoning: `min-rate-scope-decision.md`.
 `run_experiments.py` (replaces the scenario, does not mutate it, defaults
 untouched) so the mandated duration can actually be run.
 
-**Comparison is light-load only.** `s3_tv_and_gaming` has no capacity change and
-the interactive workload runs at 30 pps (~1200 packets in 40 s). Every system had
-an uncongested link. ACIQ beats FIFO decisively (p95 0.563 vs 33.612 ms) but
-that is the do-nothing case. Against CAKE the margin is ~5% (0.563 vs
-0.592 ms), consistent 7/7 paired seeds. **No advantage under congestion is
-claimed, and none was measured.**
+**Comparison is light-load only, and a congested one is now its own gate.**
+`s3_tv_and_gaming` has no capacity change and the interactive workload runs at
+30 pps (~1200 packets in 40 s). Every system had an uncongested link. ACIQ beats
+FIFO decisively (p95 0.563 vs 33.612 ms) but that is the do-nothing case.
+Against CAKE the margin is ~5% (0.563 vs 0.592 ms), consistent 7/7 paired seeds.
+**No advantage under congestion is claimed, and none was measured** — so
+`host_gate.sh --full` now also runs all three systems against `s2_wan_drop`
+with `--drop 20`, and the acceptance harness judges it separately, requiring
+measurements rather than run counts.
 
-**Latency is not in the per-tick series.** `_ingest_probes` reads
-`<label>.partial.json`, which the generators never write, so every `rtt_p95` in
-`result.json` is `None`. The measurement exists in each run's final
-`<label>.json` — which is where the comparison above comes from — but live
-per-tick latency telemetry does not work.
+**Latency telemetry — fixed, not yet evidenced.** `_ingest_probes` read
+`<label>.partial.json`, which no workload ever wrote: `UdpProbe` supported
+`partial_path` and rewrote it every `PARTIAL_EVERY_S`, but nothing passed a
+path and no workload had a CLI flag for one. So the file never existed,
+ingestion silently skipped, and every `rtt_p95` in every `result.json` was
+`None` — absent, reading like a zero. `call` and `game` now accept
+`--partial-out`; the launcher sends it for probe workloads only, since `bulk`
+and `video` have no round trip to report. **Needs one host run to confirm.**
 
 **Per-flow fairness — corrected, and now measured.** An earlier version of this
 report said the policy does not provide it, because `build_plan` splits by
