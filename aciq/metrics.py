@@ -251,7 +251,13 @@ def jain_fairness(values: list[float]) -> float | None:
     s = sum(values)
     sq = sum(v * v for v in values)
     if sq == 0:
-        return 0.0
+        # Every value is zero -- nothing flowed. Same reasoning as the empty
+        # list: 0.0 is the score of one hog against nothing, so returning it
+        # here called a completely idle class *maximally unfair*, which is
+        # backwards and invites the reader to compare it with a real
+        # measurement. The function argued this for `n == 0` and then did the
+        # opposite two lines later.
+        return None
     return (s * s) / (n * sq)
 
 

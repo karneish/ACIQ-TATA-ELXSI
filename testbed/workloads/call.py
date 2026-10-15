@@ -35,6 +35,10 @@ def main() -> int:
     ap.add_argument("--dscp", type=int, default=None, help="e.g. 46 for EF")
     ap.add_argument("-6", "--ipv6", action="store_true")
     ap.add_argument("--json-out", default=None)
+    ap.add_argument("--partial-out", default=None,
+                    help="write the summary-so-far here, repeatedly, so the "
+                         "driver can ingest latency DURING the run instead of "
+                         "only at exit")
     args = ap.parse_args()
 
     family = socket.AF_INET6 if args.ipv6 else socket.AF_INET
@@ -53,6 +57,7 @@ def main() -> int:
     probe = UdpProbe(
         dst=args.dst, port=args.port, pps=args.pps,
         payload_bytes=args.bytes, family=family, label="call",
+        partial_path=args.partial_out,
     )
     print(
         f"call -> {args.dst}:{args.port} for {args.duration}s "

@@ -390,3 +390,60 @@ class TestBottleneckDropSignal(unittest.TestCase):
         self.assertTrue(hasattr(h, "bottleneck_drop_rate"))
         # unreadable here (no `ip`), and that must be None, never 0.0
         self.assertIsNone(h.bottleneck_drop_rate(1.0))
+
+
+class TestLiveLatencyIngestion(unittest.TestCase):
+    """Live per-tick latency has never worked, and nothing said so.
+
+    `_ingest_probes` reads `<label>.partial.json`. No workload was ever asked to
+    write one: `UdpProbe` supports `partial_path` and writes it every
+    `PARTIAL_EVERY_S`, but no caller passed a path, and no workload had a CLI
+    flag for it. So the file never existed, `_ingest_probes` silently skipped,
+    and every `rtt_p95` in every result.json was None.
+
+    Nothing failed. The measurement was simply absent and the absence read like
+    a zero -- the same failure this project has now produced several times over.
+
+    The latency was measured; it was only written at exit, into `<label>.json`.
+    """
+
+    def test_probe_workloads_accept_a_partial_path(self):
+        from pathlib import Path as _P
+        base = _P(__file__).resolve().parents[1] / "testbed" / "workloads"
+        for w in ("call.py", "game.py"):
+            src = (base / w).read_text()
+            self.assertIn("--partial-out", src, f"{w} has no flag")
+            self.assertIn("partial_path=args.partial_out", src,
+                          f"{w} does not pass it to UdpProbe")
+
+    def test_bulk_and_video_are_not_given_an_unknown_flag(self):
+        """They implement their own senders and have no UdpProbe, so the flag
+        would abort them. They are also not latency probes."""
+        from aciq.experiment import PROBE_KINDS
+        self.assertEqual(set(PROBE_KINDS), {"call", "game"})
+        self.assertNotIn("bulk", PROBE_KINDS)
+        self.assertNotIn("video", PROBE_KINDS)
+
+    def test_the_launcher_passes_the_partial_path(self):
+        from pathlib import Path as _P
+        src = (_P(__file__).resolve().parents[1] / "aciq"
+               / "experiment.py").read_text()
+        self.assertIn("--partial-out", src)
+        self.assertIn('kind in PROBE_KINDS', src)
+        self.assertIn(".partial.json", src)
+
+    def test_the_partial_name_matches_what_ingestion_reads(self):
+        """Writers and reader must agree on the filename, or this stays broken
+        while looking fixed."""
+        from pathlib import Path as _P
+        src = (_P(__file__).resolve().parents[1] / "aciq"
+               / "experiment.py").read_text()
+        self.assertIn('json_out.with_suffix(".partial.json")', src)
+        self.assertIn('f"{label}.partial.json"', src)
+
+    def test_partial_writes_are_periodic_not_only_at_exit(self):
+        from pathlib import Path as _P
+        src = (_P(__file__).resolve().parents[1] / "testbed" / "workloads"
+               / "udpx.py").read_text()
+        self.assertIn("PARTIAL_EVERY_S", src)
+        self.assertIn("def write_partial", src)

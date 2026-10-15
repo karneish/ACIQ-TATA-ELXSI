@@ -44,12 +44,29 @@ What genuinely exists:
 | idle does not inflate anything | `test_idle_samples_do_not_change_capacity` |
 | floors that cannot all fit | `test_degenerate_capacity_reports_degraded` |
 
-**What is genuinely not covered:** there is no test for **many simultaneous
-flows**. The invariant is checked over *capacities*, not over flow counts,
-because `build_plan` splits by weight per class rather than per flow — so the
-"2000 flows" claim was describing coverage that does not exist. Class-level
-splitting means flow count is not an input to the arithmetic; per-flow fairness
-is a question the current policy does not answer, and one no test asks.
+**Correction — per-flow fairness IS provided, and is now measured.**
+
+This document previously said per-flow fairness was "a question the current
+policy does not answer". That was wrong, and wrong in a way that mattered: it
+described the *arithmetic* (`build_plan` splits by weight per class, so flow
+count is not an input) and generalised it to the *mechanism*.
+
+Every class gets an `fq_codel` leaf, and `fq_codel` **is** per-flow fair
+queueing. Two flows inside one class are already served fairly. What was missing
+was the measurement, not the guarantee.
+
+`tests/test_fairness_live.py` now measures it on a real kernel: two independent
+UDP flows steered into the **same** class, then Jain's index over what each
+actually received. One flow getting twice the other's bytes scores 0.80; the
+test requires ≥ 0.95. It is gated on root and `tc` and uses its own namespace.
+
+**What is still genuinely not covered:** the split *between* classes is not
+per-flow by design, and flow count is not an input to `build_plan` — a class's
+share depends on the weights of the classes that exist, not on how many flows
+sit in them. Jain's index as computed in the collector runs across **classes**,
+not across flows. So class-level fairness is measured every run and per-flow
+fairness is now measured once, on the kernel; neither is measured continuously
+across all live runs.
 
 ## The limit that cannot be bypassed by this formula
 

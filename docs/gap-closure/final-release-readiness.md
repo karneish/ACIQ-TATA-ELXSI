@@ -183,10 +183,13 @@ claimed, and none was measured.**
 `<label>.json` — which is where the comparison above comes from — but live
 per-tick latency telemetry does not work.
 
-**Per-flow fairness is not tested, and the policy does not provide it.**
-`build_plan` splits by weight per *class*, not per flow, so flow count is not an
-input to the arithmetic. Class-level fairness is measured (0.333 in the runs);
-per-flow fairness is a question the design does not answer.
+**Per-flow fairness — corrected, and now measured.** An earlier version of this
+report said the policy does not provide it, because `build_plan` splits by
+weight per class. That described the arithmetic and generalised it to the
+mechanism. Every class carries an `fq_codel` leaf, which **is** per-flow fair
+queueing. `tests/test_fairness_live.py` measures it on a real kernel: two flows
+into the same class must score ≥ 0.95 on Jain's index. Class-level fairness is
+measured every run (0.333 in these runs).
 
 **Benchmark limitation.** Controller arithmetic only — classify, `build_plan`,
 reconcile — at one scale on one machine. No efficiency or scalability claim.

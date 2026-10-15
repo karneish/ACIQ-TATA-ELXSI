@@ -39,6 +39,11 @@ from .policy import floor_mbps
 WORKLOAD_DIR = Path(__file__).resolve().parent.parent / "testbed" / "workloads"
 RESULTS_DIR = Path(__file__).resolve().parent.parent / "data" / "runs"
 
+#: Workloads that measure round-trip time and therefore have partial reports.
+#: bulk and video deliberately are not: they generate data, and their latency is
+#: not the thing being measured.
+PROBE_KINDS = ("call", "game")
+
 NS_CLIENT = "client"
 NS_WAN = "wan"
 NS_ROUTER = "router"
@@ -113,6 +118,12 @@ class NetnsLauncher:
             # See device_ip_for: one address per workload, so a lease can match
             # one device instead of all of them.
             argv += ["--src", src]
+        if kind in PROBE_KINDS:
+            # Only the workloads built on UdpProbe accept this. bulk and video
+            # implement their own senders and would abort on an unknown flag --
+            # and they are bulk data generators, not latency probes, so there is
+            # no round trip to report on.
+            argv += ["--partial-out", str(json_out.with_suffix(".partial.json"))]
         if dscp is not None:
             argv += ["--dscp", str(dscp)]
         p = subprocess.Popen(argv, stdout=open(log_path, "w"),

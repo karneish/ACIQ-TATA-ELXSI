@@ -39,6 +39,10 @@ def main() -> int:
                     help="source address to bind, so this workload is a "
                          "distinct device for lease matching")
     ap.add_argument("--json-out", default=None)
+    ap.add_argument("--partial-out", default=None,
+                    help="write the summary-so-far here, repeatedly, so the "
+                         "driver can ingest latency DURING the run instead of "
+                         "only at exit")
     args = ap.parse_args()
 
     family = socket.AF_INET6 if args.ipv6 else socket.AF_INET
@@ -57,6 +61,7 @@ def main() -> int:
     probe = UdpProbe(
         dst=args.dst, port=args.port, pps=args.pps,
         payload_bytes=args.bytes, family=family, label="game", src=args.src,
+        partial_path=args.partial_out,
     )
     print(f"game -> {args.dst}:{args.port} for {args.duration}s at {args.pps}pps", flush=True)
     rep = probe.run(args.duration, dscp=args.dscp)
