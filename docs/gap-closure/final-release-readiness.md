@@ -170,6 +170,24 @@ reasoning: `min-rate-scope-decision.md`.
 `run_experiments.py` (replaces the scenario, does not mutate it, defaults
 untouched) so the mandated duration can actually be run.
 
+**Comparison is light-load only.** `s3_tv_and_gaming` has no capacity change and
+the interactive workload runs at 30 pps (~1200 packets in 40 s). Every system had
+an uncongested link. ACIQ beats FIFO decisively (p95 0.563 vs 33.612 ms) but
+that is the do-nothing case. Against CAKE the margin is ~5% (0.563 vs
+0.592 ms), consistent 7/7 paired seeds. **No advantage under congestion is
+claimed, and none was measured.**
+
+**Latency is not in the per-tick series.** `_ingest_probes` reads
+`<label>.partial.json`, which the generators never write, so every `rtt_p95` in
+`result.json` is `None`. The measurement exists in each run's final
+`<label>.json` — which is where the comparison above comes from — but live
+per-tick latency telemetry does not work.
+
+**Per-flow fairness is not tested, and the policy does not provide it.**
+`build_plan` splits by weight per *class*, not per flow, so flow count is not an
+input to the arithmetic. Class-level fairness is measured (0.333 in the runs);
+per-flow fairness is a question the design does not answer.
+
 **Benchmark limitation.** Controller arithmetic only — classify, `build_plan`,
 reconcile — at one scale on one machine. No efficiency or scalability claim.
 
@@ -211,14 +229,15 @@ python3 tools/audit_claims.py     # exit 0
 
 ## G. Verdict rationale and what would change it
 
-**VALIDATION BLOCKED.** Six dimensions PASS, one PARTIAL, six BLOCKED, zero FAIL,
-and one dimension that was blocked has now been **closed by direct real-kernel
-evidence**: rollback is verified against an actual kernel, both for a successful
-restoration and for the failure verdict.
+No mandatory gate is blocked. Every dimension that could be executed on real
+hardware was executed, and all five passed.
 
-What remains blocked contains the rest of the enforcement chain — a 21-check
-traffic gate, live adaptation, the CAKE comparison and a sustained soak. Those
-need the host but are ordinary test runs rather than open questions.
+What was NOT READY turned out to be: the capacity estimator latched at 47 Mbps
+on a link clamped to 10, because `set_capacity` and `build_plan` both wrote the
+HTB root class. The controller was erasing the bottleneck it was meant to detect.
+Four further defects surfaced during that fix, all of them verification signals
+reporting something other than what they measured. Full account in
+`capacity-drop-collision.md`.
 
 ### To reach READY FOR RELEASE
 
