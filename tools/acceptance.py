@@ -35,7 +35,7 @@ PASS, FAIL, BLOCKED, NOT_RUN = "PASS", "FAIL", "BLOCKED", "NOT RUN"
 #: silently shrunk (a broken import in one test module drops it, and `discover`
 #: reports the rest as a success). Without a floor, deleting a whole test module
 #: would still produce a green acceptance run.
-MIN_TESTS = 897
+MIN_TESTS = 901
 
 
 #: Test modules covering mandatory release requirements. A skip in one of
@@ -256,7 +256,11 @@ def check_experiment_evidence() -> list[tuple]:
             "b1_cake95": "data/host_gate_b1_cake95",
             "aciq": "data/host_gate_aciq"}
     counts = {k: len(_results(v)) for k, v in dirs.items()}
-    have = {k: v for k, v in counts.items() if v}
+    # Seeds are not a comparison. A run that produced no latency measurement at
+    # all is not evidence, and counting runs would have called these PASS while
+    # every rtt_p95 in result.json was None.
+    measured = {k: _probe_summary(v) for k, v in dirs.items()}
+    have = {k: v for k, v in counts.items() if v and measured[k]["n"]}
     if not have:
         rows.append(("FIFO/CAKE/ACIQ comparison", NOT_RUN,
                      "no comparison runs; run: sudo tools/host_gate.sh --full"))
@@ -271,9 +275,11 @@ def check_experiment_evidence() -> list[tuple]:
                      f"INCONCLUSIVE, not a result"))
     else:
         notes = {_revision_note(v, rev()[:8]) for v in dirs.values()}
+        med = "; ".join(f"{k} p95={measured[k]['p95']:.3f}ms"
+                        for k in sorted(measured) if measured[k]["n"])
         rows.append(("FIFO/CAKE/ACIQ comparison", PASS,
                      ", ".join(f"{k}={v}" for k, v in sorted(counts.items()))
-                     + " paired seeds" + "".join(sorted(notes))))
+                     + f" paired seeds, {med}" + "".join(sorted(notes))))
 
     # 5. sustained stability
     res = _results("data/host_gate_soak")
@@ -282,7 +288,14 @@ def check_experiment_evidence() -> list[tuple]:
                      "no data/host_gate_soak; run: sudo tools/host_gate.sh --full"))
     else:
         r = res[0]
+        # Prefer the observed span from the samples. Older runs have no
+        # `duration_s` field at all -- the soak that ran 1859 seconds reported
+        # None -- and the samples are the primary evidence.
         dur = float(r.get("duration_s") or 0.0)
+        if dur <= 0.0:
+            ts = [x.get("t") for x in (r.get("samples") or []) if x.get("t") is not None]
+            if len(ts) >= 2:
+                dur = float(max(ts) - min(ts))
         if dur < MIN_SOAK_S:
             rows.append(("30-minute stability", NOT_RUN,
                          f"soak ran {dur:.0f}s, need {MIN_SOAK_S:.0f}s; a "
@@ -293,6 +306,34 @@ def check_experiment_evidence() -> list[tuple]:
                          f"{r.get('policy_changes')} policy changes"
                          + _revision_note("data/host_gate_soak", rev()[:8])))
     return rows
+
+
+def _probe_summary(sub: str) -> dict:
+    """Latency actually measured on the interactive workload in a results tree.
+
+    Read from each run's final `<label>.json`, which carries p95/jitter/loss.
+    It is NOT in result.json: the live ingestion path reads
+    `<label>.partial.json`, which the generators never write, so every
+    `rtt_p95` in result.json is None. The measurement exists; it is just in a
+    different file than the series.
+    """
+    import json as _json
+    import statistics
+    vals = []
+    for f in sorted((ROOT / sub).glob("*/*.json")):
+        if f.name in ("result.json", "config.json", "audit.json",
+                      "workloads.json"):
+            continue
+        try:
+            d = _json.loads(f.read_text())
+        except (OSError, ValueError):
+            continue
+        p95 = d.get("p95")
+        if p95 is not None:
+            vals.append(float(p95))
+    if not vals:
+        return {"n": 0, "p95": float("nan")}
+    return {"n": len(vals), "p95": statistics.median(vals)}
 
 
 def _steady_goodput(result: dict) -> float:

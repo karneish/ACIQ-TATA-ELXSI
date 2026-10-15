@@ -649,6 +649,9 @@ class ExperimentRunner:
             samples=samples,
             policy_changes=self.harness.policy_changes,
             bottleneck_state=bottleneck_state,
+            # observed, not configured
+            duration_s=(round((samples[-1]["t"] - samples[0]["t"]), 2)
+                        if len(samples) >= 2 else 0.0),
 notes=(([] if dropped else ["no capacity drop in this run"])
                    + ([stale_note] if stale_note else [])
                    + [enforcement_note]

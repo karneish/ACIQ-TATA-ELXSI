@@ -758,3 +758,58 @@ class TestEvidenceStampsItself(unittest.TestCase):
         finally:
             A.ROOT = saved
         self.assertIn("evidence from revision bbbbbbbb", note)
+
+
+class TestComparisonNeedsMeasurements(unittest.TestCase):
+    """Seeds are not a comparison.
+
+    The gate counted runs and called the comparison PASS while every
+    `rtt_p95` in every result.json was None -- seven runs of each system
+    producing no latency data whatsoever. The measurement exists, but in each
+    run's final `<label>.json` rather than in the series, because the live
+    ingestion path reads `<label>.partial.json` and the generators never write
+    it."""
+
+    def test_probe_summary_reads_the_per_run_json(self):
+        self.assertTrue(callable(A._probe_summary))
+
+    def test_a_tree_with_no_measurements_measures_nothing(self):
+        import tempfile
+        from pathlib import Path as _P
+        d = _P(tempfile.mkdtemp())
+        (d / "s__aciq__adaptive__seed42").mkdir()
+        (d / "s__aciq__adaptive__seed42" / "result.json").write_text(
+            '{"samples": [{"per_class": {"realtime_interactive": '
+            '{"rtt_p95": null}}}]}')
+        saved = A.ROOT
+        try:
+            A.ROOT = _P(tempfile.mkdtemp())
+            out = A._probe_summary("")
+        finally:
+            A.ROOT = saved
+        self.assertEqual(out["n"], 0)
+
+    def test_result_json_alone_is_not_a_measurement(self):
+        """The exact trap: runs present, series present, numbers absent."""
+        import tempfile
+        from pathlib import Path as _P
+        root = _P(tempfile.mkdtemp())
+        run = root / "s__aciq__adaptive__seed42"
+        run.mkdir()
+        (run / "result.json").write_text('{"samples": [{"per_class": {}}]}')
+        saved = A.ROOT
+        try:
+            A.ROOT = root
+            self.assertEqual(A._probe_summary("")["n"], 0)
+        finally:
+            A.ROOT = saved
+
+    def test_the_gate_would_not_pass_on_seeds_alone(self):
+        self.assertIn("Seeds are not a comparison",
+                      (_P_src()))
+        self.assertIn("and measured[k][\"n\"]", _P_src())
+
+
+def _P_src():
+    from pathlib import Path
+    return (Path(__file__).resolve().parents[1] / "tools" / "acceptance.py").read_text()

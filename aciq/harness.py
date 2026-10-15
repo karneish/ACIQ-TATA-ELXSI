@@ -167,6 +167,15 @@ class RunResult:
     policy_changes: int = 0
     #: raw `tc qdisc show` for the out-of-band bottleneck at end of run
     bottleneck_state: str = ""
+    #: OBSERVED duration of the run, in seconds, taken from the first and last
+    #: samples rather than from the configured scenario.
+    #:
+    #: There was no such field, so a 31-minute soak reported `duration_s: None`
+    #: and the acceptance gate read that as "0 seconds -- not a stability
+    #: result". The run was real: 1801 samples across 1859 seconds. Reporting
+    #: the configured value would be the weaker claim; the span actually
+    #: observed is the evidence.
+    duration_s: float = 0.0
     notes: list[str] = field(default_factory=list)
 
     def to_json(self) -> str:

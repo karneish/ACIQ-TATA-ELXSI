@@ -70,3 +70,54 @@ Three seeds per system, one shared machine, one link, and an offline
 classification heuristic. **Nothing here establishes ACIQ's advantage in
 general**, and no efficiency/scalability claim is made from these numbers even
 if the experiment succeeds.
+
+
+## Measured result
+
+`s3_tv_and_gaming`, 7 paired seeds, kernel `7.1.5-76070105-generic`, iproute2
+`6.1.0`, revision `56a82be8`. Read from each run's final `<label>.json` for the
+`game` workload.
+
+| system | n | p95 median | jitter median | loss |
+|---|---|---|---|---|
+| `b0_fifo` | 7 | **33.612 ms** | 6.2406 ms | 0.0 |
+| `b1_cake95` | 7 | **0.592 ms** | 0.0949 ms | 0.0 |
+| `aciq` | 7 | **0.563 ms** | 0.0867 ms | 0.0 |
+
+Paired, seed for seed:
+
+| comparison | seeds where aciq is better |
+|---|---|
+| aciq p95 < cake95 p95 | **7/7** |
+| aciq p95 < fifo p95 | **7/7** |
+
+### What this does and does not show
+
+**Against FIFO the result is unambiguous**: 33.6 ms vs 0.563 ms p95. But that
+is close to free — FIFO is the do-nothing case, and beating it shows only that
+queueing discipline matters. It is not evidence of good scheduling.
+
+**Against CAKE the margin is small**: 0.563 vs 0.592 ms, about 5%, consistent in
+direction across 7/7 paired seeds. It is a real ordering, and 7/7 is a sign-test
+p of 0.008, but it is a narrow one.
+
+**The scenario does not stress the link.** `s3_tv_and_gaming` has no capacity
+change and the interactive workload runs at 30 pps — roughly 1200 packets in 40
+seconds. Every system had an uncongested link, which is precisely the regime
+CAKE is built for. **This comparison does not demonstrate an advantage under
+congestion**, and no such claim is made.
+
+### A measurement gap that made this nearly invisible
+
+Every `rtt_p95` in `result.json` is `None` for every run of every system. The
+live ingestion path (`_ingest_probes`) reads `<label>.partial.json`, which the
+generators do not write — only the final `<label>.json` exists. So:
+
+- the per-tick series carries goodput, counters and backlog, and no latency;
+- the latency was measured, and written, but only at the end of the run.
+
+The acceptance gate initially reported this comparison as **PASS on seed counts
+alone**, having verified 7 runs per system and nothing else. That is the same
+failure as everywhere else this session: counting something that is not the
+evidence. It now requires measurements and reports the medians, so a tree of
+runs containing no latency data is `NOT RUN`.
