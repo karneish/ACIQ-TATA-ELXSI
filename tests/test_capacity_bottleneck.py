@@ -447,3 +447,98 @@ class TestLiveLatencyIngestion(unittest.TestCase):
                / "udpx.py").read_text()
         self.assertIn("PARTIAL_EVERY_S", src)
         self.assertIn("def write_partial", src)
+
+
+class TestProbeIngestionLandsInAClass(unittest.TestCase):
+    """The path from a partial report to a measured latency, end to end.
+
+    Worth testing without a kernel because every link in it can fail silently
+    and produce the same result: no latency. `_ingest_probes` skips a missing
+    file, `_verdict_class` returns None for a class it cannot name, and
+    `MetricsCollector` records `no_probe` rather than failing. Three silent
+    paths, one symptom.
+
+    This run produced `rtt_p95: None` on every sample of every system for the
+    whole project, and nothing raised.
+    """
+
+    @staticmethod
+    def _source():
+        """A source whose frame actually carries the interactive class.
+
+        `poll()` reports what the frame holds, merged with what was ingested.
+        An empty frame produces an empty result no matter what was ingested --
+        which is itself a third way this path can fail silently.
+        """
+        from aciq.metrics import ClassCounters, CounterSnapshot, StaticSource
+        from aciq.model import TrafficClass
+        snap = CounterSnapshot(
+            t=0.0,
+            by_class={TrafficClass.INTERACTIVE: ClassCounters(rx_bytes=14000)})
+        return StaticSource([snap for _ in range(40)])
+
+    def _paths(self, d):
+        from pathlib import Path as _P
+        from aciq.experiment import RunPaths
+        return RunPaths(_P(d))
+
+    def test_a_partial_report_reaches_the_collector_as_latency(self):
+        import json
+        import tempfile
+        from aciq.experiment import ExperimentRunner
+        from aciq.metrics import MetricsCollector
+
+        d = tempfile.mkdtemp()
+        (self._paths(d).file("call.partial.json")).write_text(json.dumps({
+            "p95": 0.9, "jitter_ms": 0.11, "loss_ratio": 0.0}))
+
+        r = ExperimentRunner(launcher=None, harness=None,
+                             results_dir=None, real_time=False)
+        r._last_verdicts = [{"call": {"class": "realtime_interactive"}}]
+        collector = MetricsCollector(source=self._source())
+        r._ingest_probes(collector, self._paths(d),
+                         [("call", 5001, 46)], "s2_wan_drop")
+        frame = collector.poll()
+        m = frame.per_class.get(__import__("aciq.model", fromlist=["x"])
+                                .TrafficClass("realtime_interactive"))
+        self.assertIsNotNone(m, "latency did not reach the interactive class")
+        self.assertEqual(m.metric_status, "valid")
+        self.assertAlmostEqual(m.rtt_p95, 0.9, places=6)
+
+    def test_an_unclassifiable_flow_is_reported_as_no_probe(self):
+        """The documented fallback, asserted so it cannot silently become 0.0."""
+        import json
+        import tempfile  # noqa: F401
+        from aciq.experiment import ExperimentRunner
+        from aciq.metrics import MetricsCollector
+
+        d = tempfile.mkdtemp()
+        (self._paths(d).file("call.partial.json")).write_text(json.dumps({
+            "p95": 0.9, "jitter_ms": 0.11, "loss_ratio": 0.0}))
+        r = ExperimentRunner(launcher=None, harness=None,
+                             results_dir=None, real_time=False)
+        r._last_verdicts = [{"call": {"class": "unclassified"}}]
+        collector = MetricsCollector(source=self._source())
+        r._ingest_probes(collector, self._paths(d),
+                         [("call", 5001, 46)], "s2_wan_drop")
+        frame = collector.poll()
+        from aciq.model import TrafficClass
+        vals = [v for v in frame.per_class.values()]
+        self.assertTrue(all(v.metric_status == "no_probe" for v in vals),
+                        "an unclassifiable flow must not report a latency")
+        for v in vals:
+            self.assertIsNone(v.rtt_p95)
+
+    def test_a_missing_partial_file_is_skipped_silently_and_safely(self):
+        import tempfile
+        from aciq.experiment import ExperimentRunner
+        from aciq.metrics import MetricsCollector
+        d = tempfile.mkdtemp()
+        r = ExperimentRunner(launcher=None, harness=None,
+                             results_dir=None, real_time=False)
+        collector = MetricsCollector(source=self._source())
+        r._ingest_probes(collector, self._paths(d),
+                         [("call", 5001, 46)], "s2_wan_drop")
+        frame = collector.poll()
+        for v in frame.per_class.values():
+            self.assertIsNone(v.rtt_p95, "a missing file must not become 0.0")
