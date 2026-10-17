@@ -94,6 +94,12 @@ def main() -> int:
                          "directory. Only for deliberately mixing evidence "
                          "from several revisions in one tree.")
     ap.add_argument("--report", default=None, help="write the Markdown report here")
+    ap.add_argument("--observe", action="store_true",
+                    help="record per-packet send/receive timestamps for every "
+                         "latency probe, one JSON line per packet. Off by "
+                         "default. Needed to diagnose a latency tail, because "
+                         "a percentile says how slow the worst packets were but "
+                         "not which they were or when they happened.")
     ap.add_argument("--report-only", action="store_true",
                     help="rebuild the report from existing artefacts and exit. "
                          "No testbed, no runs, no root-adjacent setup -- the "
@@ -160,7 +166,7 @@ def main() -> int:
         source = NullSource()
     else:
         harness = Harness()
-        launcher = NetnsLauncher()
+        launcher = NetnsLauncher(observe=args.observe)
         source = None
     runner = ExperimentRunner(
         launcher=launcher,

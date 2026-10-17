@@ -86,7 +86,13 @@ class NetnsLauncher:
     """Runs real generator processes inside namespaces."""
 
     def __init__(self, python: str = "python3", ns_client: str = NS_CLIENT,
-                 ns_wan: str = NS_WAN, out_dir: Path | None = None):
+                 ns_wan: str = NS_WAN, out_dir: Path | None = None,
+                 observe: bool = False):
+        #: Record per-packet send/receive timestamps. Off by default: it
+        #: appends a line per packet, which is fine for a probe and wasteful
+        #: for the bulk generators. Exists because a percentile cannot say
+        #: which packets were slow or when.
+        self.observe = observe
         self.python = python
         self.ns_client = ns_client
         self.ns_wan = ns_wan
@@ -131,6 +137,13 @@ class NetnsLauncher:
             # and they are bulk data generators, not latency probes, so there is
             # no round trip to report on.
             argv += ["--partial-out", str(json_out.with_suffix(".partial.json"))]
+            if self.observe:
+                # One line per packet: sequence, send timestamp, receive
+                # timestamp. Needed because a percentile cannot say *which*
+                # packets were slow or *when* -- an unexplained 80 ms tail
+                # appeared for every seed and every system, and without this
+                # there is no way to locate it against what the run was doing.
+                argv += ["--obs-out", str(json_out.with_suffix(".obs.jsonl"))]
         if dscp is not None:
             argv += ["--dscp", str(dscp)]
         p = subprocess.Popen(argv, stdout=open(log_path, "w"),

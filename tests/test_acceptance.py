@@ -402,7 +402,8 @@ class TestHostGateScript(unittest.TestCase):
         used = set()
         for ln in lines:
             used |= set(re.findall(r"--[a-z][a-z-]+", ln))
-        own = {"--check", "--full", "--help", "--congested-only"}  # the script's own options
+        own = {"--check", "--full", "--help", "--congested-only",
+          "--latency-tail"}  # the script's own options
         for flag in sorted(used - own):
             self.assertIn(flag, driver,
                           f"{flag} is passed to an ACIQ driver by host_gate.sh "
@@ -902,7 +903,7 @@ class TestWorkloadFlagContract(unittest.TestCase):
 
     #: Sent only to PROBE_KINDS, by the launcher's own condition. bulk and
     #: video implement their own senders and have no round trip to report.
-    PROBE_ONLY = {"--partial-out"}
+    PROBE_ONLY = {"--partial-out", "--obs-out"}
 
     def test_no_workload_rejects_a_flag_the_launcher_sends(self):
         """The contract is two-sided, and both sides must hold.

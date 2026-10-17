@@ -43,11 +43,13 @@ mkdir -p "$OUT" || exit 1
 CHECK_ONLY=0
 FULL=0
 CONGESTED_ONLY=0
+LATENCY_TAIL=0
 for arg in "$@"; do
   case "$arg" in
     --check) CHECK_ONLY=1 ;;
     --full)  FULL=1 ;;
     --congested-only) CONGESTED_ONLY=1 ;;
+    --latency-tail) LATENCY_TAIL=1 ;;
     -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
@@ -141,6 +143,25 @@ else
 fi
 log ""
 
+# ---------------------------------------------------- latency-tail probe
+# Deliberately short and deliberately a single seed. This is a DIAGNOSTIC, not a
+# gate: the congested comparison reports p50 1.19 ms but p95 80.126 ms and p99
+# 100.265 ms, and those are exact multiples of the 20 ms pacing interval and
+# come out identical for FIFO, CAKE and ACIQ to 0.01 ms. A percentile cannot say
+# which packets were slow or when. This run records every packet so they can be
+# found in time against what the run was doing. One seed, 60s -- the answer is
+# in the trace, not in the sample size.
+latency_tail_probe() {
+  log "== diagnostic: latency tail, 1 seed, per-packet trace =="
+  log "  ~2 min. This is a diagnostic run, not a gate result."
+  stamp data/host_gate_tail
+  python3 run_experiments.py --scenario s2_wan_drop --system aciq \
+      --drop 20 --drop-at 5 --seed 42 --duration-s 60 --enforce --observe \
+      --results-dir data/host_gate_tail 2>&1 \
+      | tee "$OUT/tail.log" | tail -4
+  log "  trace: data/host_gate_tail/*/call.obs.jsonl"
+}
+
 # ---------------------------------------------------- congested comparison
 # Factored out so `--congested-only` re-measures exactly this and nothing else.
 congested_comparison() {
@@ -198,7 +219,10 @@ print(max((s.get('filters_installed') or 0) for s in d.get('samples',[])) if d.g
 }
 
 # -------------------------------------------------- 3. optional longer exercises
-if [ "$CONGESTED_ONLY" -eq 1 ]; then
+if [ "$LATENCY_TAIL" -eq 1 ]; then
+  latency_tail_probe
+  log ""
+elif [ "$CONGESTED_ONLY" -eq 1 ]; then
   congested_comparison
   log ""
 elif [ "$FULL" -eq 1 ]; then

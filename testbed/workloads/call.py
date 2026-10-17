@@ -38,6 +38,13 @@ def main() -> int:
                          "one device and a lease can match it alone")
     ap.add_argument("-6", "--ipv6", action="store_true")
     ap.add_argument("--json-out", default=None)
+    ap.add_argument("--obs-out", default=None,
+                    help="append every packet's send/receive timestamp here, "
+                         "one JSON per line. This exists because an "
+                         "unexplained 80 ms tail was observed for every seed "
+                         "and every system, and a percentile cannot say which "
+                         "packets were slow or when. Off by default: it "
+                         "appends a line per packet and doubles the I/O.")
     ap.add_argument("--partial-out", default=None,
                     help="write the summary-so-far here, repeatedly, so the "
                          "driver can ingest latency DURING the run instead of "
@@ -61,6 +68,7 @@ def main() -> int:
         dst=args.dst, port=args.port, pps=args.pps,
         payload_bytes=args.bytes, family=family, label="call",
         src=args.src, partial_path=args.partial_out,
+        obs_path=args.obs_out,
     )
     print(
         f"call -> {args.dst}:{args.port} for {args.duration}s "

@@ -1,0 +1,116 @@
+{
+  "run_id": "1093a451",
+  "revision": "1093a451682465ad9ca1bf343fb738f34d524cd3",
+  "started_utc": "2026-10-17T17:23:05.492005+00:00",
+  "kernel": "7.1.5-76070105-generic",
+  "python": "3.12.3",
+  "uid": 0,
+  "hostname": "pop-os",
+  "tests": {
+    "tests": 939,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 1,
+    "ok": true,
+    "summary": "Ran 939 tests in 40.262s",
+    "skipped_tests": [
+      "tests.test_acceptance.TestHostGateScript.test_it_refuses_without_root_and_changes_nothing"
+    ]
+  },
+  "finished_utc": "2026-10-17T17:26:07.959277+00:00",
+  "gates": [
+    {
+      "gate": "unit+integration+socket",
+      "status": "PASS",
+      "detail": "939 tests, 1 skipped, exit 0",
+      "log": "unittest.log"
+    },
+    {
+      "gate": "metric integrity",
+      "status": "PASS",
+      "detail": "arithmetic + socket recomputation",
+      "log": "metric-integrity.log"
+    },
+    {
+      "gate": "api security",
+      "status": "PASS",
+      "detail": "auth, bind policy, rate limit, audit",
+      "log": "api-security.log"
+    },
+    {
+      "gate": "classifier evaluation",
+      "status": "PASS",
+      "detail": "16 constructed cases, two capacities",
+      "log": "classifier-eval.log"
+    },
+    {
+      "gate": "control-plane benchmark",
+      "status": "PASS",
+      "detail": "",
+      "log": "benchmark.log"
+    },
+    {
+      "gate": "live rollback verification (kernel)",
+      "status": "PASS",
+      "detail": "tc read-back in an isolated namespace",
+      "log": "rollback-live.log"
+    },
+    {
+      "gate": "testbed gate (21 checks)",
+      "status": "PASS",
+      "detail": "exit 0",
+      "log": "gate.log"
+    },
+    {
+      "gate": "live enforcement",
+      "status": "PASS",
+      "detail": "20 PASS, 1 MEASURED, 0 FAIL (gate-20261013-135720.log)",
+      "log": ""
+    },
+    {
+      "gate": "rollback under real tc failure",
+      "status": "PASS",
+      "detail": "live rollback tests passed (rollback-live-20261013.log)",
+      "log": ""
+    },
+    {
+      "gate": "live adaptation loop",
+      "status": "PASS",
+      "detail": "100.0 -> 10.0 Mbps, estimator 11.23, 41 samples [evidence from revision 2fb66c39, not 1093a451]",
+      "log": ""
+    },
+    {
+      "gate": "FIFO/CAKE/ACIQ comparison",
+      "status": "PASS",
+      "detail": "aciq=7, b0_fifo=7, b1_cake95=7 paired seeds, aciq p95=0.549ms; b0_fifo p95=33.621ms; b1_cake95 p95=0.563ms [evidence from revision 2fb66c39, not 1093a451]",
+      "log": ""
+    },
+    {
+      "gate": "congested FIFO/CAKE/ACIQ comparison",
+      "status": "PASS",
+      "detail": "aciq=7, b0_fifo=7, b1_cake95=7 paired seeds on a dropped link, aciq p95=100.183ms; b0_fifo p95=100.244ms; b1_cake95 p95=100.256ms",
+      "log": ""
+    },
+    {
+      "gate": "30-minute stability",
+      "status": "PASS",
+      "detail": "1851s sustained, 8 policy changes [evidence from revision 2fb66c39, not 1093a451]",
+      "log": ""
+    },
+    {
+      "gate": "claim audit",
+      "status": "PASS",
+      "detail": "constants, evidence, red-flag phrases",
+      "log": "claim-audit.log"
+    }
+  ],
+  "counts": {
+    "PASS": 14,
+    "FAIL": 0,
+    "BLOCKED": 0,
+    "NOT RUN": 0
+  },
+  "skipped": 1,
+  "skipped_mandatory": [],
+  "complete": true
+}
