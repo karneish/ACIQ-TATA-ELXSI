@@ -130,8 +130,17 @@ def build_tree(
 ) -> TcTree:
     """Render a RatePlan into a complete tc tree.
 
-    Ceilings are clamped to capacity regardless of what the plan asked for:
-    a ceil above the bottleneck is a measured way to exceed the link.
+    Ceilings come from the plan and are clamped to capacity regardless of what
+    it asked for: a ceil above the bottleneck is a measured way to exceed the
+    link (28.5 Mbps on a 20 Mbps parent).
+
+    They were previously *discarded* here -- `min(cap, cap)`, literally the
+    capacity twice -- so any ceiling computed by build_plan never reached the
+    kernel. Measured consequence: bulk carried 19.88 Mbps against a planned
+    ceil of 17, the bottleneck queue stayed pinned at its limit, and the call's
+    p95 came out identical for FIFO, CAKE and ACIQ. A policy computed
+    correctly and then thrown away by the renderer is worse than not computing
+    it, because the tests on the plan still pass.
     """
     cap = plan.capacity_mbps
     classes: list[TcClass] = [
@@ -141,12 +150,15 @@ def build_tree(
         cid = CLASS_IDS.get(cls)
         if cid is None:
             continue
+        # Fall back to capacity if the plan somehow has no ceiling for a class
+        # it has a rate for, so this can never produce an unenforceable plan.
+        ceil = plan.ceils.get(cls, cap)
         classes.append(
             TcClass(
                 classid=cid,
                 parent=ROOT_CLASS_ID,
                 rate_mbps=rate,
-                ceil_mbps=min(cap, cap),  # == capacity; never above the bottleneck
+                ceil_mbps=min(cap, max(rate, ceil)),
                 leaf=leaf_args(leaf),
                 cls=cls,
             )

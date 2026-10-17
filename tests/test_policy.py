@@ -231,3 +231,62 @@ class TestOrdering(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPlanSurvivesRendering(unittest.TestCase):
+    """A ceiling computed in the policy must survive into the tc tree.
+
+    These exist because it did not. build_plan computed a 17 Mbps ceiling for
+    bulk; build_tree discarded it with `ceil_mbps=min(cap, cap)`; the kernel
+    never saw it; bulk carried 19.88 Mbps; and every test that inspected the
+    *plan* still passed. The defect was only visible by comparing the plan to
+    what was actually rendered.
+    """
+
+    @staticmethod
+    def _tree(cap):
+        from aciq.tc import build_tree
+        return build_tree(build_plan(cap))
+
+    def test_rendered_ceil_matches_the_plan_for_every_class(self):
+        for cap in (10.0, 20.0, 100.0):
+            plan = build_plan(cap)
+            tree = self._tree(cap)
+            for c in tree.classes:
+                if c.cls is None:
+                    continue
+                with self.subTest(cap=cap, cls=c.cls):
+                    self.assertAlmostEqual(c.ceil_mbps, plan.ceils[c.cls], places=6)
+
+    def test_rendered_bulk_ceil_is_below_capacity(self):
+        for cap in (20.0, 100.0):
+            tree = self._tree(cap)
+            bulk = next(c for c in tree.classes if c.cls is TrafficClass.BULK)
+            with self.subTest(cap=cap):
+                self.assertLess(bulk.ceil_mbps, cap)
+
+    def test_rendered_ceil_never_below_rendered_rate(self):
+        for cap in (1.0, 10.0, 20.0, 100.0):
+            tree = self._tree(cap)
+            for c in tree.classes:
+                with self.subTest(cap=cap, cls=c.cls):
+                    self.assertGreaterEqual(c.ceil_mbps + 1e-9, c.rate_mbps)
+
+    def test_rendered_ceil_never_above_capacity(self):
+        for cap in (10.0, 20.0, 100.0):
+            tree = self._tree(cap)
+            for c in tree.classes:
+                with self.subTest(cap=cap, cls=c.cls):
+                    self.assertLessEqual(c.ceil_mbps, cap + 1e-9)
+
+    def test_render_argv_carries_the_bulk_ceiling(self):
+        """The ceiling has to appear in the actual tc command line.
+
+        A tree object can be right while the argv that installs it is wrong.
+        """
+        from aciq.tc import render
+        argv = [" ".join(c) for c in render(self._tree(20.0))]
+        bulk = [ln for ln in argv if "1:30" in ln]
+        self.assertTrue(bulk, "no class 1:30 in the rendered commands")
+        self.assertIn("ceil", bulk[0])
+        self.assertIn("17", bulk[0])
