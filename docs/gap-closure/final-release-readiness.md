@@ -346,3 +346,30 @@ class of error was fixed in `txn.py`, `acceptance.py` and `audit_claims.py`.
 
 The code is in better shape than it was. Whether it works **on a network** is
 still unmeasured, and this environment is not where that can be found out.
+
+## Requirements traceability (revision 219484ca)
+
+| # | Evaluation criterion | Status | Evidence |
+|---|---|---|---|
+| 21 | Classification + estimation accuracy | **PASS** | 15/16 cases; estimator 20.57 vs a true 20 Mbps |
+| 22 | Reduce interactive latency, jitter, loss | **PASS (median)** | p50 **1.18 ms** vs ~82 ms, 7/7 paired; jitter 0.74 vs 0.86 ms; loss 0.10% vs 0.40% |
+| 23 | Fairness, absence of starvation | **PASS** | per-flow within ~1%; class floors; 1851 s soak |
+| 24 | Adaptation speed + policy stability | **PASS** | detected within ~1 s; 6 changes then settled |
+| 25 | CPU overhead, reproducibility, clarity | **PASS** | 0.0049 of a core median, 0.0052 peak over 1851 s, bound 0.02; revision-stamped evidence |
+
+### The one thing still open
+
+ACIQ's **p95 is 70.84 ms** while its p50 is 1.18 ms. The 2995-packet trace shows
+the tail is genuine queueing rather than a measurement artefact -- 59.78, 62.35,
+64.26, 70.84, 80.51 ms are distinct values, not multiples of the pacing
+interval. The bottleneck's backlog still reaches its limit transiently, and the
+capacity drop at t=5 s leaves a window in which the estimator is catching up.
+
+So: the *typical* interactive call is protected to 1.18 ms, better on 7 of 7
+paired seeds than either baseline. The *worst* call in a run is not. Closing
+that needs the peak handled -- the smallest defensible version is to capture a
+trace during a congested run (`--observe`) and look at when the tail occurs
+relative to the capacity drop.
+
+The light-load comparison still needs re-running for the steering fix, exactly as
+the congested one did.
