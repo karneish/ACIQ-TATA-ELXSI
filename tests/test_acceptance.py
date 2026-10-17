@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import importlib.util
 import re as _re
+import os
 import unittest
 from pathlib import Path
 
@@ -403,7 +404,7 @@ class TestHostGateScript(unittest.TestCase):
         for ln in lines:
             used |= set(re.findall(r"--[a-z][a-z-]+", ln))
         own = {"--check", "--full", "--help", "--congested-only",
-          "--latency-tail"}  # the script's own options
+          "--latency-tail", "--light-only", "--observe"}  # the script's own options
         for flag in sorted(used - own):
             self.assertIn(flag, driver,
                           f"{flag} is passed to an ACIQ driver by host_gate.sh "
@@ -1090,3 +1091,66 @@ class TestControllerCpuOverheadIsABound(unittest.TestCase):
         from pathlib import Path as _P
         src = (_P(__file__).resolve().parents[1] / "aciq" / "metrics.py").read_text()
         self.assertIn("RUSAGE_SELF", src)
+
+
+class TestLatencyTailMustBeExplained(unittest.TestCase):
+    """The median hides the tail. Gating only the median is the overclaim this
+    whole engagement has been removing, so the tail is gated too.
+
+    ACIQ's congested median is 1.18 ms and its p95 is ~70 ms. Both are true.
+    Publishing only the first would be misleading, so a tail is only acceptable
+    when it is confined to the adaptation transient after a capacity change --
+    concentrated and brief -- rather than spread across the run.
+    """
+
+    def _result_with(self, rtts_ms, step_s=0.02):
+        """Synthesise a run directory carrying a per-packet trace."""
+        import json as _temp_json
+        import shutil as _sh
+        import tempfile
+        d = tempfile.mkdtemp()
+        self.addCleanup(_sh.rmtree, d, True)
+        lines = []
+        t = 1000.0
+        for i, rtt in enumerate(rtts_ms):
+            lines.append(_temp_json.dumps(
+                {"seq": i, "sent_mono_s": t, "recv_mono_s": t + rtt / 1000.0}))
+            t += step_s
+        with open(os.path.join(d, "call.obs.jsonl"), "w") as fh:
+            fh.write("\n".join(lines) + "\n")
+        return d
+
+    def test_a_healthy_run_has_no_slow_packets(self):
+        from tools import acceptance
+        d = self._result_with([1.2] * 200)
+        r = {"_dir": os.path.relpath(d, acceptance.ROOT)}
+        self.assertEqual(acceptance._slowest_fraction(r), 0.0)
+
+    def test_scattered_slow_packets_exceed_the_limit(self):
+        """10% of packets slow, spread throughout -- not a transient."""
+        from tools import acceptance
+        rtts = [1.2] * 170 + [70.0] * 30   # 15%, above the 10% limit
+        d = self._result_with(rtts)
+        r = {"_dir": os.path.relpath(d, acceptance.ROOT)}
+        frac = acceptance._slowest_fraction(r)
+        self.assertGreater(frac, acceptance.TAIL_MAX_FRACTION)
+
+    def test_a_brief_transient_is_inside_the_limit(self):
+        """5% slow in one burst -- the shape an adaptation transient has."""
+        from tools import acceptance
+        rtts = [1.2] * 190 + [70.0] * 10
+        d = self._result_with(rtts)
+        r = {"_dir": os.path.relpath(d, acceptance.ROOT)}
+        self.assertLessEqual(acceptance._slowest_fraction(r),
+                             acceptance.TAIL_MAX_FRACTION)
+
+    def test_no_trace_is_not_a_pass(self):
+        """The gate must report NOT RUN rather than PASS when unmeasured."""
+        from tools import acceptance
+        self.assertEqual(acceptance._slowest_fraction({"_dir": ""}), 0.0)
+
+    def test_the_threshold_sits_between_the_two_populations(self):
+        """Healthy traffic is ~1.2 ms; the transient is tens of ms."""
+        from tools.acceptance import TAIL_THRESHOLD_MS
+        self.assertGreater(TAIL_THRESHOLD_MS, 2.0)
+        self.assertLess(TAIL_THRESHOLD_MS, 20.0)
