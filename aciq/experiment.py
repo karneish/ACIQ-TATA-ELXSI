@@ -92,6 +92,13 @@ class NetnsLauncher:
         self.ns_wan = ns_wan
         self.out_dir = out_dir
         self.procs: list[subprocess.Popen] = []
+        #: Sinks run `while True` and never exit on their own -- they are meant
+        #: to outlive the run and be torn down with the namespace. Collecting
+        #: used to wait for them like senders, so every run sat out a 90-second
+        #: timeout PER SINK before killing it. Four workloads = 6 minutes of
+        #: dead time per run, which is where the "40-second scenario takes 7
+        #: minutes" came from.
+        self.sink_procs: list[subprocess.Popen] = []
         self.logs: list[Path] = []
 
     def _argv(self, ns: str, script: str, *args: str) -> list[str]:
@@ -104,7 +111,7 @@ class NetnsLauncher:
             self._argv(self.ns_client, f"{kind}.py", "--listen", "--port", str(port)),
             stdout=open(log_path, "w"), stderr=subprocess.STDOUT,
             start_new_session=True)
-        self.procs.append(p)
+        self.sink_procs.append(p)
         return p
 
     def spawn_source(self, kind: str, dst: str, port: int, duration: float,
@@ -132,16 +139,45 @@ class NetnsLauncher:
         return p
 
     def collect(self) -> list[tuple[str, str]]:
-        """Wait for every sender to finish and return its JSON report."""
+        """Wait for the senders, then stop the sinks.
+
+        The sinks do not exit on their own, so waiting for them was always a
+        timeout, never a completion. They are asked to stop instead, and only
+        killed if they ignore that -- which they do not, because they handle
+        SIGTERM.
+        """
         out = []
         for p in self.procs:
             try:
                 p.wait(timeout=90)
             except subprocess.TimeoutExpired:
                 p.kill()
+        self._stop_sinks()
         return out
 
+    def _stop_sinks(self, grace: float = 2.0) -> None:
+        for p in self.sink_procs:
+            if p.poll() is not None:
+                continue
+            try:
+                os.killpg(os.getpgid(p.pid), signal.SIGTERM)
+            except (ProcessLookupError, PermissionError, OSError):
+                try:
+                    p.terminate()
+                except OSError:
+                    continue
+        for p in self.sink_procs:
+            try:
+                p.wait(timeout=grace)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+                except (ProcessLookupError, PermissionError, OSError):
+                    p.kill()
+        self.sink_procs.clear()
+
     def stop(self) -> None:
+        self._stop_sinks()
         for p in self.procs:
             if p.poll() is None:
                 try:

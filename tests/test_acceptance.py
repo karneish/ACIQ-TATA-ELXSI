@@ -954,3 +954,63 @@ class TestWorkloadFlagContract(unittest.TestCase):
             self.assertNotIn(
                 "unrecognized arguments", r.stderr,
                 f"{kind}.py aborted on the launcher's argv:\n{r.stderr.strip()}")
+
+
+class TestRunsDoNotSitOutSinkTimeouts(unittest.TestCase):
+    """A 40-second scenario was taking seven minutes.
+
+    The sink loops are `while True: time.sleep(1)` -- they are meant to outlive
+    the run and die with the namespace. `collect()` waited for them with a
+    90-second timeout exactly as it did for senders, so every run spent 90s per
+    sink doing nothing before killing it. Four workloads = 6 minutes of dead
+    time per run, and the comparison runs 42 of them.
+
+        00:04  aciq seed44
+        00:11  aciq seed45     <- 7 minutes for a 40-second scenario
+        00:18  aciq seed46
+    """
+
+    @staticmethod
+    def _src():
+        from pathlib import Path as _P
+        return (_P(__file__).resolve().parents[1] / "aciq"
+                / "experiment.py").read_text()
+
+    def test_sinks_are_tracked_apart_from_senders(self):
+        src = self._src()
+        self.assertIn("self.sink_procs", src)
+        self.assertIn("self.sinks: list[list[str]]", src,
+                      "DryLauncher.sinks is a different thing; renaming it here "
+                      "would be churn, but the two must not be conflated")
+
+    def test_collect_does_not_wait_for_sinks(self):
+        """Senders legitimately wait -- they exit on their own.
+
+        Sinks must not: the loop is `while True`, so a wait can only ever end
+        in a timeout. Slicing from the first `def collect` grabs DryLauncher's
+        no-op and swallows the whole class, so this targets NetnsLauncher.
+        """
+        src = self._src()
+        cls = src[src.index("class NetnsLauncher:"):]
+        body = cls[cls.index("    def collect(self)"):]
+        body = body[:body.index("    def _stop_sinks")]
+        self.assertIn("timeout=90", body,
+                      "senders should still be waited for")
+        waited_on = [ln for ln in body.splitlines() if "p.wait" in ln]
+        self.assertEqual(len(waited_on), 1,
+                         "exactly one wait, for the senders")
+        self.assertIn("self._stop_sinks()", body,
+                      "the sinks must be stopped, not waited on")
+
+    def test_sinks_are_asked_to_stop_and_only_killed_if_they_ignore_it(self):
+        src = self._src()
+        self.assertIn("def _stop_sinks", src)
+        self.assertIn("SIGTERM", src)
+        self.assertIn("SIGKILL", src)
+        self.assertIn("p.wait(timeout=grace)", src,
+                      "escalate only after a grace period")
+
+    def test_stop_also_ends_the_sinks(self):
+        src = self._src()
+        stop = src[src.index("    def stop(self)"):]
+        self.assertIn("_stop_sinks", stop)
