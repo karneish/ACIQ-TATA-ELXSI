@@ -31,6 +31,11 @@ from pathlib import Path
 from aciq.metrics import jain_fairness
 
 NS: str | None = None
+#: Why setup failed, if it did. It used to `return` silently with NS still set,
+#: so the tests RAN against a half-built topology and failed on "no traffic"
+#: three times over -- which says nothing about why. A setup failure is either
+#: skipped (no namespace possible) or reported with the command and its stderr.
+SETUP_ERROR = ""
 DEV = "veth-f"
 PEER = "veth-p"
 #: The sender binds this. It must actually be assigned to PEER -- the first
@@ -93,9 +98,11 @@ def setUpModule() -> None:
     atexit.register(_cleanup)
     if not shutil.which("tc") or not shutil.which("ip"):
         return
+    global SETUP_ERROR
     name = f"aciqfair{uuid.uuid4().hex[:6]}"
-    if subprocess.run(["ip", "netns", "add", name],
-                      capture_output=True, timeout=20).returncode != 0:
+    r0 = subprocess.run(["ip", "netns", "add", name],
+                        capture_output=True, text=True, timeout=20)
+    if r0.returncode != 0:
         return
     NS = name
     for argv in (["ip", "link", "add", DEV, "type", "veth",
@@ -105,7 +112,10 @@ def setUpModule() -> None:
                  ["ip", "link", "set", DEV, "up"],
                  ["ip", "link", "set", PEER, "up"],
                  ["ip", "link", "set", "lo", "up"]):
-        if _ns(*argv).returncode != 0:
+        r = _ns(*argv)
+        if r.returncode != 0:
+            SETUP_ERROR = (f"{' '.join(argv)} -> rc={r.returncode} "
+                           f"{r.stderr.strip()}")
             return
     # one class, well above what two senders can offer, so nothing here is
     # about rate limiting -- it is purely about how the queue shares.
@@ -117,6 +127,8 @@ def setUpModule() -> None:
                   "handle", "10:", "fq_codel"]):
         r = _ns(*argv)
         if r.returncode != 0:
+            SETUP_ERROR = (f"{' '.join(argv)} -> rc={r.returncode} "
+                           f"{r.stderr.strip()}")
             return
 
 
@@ -126,6 +138,11 @@ class TestPerFlowFairness(unittest.TestCase):
     def setUp(self) -> None:
         if NS is None:
             self.skipTest("namespace unavailable (no root, or no CAP_NET_ADMIN)")
+        if SETUP_ERROR:
+            # Fail loudly, and say which command. Skipping here would turn a
+            # broken setup into a green run -- the gate already caught this once
+            # by accident, reporting "no traffic arrived" for three tests.
+            self.fail(f"testbed setup failed: {SETUP_ERROR}")
 
     def _run_two_flows(self, duration=6.0):
         sinks = [

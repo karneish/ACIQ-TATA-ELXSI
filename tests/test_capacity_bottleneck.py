@@ -542,3 +542,39 @@ class TestProbeIngestionLandsInAClass(unittest.TestCase):
         frame = collector.poll()
         for v in frame.per_class.values():
             self.assertIsNone(v.rtt_p95, "a missing file must not become 0.0")
+
+
+class TestLiveTestSetupMustReportItself(unittest.TestCase):
+    """A half-built topology must not look like three traffic failures.
+
+    tests/test_fairness_live.py returned silently from setup on any failed
+    command, leaving the namespace variable set -- so the tests RAN and failed
+    on "no traffic arrived", three times, with nothing saying why. The gate
+    reported a FAIL and the actual cause never appeared anywhere.
+
+    Three ways to get it wrong, and the third is the one that bites:
+    failing loudly is annoying, skipping hides a real setup fault, and running
+    against a broken topology produces confident nonsense."""
+
+    def test_setup_failures_are_captured(self):
+        from pathlib import Path as _P
+        src = (_P(__file__).resolve().parents[1] / "tests"
+               / "test_fairness_live.py").read_text()
+        self.assertIn("SETUP_ERROR", src)
+        self.assertIn("rc={r.returncode}", src)
+
+    def test_a_failed_setup_fails_the_test_with_the_reason(self):
+        from pathlib import Path as _P
+        src = (_P(__file__).resolve().parents[1] / "tests"
+               / "test_fairness_live.py").read_text()
+        self.assertIn("testbed setup failed", src)
+        self.assertNotIn("self.skipTest(f\"testbed setup failed", src,
+                         "a setup fault must not be skipped; that hides it")
+
+    def test_setuploader_records_every_failing_command(self):
+        """Both the addressing block and the qdisc block."""
+        from pathlib import Path as _P
+        src = (_P(__file__).resolve().parents[1] / "tests"
+               / "test_fairness_live.py").read_text()
+        self.assertGreaterEqual(src.count("SETUP_ERROR ="), 2,
+                                "both setup phases must record a failure")

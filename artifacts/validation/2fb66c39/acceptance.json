@@ -1,0 +1,116 @@
+{
+  "run_id": "2fb66c39",
+  "revision": "2fb66c3980e5a99184e90792b46d85ef8d7a0fcd",
+  "started_utc": "2026-10-17T14:27:17.070488+00:00",
+  "kernel": "7.1.5-76070105-generic",
+  "python": "3.12.3",
+  "uid": 0,
+  "hostname": "pop-os",
+  "tests": {
+    "tests": 925,
+    "failures": 3,
+    "errors": 0,
+    "skipped": 1,
+    "ok": false,
+    "summary": "Ran 925 tests in 40.179s",
+    "skipped_tests": [
+      "tests.test_acceptance.TestHostGateScript.test_it_refuses_without_root_and_changes_nothing"
+    ]
+  },
+  "finished_utc": "2026-10-17T14:30:19.209200+00:00",
+  "gates": [
+    {
+      "gate": "unit+integration+socket",
+      "status": "FAIL",
+      "detail": "exit 1, Ran 925 tests in 40.179s, exit 1",
+      "log": "unittest.log"
+    },
+    {
+      "gate": "metric integrity",
+      "status": "PASS",
+      "detail": "arithmetic + socket recomputation",
+      "log": "metric-integrity.log"
+    },
+    {
+      "gate": "api security",
+      "status": "PASS",
+      "detail": "auth, bind policy, rate limit, audit",
+      "log": "api-security.log"
+    },
+    {
+      "gate": "classifier evaluation",
+      "status": "PASS",
+      "detail": "16 constructed cases, two capacities",
+      "log": "classifier-eval.log"
+    },
+    {
+      "gate": "control-plane benchmark",
+      "status": "PASS",
+      "detail": "",
+      "log": "benchmark.log"
+    },
+    {
+      "gate": "live rollback verification (kernel)",
+      "status": "PASS",
+      "detail": "tc read-back in an isolated namespace",
+      "log": "rollback-live.log"
+    },
+    {
+      "gate": "testbed gate (21 checks)",
+      "status": "PASS",
+      "detail": "exit 0",
+      "log": "gate.log"
+    },
+    {
+      "gate": "live enforcement",
+      "status": "PASS",
+      "detail": "20 PASS, 1 MEASURED, 0 FAIL (gate-20261013-135720.log)",
+      "log": ""
+    },
+    {
+      "gate": "rollback under real tc failure",
+      "status": "PASS",
+      "detail": "live rollback tests passed (rollback-live-20261013.log)",
+      "log": ""
+    },
+    {
+      "gate": "live adaptation loop",
+      "status": "PASS",
+      "detail": "100.0 -> 10.0 Mbps, estimator 11.27, 41 samples [evidence from revision 8a3d5caa, not 2fb66c39]",
+      "log": ""
+    },
+    {
+      "gate": "FIFO/CAKE/ACIQ comparison",
+      "status": "PASS",
+      "detail": "aciq=7, b0_fifo=6, b1_cake95=7 paired seeds, aciq p95=0.575ms; b0_fifo p95=33.428ms; b1_cake95 p95=0.596ms [evidence from revision 8a3d5caa, not 2fb66c39] [evidence from revision 9f9d45d2, not 2fb66c39]",
+      "log": ""
+    },
+    {
+      "gate": "congested FIFO/CAKE/ACIQ comparison",
+      "status": "NOT RUN",
+      "detail": "no congested runs; run: sudo tools/host_gate.sh --full",
+      "log": ""
+    },
+    {
+      "gate": "30-minute stability",
+      "status": "PASS",
+      "detail": "1991s sustained, 7 policy changes [evidence from revision 9f9d45d2, not 2fb66c39]",
+      "log": ""
+    },
+    {
+      "gate": "claim audit",
+      "status": "PASS",
+      "detail": "constants, evidence, red-flag phrases",
+      "log": "claim-audit.log"
+    }
+  ],
+  "counts": {
+    "PASS": 12,
+    "FAIL": 1,
+    "BLOCKED": 0,
+    "NOT RUN": 1
+  },
+  "skipped": 1,
+  "skipped_mandatory": [],
+  "complete": false
+}
