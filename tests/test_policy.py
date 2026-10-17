@@ -72,13 +72,44 @@ class TestInvariant(unittest.TestCase):
         plan = build_plan(20.0, lease())
         self.assertLessEqual(plan.max_ceil(), 20.0 + 1e-9)
 
-    def test_ceil_equals_capacity_so_classes_can_borrow(self):
+    def test_latency_sensitive_classes_can_borrow_the_whole_link(self):
         """Classes must be able to use idle bandwidth, otherwise a floor-only
         setup would waste the link. ceil == capacity gives full borrowing
-        without exceeding the bottleneck."""
+        without exceeding the bottleneck.
+
+        Deliberately no longer true for BULK, which is capped below capacity so
+        it cannot monopolise the link. Borrowing is still available to every
+        latency-sensitive class, which is the property this test protects.
+        """
         plan = build_plan(20.0)
-        for c in plan.ceils.values():
-            self.assertAlmostEqual(c, 20.0, places=9)
+        for c, ceil in plan.ceils.items():
+            if c is TrafficClass.BULK:
+                continue
+            self.assertAlmostEqual(ceil, 20.0, places=9)
+
+    def test_bulk_ceiling_caps_it_below_the_link(self):
+        """The brief says the controller limits the bulk queue.
+
+        With every class at ceil == capacity, bulk borrows the whole link, the
+        bottleneck's queue stays pinned full, and the call's p95 is identical
+        for FIFO, CAKE and ACIQ -- measured, not assumed.
+        """
+        plan = build_plan(20.0)
+        self.assertLess(plan.ceils[TrafficClass.BULK], 20.0)
+        self.assertAlmostEqual(plan.ceils[TrafficClass.BULK], 17.0, places=9)
+
+    def test_bulk_still_borrows_up_to_its_ceiling_when_alone(self):
+        """The ceiling is a limit, not a downgrade: bulk keeps its guarantee and
+        still uses far more than it when it is the only sender."""
+        plan = build_plan(20.0)
+        self.assertGreater(plan.ceils[TrafficClass.BULK], plan.rates[TrafficClass.BULK])
+
+    def test_headroom_is_retained_for_latency_sensitive_traffic(self):
+        """Whatever bulk gives up, something else must be able to use."""
+        for cap in (20.0, 100.0):
+            plan = build_plan(cap)
+            headroom = cap - plan.ceils[TrafficClass.BULK]
+            self.assertGreater(headroom, 0.0, f"no headroom left at {cap} Mbps")
 
     def test_ceil_never_below_rate(self):
         for cap in [100.0, 20.0]:
