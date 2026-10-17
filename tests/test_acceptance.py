@@ -402,7 +402,7 @@ class TestHostGateScript(unittest.TestCase):
         used = set()
         for ln in lines:
             used |= set(re.findall(r"--[a-z][a-z-]+", ln))
-        own = {"--check", "--full", "--help"}   # the script's own options
+        own = {"--check", "--full", "--help", "--congested-only"}  # the script's own options
         for flag in sorted(used - own):
             self.assertIn(flag, driver,
                           f"{flag} is passed to an ACIQ driver by host_gate.sh "

@@ -42,14 +42,21 @@ mkdir -p "$OUT" || exit 1
 
 CHECK_ONLY=0
 FULL=0
+CONGESTED_ONLY=0
 for arg in "$@"; do
   case "$arg" in
     --check) CHECK_ONLY=1 ;;
     --full)  FULL=1 ;;
+    --congested-only) CONGESTED_ONLY=1 ;;
     -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
 done
+
+if [ "$FULL" -eq 1 ] && [ "$CONGESTED_ONLY" -eq 1 ]; then
+  echo "--full and --congested-only are mutually exclusive" >&2
+  exit 2
+fi
 
 log()  { printf '%s\n' "$*" | tee -a "$OUT/host-gate.log"; }
 skip() { printf '  [SKIPPED] %s -- %s\n' "$1" "$2" | tee -a "$OUT/host-gate.log"; }
@@ -134,8 +141,67 @@ else
 fi
 log ""
 
+# ---------------------------------------------------- congested comparison
+# Factored out so `--congested-only` re-measures exactly this and nothing else.
+congested_comparison() {
+  log "== gate 4b: CONGESTED comparison (s2_wan_drop), 7 paired seeds =="
+  log "  ~20 min plus testbed build"
+  log "  this is the one that matters: a dropped link, not a free one"
+  for sysname in b0_fifo b1_cake95 aciq; do
+    stamp "data/host_gate_congested_${sysname}"
+    # --enforce is passed for ALL THREE. It is a no-op on the baselines, which
+    # have no classifier, so it cannot bias the comparison -- but omitting it
+    # for aciq is what made the previous headline measurement meaningless:
+    # every sample recorded filters_installed: 0, so "ACIQ beat CAKE" was
+    # measured on a controller that never steered a single flow.
+    python3 run_experiments.py --scenario s2_wan_drop --system "$sysname" \
+        --drop 20 --drop-at 5 --seeds 7 --seed 42 --enforce \
+        --results-dir "data/host_gate_congested_${sysname}" 2>&1 \
+        | tee -a "$OUT/comparison-congested.log" | tail -2
+  done
+  assert_flow_steering data/host_gate_congested_aciq
+  log "  evidence: data/host_gate_congested_{b0_fifo,b1_cake95,aciq}"
+}
+
+# A PASS must not be able to mean "nothing happened".
+#
+# The previous congested gate reported results from a run in which the
+# classifier's verdicts existed but no tc filter was ever installed. Nothing
+# errored, nothing warned, and the comparison was published anyway. This reads
+# the evidence back and refuses to call it a pass unless flows were steered.
+assert_flow_steering() {
+  local prefix="${1:-data/host_gate_congested_aciq}"
+  log "  -- verifying per-flow steering actually happened in ${prefix} --"
+  local bad=0 seen=0
+  for f in "$prefix"/*/result.json; do
+    [ -e "$f" ] || continue
+    seen=$((seen + 1))
+    local n
+    n=$(python3 -c "
+import json,sys
+d=json.load(open(sys.argv[1]))
+print(max((s.get('filters_installed') or 0) for s in d.get('samples',[])) if d.get('samples') else 0)
+" "$f")
+    if [ "${n:-0}" -eq 0 ]; then
+      log "  [FAIL] $(basename "$(dirname "$f")"): filters_installed=0 -- no flow was ever steered"
+      bad=1
+    fi
+  done
+  if [ "$seen" -eq 0 ]; then
+    log "  [FAIL] no result.json under ${prefix} -- nothing to verify"
+    bad=1
+  elif [ "$bad" -eq 0 ]; then
+    log "  [PASS] per-flow steering confirmed in all ${seen} aciq runs"
+  else
+    FAILED=1
+  fi
+}
+
 # -------------------------------------------------- 3. optional longer exercises
-if [ "$FULL" -eq 1 ]; then
+if [ "$CONGESTED_ONLY" -eq 1 ]; then
+  congested_comparison
+  log ""
+elif [ "$FULL" -eq 1 ]; then
   log "== gate 3: capacity-change adaptation (s2_wan_drop) =="
   log "  ~40s plus testbed build"
   stamp data/host_gate_adapt
@@ -149,24 +215,17 @@ if [ "$FULL" -eq 1 ]; then
   log "  ~20 min plus testbed build"
   for sysname in b0_fifo b1_cake95 aciq; do
     stamp "data/host_gate_${sysname}"
+    # --enforce for the same reason as the congested gate; see assert_flow_steering.
     python3 run_experiments.py --scenario s3_tv_and_gaming --system "$sysname" \
-        --seeds 7 --seed 42 --results-dir "data/host_gate_${sysname}" 2>&1 \
+        --seeds 7 --seed 42 --enforce \
+        --results-dir "data/host_gate_${sysname}" 2>&1 \
         | tee -a "$OUT/comparison.log" | tail -2
   done
+  assert_flow_steering data/host_gate_aciq
   log "  evidence: data/host_gate_{b0_fifo,b1_cake95,aciq}"
   log ""
 
-  log "== gate 4b: CONGESTED comparison (s2_wan_drop), 7 paired seeds =="
-  log "  ~20 min plus testbed build, on top of gate 4"
-  log "  this is the one that matters: a dropped link, not a free one"
-  for sysname in b0_fifo b1_cake95 aciq; do
-    stamp "data/host_gate_congested_${sysname}"
-    python3 run_experiments.py --scenario s2_wan_drop --system "$sysname" \
-        --drop 20 --drop-at 5 --seeds 7 --seed 42 \
-        --results-dir "data/host_gate_congested_${sysname}" 2>&1 \
-        | tee -a "$OUT/comparison-congested.log" | tail -2
-  done
-  log "  evidence: data/host_gate_congested_{b0_fifo,b1_cake95,aciq}"
+  congested_comparison
   log ""
 
   log "== gate 5: 30-minute soak =="
