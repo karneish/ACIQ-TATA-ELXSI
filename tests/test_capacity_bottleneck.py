@@ -578,3 +578,79 @@ class TestLiveTestSetupMustReportItself(unittest.TestCase):
                / "test_fairness_live.py").read_text()
         self.assertGreaterEqual(src.count("SETUP_ERROR ="), 2,
                                 "both setup phases must record a failure")
+
+
+class TestInlineHelperScriptsAreSelfContained(unittest.TestCase):
+    """The inline scripts this test drives must import what they use.
+
+    The sink loop used `time.monotonic()` with only `import socket, sys`, so it
+    died on its first line of work -- and every test reported "no traffic
+    arrived at all", which sent the diagnosis to the address and the bind, both
+    of which had already been fixed.
+
+    A helper that cannot start is indistinguishable from a helper that found no
+    traffic, and the second is a perfectly ordinary result. So the scripts are
+    parsed and checked here, where no kernel is needed.
+    """
+
+    @staticmethod
+    def _scripts() -> dict:
+        import ast
+        import builtins
+        import re
+        from pathlib import Path as _P
+        src = (_P(__file__).resolve().parents[1] / "tests"
+               / "test_fairness_live.py").read_text()
+        out = {}
+        for name in ("_SENDER", "_SINK"):
+            body = re.search(rf'{name} = r"""(.*?)"""', src, re.S).group(1)
+            tree = ast.parse(body)
+            imported = {a.asname or a.name.split(".")[0]
+                        for n in ast.walk(tree)
+                        if isinstance(n, (ast.Import, ast.ImportFrom))
+                        for a in n.names}
+            assigned = {t.id for n in ast.walk(tree)
+                        if isinstance(n, ast.Assign)
+                        for t in ast.walk(n.targets[0])
+                        if isinstance(t, ast.Name)}
+            assigned |= {a.arg for n in ast.walk(tree)
+                         if isinstance(n, ast.arg) for a in [n]}
+            for n in ast.walk(tree):
+                if isinstance(n, (ast.For, ast.comprehension)):
+                    for t in ast.walk(n.target):
+                        if isinstance(t, ast.Name):
+                            assigned.add(t.id)
+            used = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)
+                    and isinstance(n.ctx, ast.Load)}
+            known = imported | assigned | set(dir(builtins))
+            out[name] = sorted(used - known)
+        return out
+
+    def test_no_helper_uses_a_name_it_did_not_import(self):
+        missing = self._scripts()
+        for name, names in missing.items():
+            self.assertEqual(
+                names, [],
+                f"{name} uses {names} without importing them; it will die "
+                f"immediately and every assertion will read as 'no traffic'")
+
+    def test_both_helpers_import_time(self):
+        """The specific omission. Spelled out so the intent survives."""
+        from pathlib import Path as _P
+        src = (_P(__file__).resolve().parents[1] / "tests"
+               / "test_fairness_live.py").read_text()
+        for name in ("_SENDER", "_SINK"):
+            import re
+            body = re.search(rf'{name} = r"""(.*?)"""', src, re.S).group(1)
+            import re as _re
+            self.assertTrue(
+                _re.search(r"^\s*import .*\btime\b", body, _re.M),
+                f"{name} uses time.monotonic() but does not import time")
+
+    def test_a_failing_helper_reports_its_stderr(self):
+        """The other half: the failure message must carry the cause."""
+        from pathlib import Path as _P
+        src = (_P(__file__).resolve().parents[1] / "tests"
+               / "test_fairness_live.py").read_text()
+        self.assertIn("child_noise", src)
+        self.assertIn("helpers said", src)

@@ -69,7 +69,11 @@ while time.monotonic() < end:
 """
 
 _SINK = r"""
-import socket, sys
+# `time` is required: the sink uses time.monotonic() on its first line of
+# work, and without it the sink dies instantly and every test reports "no
+# traffic arrived" -- which is what happened. The sender imports it; this one
+# did not.
+import socket, sys, time
 port = int(sys.argv[1]); dur = float(sys.argv[2]); SRC = sys.argv[3]
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s.bind((SRC, port)); s.settimeout(0.3)
@@ -135,7 +139,11 @@ def setUpModule() -> None:
 @unittest.skipUnless(shutil.which("tc"), "iproute2 not on PATH")
 class TestPerFlowFairness(unittest.TestCase):
 
+    #: stderr/stdout of the helper processes, so a failure can cite them
+    child_noise: list = []
+
     def setUp(self) -> None:
+        self.child_noise = []
         if NS is None:
             self.skipTest("namespace unavailable (no root, or no CAP_NET_ADMIN)")
         if SETUP_ERROR:
@@ -158,24 +166,33 @@ class TestPerFlowFairness(unittest.TestCase):
             for p in (A_PORT, B_PORT)]
         for s in senders:
             s.wait(timeout=duration + 30)
-        got = []
+        got, noise = [], []
         for s in sinks:
-            out, _ = s.communicate(timeout=duration + 30)
-            got.append(int((out or "0").strip() or 0))
+            out, err = s.communicate(timeout=duration + 30)
+            text = (out or "").strip()
+            try:
+                got.append(int(text or 0))
+            except ValueError:
+                got.append(0)
+                noise.append(text[:200])
+            if err and err.strip():
+                noise.append(err.strip()[:200])
+        self.child_noise = noise
         return got
 
     def test_both_senders_and_sinks_are_reachable_first(self):
         """A run where a sender died on bind() must not look like an unfair
         scheduler. Check the plumbing before scoring anything."""
         a, b = self._run_two_flows(duration=3.0)
-        self.assertGreater(a, 0, f"flow A received nothing -- sender may have "
-                                  f"failed to bind {SRC_ADDR}")
-        self.assertGreater(b, 0, f"flow B received nothing -- sender may have "
-                                  f"failed to bind {SRC_ADDR}")
+        self.assertGreater(
+            a, 0, f"flow A received nothing. helpers said: {self.child_noise}")
+        self.assertGreater(
+            b, 0, f"flow B received nothing. helpers said: {self.child_noise}")
 
     def test_two_flows_in_one_class_are_served_fairly(self):
         a, b = self._run_two_flows()
-        self.assertGreater(a + b, 0, "no traffic arrived at all")
+        self.assertGreater(
+            a + b, 0, f"no traffic arrived. helpers said: {self.child_noise}")
         f = jain_fairness([a, b])
         self.assertIsNotNone(f)
         self.assertGreaterEqual(
