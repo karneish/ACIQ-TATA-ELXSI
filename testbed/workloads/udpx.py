@@ -16,6 +16,7 @@ generate ourselves, which is also what gives M1 free ground-truth labels.
 from __future__ import annotations
 
 import json
+import select
 import socket
 import struct
 import threading
@@ -27,6 +28,12 @@ PREAMBLE = MAGIC + struct.pack("!I", 0) + b"\x00" * 8
 #: recvfrom() returns at once when a reply is already queued, so a short value
 #: costs nothing under load. A long one blocks the send loop when idle.
 DRAIN_TIMEOUT_S = 0.0005
+
+#: Upper bound on how long the sender waits for a reply before re-checking its
+#: send deadline. This bounds how long a reply can sit in the socket buffer, and
+#: so bounds the error that wait contributes to every measured RTT. It must stay
+#: below the pacing interval, and well below any plausible round trip.
+_DRAIN_POLL_S = 0.002
 
 
 #: How often the running summary is rewritten for the controller to poll. Twice a
@@ -273,7 +280,34 @@ class UdpProbe:
                     partial_at = now_ + PARTIAL_EVERY_S
                     self.write_partial(self.partial_path)
             else:
-                time.sleep(max(0.0, next_send - now))
+                # Wait for a reply OR the next send deadline, whichever comes
+                # first.
+                #
+                # Sleeping here and draining only on the send tick inflates every
+                # RTT by one full pacing interval. `_drain` gives up after
+                # DRAIN_TIMEOUT_S (0.5 ms), so when the true round trip exceeds
+                # that -- 1.2 ms on the testbed -- the reply has not arrived by
+                # the time the drain runs, and sits in the socket buffer until
+                # the next send 20 ms later. `recv_ns` is taken after recvfrom
+                # returns, so the wait was booked as network delay.
+                #
+                # Measured from a per-packet trace, 2995 packets, one seed:
+                #   p50 20.086 ms, p95 100.052 ms, values quantised to 20/40/60/
+                #   100/120 ms -- one, two, three, five and six pacing intervals.
+                #   60.7% of packets were over 5 ms.
+                # That is the sender reporting how long it slept, not how long
+                # the packet took.
+                #
+                # Why this was invisible to a loopback test: there the round trip
+                # is ~0.05 ms, well inside DRAIN_TIMEOUT_S, so the drain after
+                # each send catches the reply at once and the bug never appears.
+                # A test that cannot reproduce the fault is not evidence of
+                # anything.
+                timeout = max(0.0, next_send - time.monotonic())
+                ready, _, _ = select.select([self.sock], [], [],
+                                            min(timeout, _DRAIN_POLL_S))
+                if ready:
+                    self._drain()
         self._drain()
         self._compute_loss()
         self._flush_losses()
