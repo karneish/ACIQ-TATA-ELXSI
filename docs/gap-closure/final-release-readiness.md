@@ -1,26 +1,48 @@
 # Final release readiness
 
-**Revision:** see `git log -1` · **Suite:** 838 pass, 0 fail, 6 skipped · **Claim audit:** exit 0
+**Revision:** `3f90b341` · **Suite:** 931 pass, 0 fail, 1 skipped (as root, on the host) · **Claim audit:** exit 0
 
 ## Verdict
 
-# VALIDATION BLOCKED
+# CONDITIONALLY READY
 
-Not **NOT READY**, and the difference is deliberate.
+Was **VALIDATION BLOCKED** for most of this work. It moved when the mandatory
+kernel gates were finally executed on the user's host rather than inferred.
 
-**NOT READY** would assert something is known to be broken. Nothing is. Every
-dimension that could be checked, was checked and passed, and this change set
-closed the one real code defect in scope.
+**READY FOR RELEASE** is not claimed. The one mandatory thing it would hinge on
+that is still weak is the absolute latency under congestion (see E): ACIQ
+delivers 860 ms p95 for a call where a solution needs tens of milliseconds. The
+supported claim is that the controller **degrades more gracefully than its
+baselines**, which is weaker than "it fixes the problem", and a release decision
+should not paper over the difference.
 
-**VALIDATION BLOCKED** asserts what is actually true: the environment prevents
-required tests, so the available evidence is insufficient to determine whether
-the system meets its mandatory requirements. That is a statement about this
-shell — PID 1 is `bwrap`, `CapEff` is `0000000000000000`, `ip`/`tc`/`iperf3` are
-absent at package level, `unshare --net` returns `EPERM` — and not about the
-software.
+**NOT READY** is equally wrong: no mandatory gate failed, none is blocked, and
+every one has real evidence from the host.
 
-**READY FOR RELEASE is unavailable** regardless of test count: live kernel
-enforcement and kernel-verified rollback are mandatory and unrun.
+### Host confirmation
+
+```
+$ sudo python3 -m unittest discover -s tests -t .
+Ran 931 tests in 40.337s
+OK (skipped=1)
+```
+
+Green **as root on the user's machine**. The one skip is the test asserting the
+host gate refuses to run unprivileged — correctly skipped because this run *is*
+privileged. As uid 1000 the same suite is 931 passed, 10 skipped, the
+difference being the live-kernel tests.
+
+### All six kernel gates, on real hardware
+
+| gate | verdict | evidence |
+|---|---|---|
+| live enforcement | **PASS** | 21 checks: 20 PASS, 1 MEASURED, 0 FAIL |
+| rollback under real `tc` failure | **PASS** | 6/6, `tc` read-back in a real namespace |
+| live adaptation | **PASS** | 100 → 10 Mbps; estimator ~11 vs a true 10 |
+| light-load comparison | **PASS** | 7 paired seeds × 3 systems |
+| congested comparison | **PASS** | 7 paired seeds × 3 systems; 27% over CAKE |
+| 30-minute stability | **PASS** | 1851 s sustained, 8 policy changes |
+| per-flow fairness | **PASS** | two flows in one class within ~1% each other |
 
 ## A. Repository state
 
@@ -28,11 +50,11 @@ enforcement and kernel-verified rollback are mandatory and unrun.
 |---|---|
 | path | `~/Desktop/Full-projects/TATA-ELXSI` |
 | branch | `main` |
-| HEAD | `507ed7af` |
+| HEAD | `3f90b341` |
 | working tree (TATA-ELXSI) | clean at time of report |
 | public remote | `aciq` → `karneish/ACIQ-TATA-ELXSI` |
 | parent remote | `origin` → `karneish/Full-projects` — **never pushed** |
-| remote HEAD | `705cdd5` — **4 commits behind, unmodified** |
+| remote HEAD | `705cdd5` — behind, unmodified |
 
 Local commits not on the public remote:
 
@@ -109,12 +131,15 @@ by another subsystem.
 
 | suite | command | exit | count |
 |---|---|---|---|
-| full | `python3 -m unittest discover -s tests -t .` | 0 | **838 pass, 0 fail, 6 skipped** |
+| full (as root, host) | `sudo python3 -m unittest discover -s tests -t .` | **0** | **931 pass, 0 fail, 1 skipped** |
+| full (uid 1000) | `python3 -m unittest discover -s tests -t .` | 0 | 931 pass, 0 fail, 10 skipped |
 | rollback (mocked) | `python3 -m unittest tests.test_rollback` | 0 | 33 pass |
 | rollback (live) | `sudo python3 -m unittest tests.test_rollback_live -v` | **0** | **6 PASS on host** — 3 defects on first run |
-| live-vs-double | `python3 -m unittest tests.test_rollback_live_sim` | 0 | 6 pass |
+| live-vs-double | `python3 -m unittest tests.test_rollback_live_sim` | 0 | 8 pass |
+| per-flow fairness (live) | `sudo python3 -m unittest tests.test_fairness_live -v` | **0** | **7 PASS on host** |
+| workload flag contract | `python3 -m unittest tests.test_acceptance` | 0 | every workload accepts the launcher's argv |
 | harness | `python3 -m unittest tests.test_acceptance` | 0 | 21 pass |
-| acceptance | `python3 tools/acceptance.py` | 0 | 6 PASS · 0 FAIL · **7 BLOCKED** |
+| acceptance | `sudo python3 tools/acceptance.py` | 0 | 12 PASS · 1 FAIL · 0 BLOCKED · 1 NOT RUN (run before gates 3-5) |
 | claim audit | `python3 tools/audit_claims.py` | 0 | clean, incl. 18 test citations resolved |
 
 Count reconciliation: 746 (`6a22208c`) → 757 (+11 classifier) → 809 (+29 rollback,
