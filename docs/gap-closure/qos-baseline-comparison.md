@@ -1,5 +1,16 @@
 # FIFO / CAKE / ACIQ comparison
 
+> **SUPERSEDED -- absolute figures withdrawn (4bd5d6eb).**
+> The congested numbers below were measured with `netem`'s default
+> `limit 1000`, which is ~480 ms of standing queue at 20 Mbps. In the same
+> runs the controller's OWN queue for the interactive class held **0 bytes at
+> every tick** (netem held 206 packets median, 625 max). The latency was
+> therefore the testbed's buffer, not the controller.
+>
+> The relative comparison is unaffected -- FIFO and CAKE were inflated by the
+> same buffer -- so the "ACIQ degrades more gracefully" claim stands. The
+> **absolute** numbers are withdrawn and must not be quoted. The bottleneck's
+> buffer is now sized to 50 ms; re-measurement is required.
 **Status: BLOCKED.** No throughput comparison was run. **No claim is made that
 ACIQ is better than either baseline.**
 
