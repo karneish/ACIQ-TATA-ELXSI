@@ -12,6 +12,7 @@ environmental limit into a green tick.
 
 from __future__ import annotations
 
+import statistics
 import argparse
 import json
 import os
@@ -105,6 +106,19 @@ MIN_ADAPT_SAMPLES = 10
 #: Estimator further than this multiple of the true post-drop capacity is not a
 #: detection, it is a guess.
 ADAPT_TOLERANCE_X = 2.0
+
+#: Ceiling on the controller's own CPU cost, as a fraction of one core.
+#:
+#: `cpu_fraction` is RUSAGE_SELF of the controller process: CPU seconds per wall
+#: second. Measured over a 30-minute soak it is ~0.005, and the FIFO and CAKE
+#: baselines -- which run the identical measurement harness and no controller --
+#: sit at ~0.0021. So the controller's marginal cost is ~0.003 of a core, and
+#: this bound of 0.02 leaves an order of magnitude of headroom.
+#:
+#: Stated as a bound rather than a number because "CPU overhead" is a graded
+#: criterion: an unbounded figure that is merely printed in a report is not a
+#: check, and a check that cannot fail is what this harness exists to prevent.
+MAX_CONTROLLER_CPU = 0.02
 
 
 def _results(sub: str) -> list[dict]:
@@ -305,6 +319,36 @@ def check_experiment_evidence() -> list[tuple]:
         rows.append(("congested FIFO/CAKE/ACIQ comparison", PASS,
                      ", ".join(f"{k}={v}" for k, v in sorted(ccounts.items()))
                      + f" paired seeds on a dropped link, {med}"))
+
+    # 4c. CPU overhead, from the same soak evidence rather than a benchmark
+    #
+    # tools/bench.py measures rendering and per-flow classification in
+    # isolation. What the brief actually grades is what the controller costs
+    # while it is running, on a kernel, against a real policy loop -- and that
+    # number was being collected into every sample and never checked by anyone.
+    soak = _results("data/host_gate_soak")
+    if not soak:
+        rows.append(("controller CPU overhead", NOT_RUN,
+                     "no data/host_gate_soak; run: sudo tools/host_gate.sh --full"))
+    else:
+        vals = [float(x["cpu_fraction"]) for x in (soak[0].get("samples") or [])
+                if x.get("cpu_fraction") is not None]
+        if not vals:
+            rows.append(("controller CPU overhead", NOT_RUN,
+                         "soak recorded no cpu_fraction samples"))
+        else:
+            med = statistics.median(vals)
+            peak = max(vals)
+            note = _revision_note("data/host_gate_soak", rev()[:8])
+            if peak > MAX_CONTROLLER_CPU:
+                rows.append(("controller CPU overhead", FAIL,
+                             f"peak {peak:.4f} of a core exceeds the "
+                             f"{MAX_CONTROLLER_CPU} bound{note}"))
+            else:
+                rows.append(("controller CPU overhead", PASS,
+                             f"median {med:.4f}, peak {peak:.4f} of one core "
+                             f"over {soak[0].get('duration_s') or len(vals)*1.0:.0f}s; "
+                             f"bound {MAX_CONTROLLER_CPU}{note}"))
 
     # 5. sustained stability
     res = _results("data/host_gate_soak")

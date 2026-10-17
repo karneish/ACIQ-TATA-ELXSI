@@ -1015,3 +1015,78 @@ class TestRunsDoNotSitOutSinkTimeouts(unittest.TestCase):
         src = self._src()
         stop = src[src.index("    def stop(self)"):]
         self.assertIn("_stop_sinks", stop)
+
+
+class TestControllerCpuOverheadIsABound(unittest.TestCase):
+    """CPU overhead is a graded criterion, so it needs a check that can fail.
+
+    `cpu_fraction` was being collected into every sample of every run and read by
+    nobody. The numbers were real and nobody looked at them, which is the same
+    defect as the congested comparison publishing results from a run that never
+    steered a flow.
+    """
+
+    def test_the_bound_is_a_fraction_of_one_core_not_a_percentage(self):
+        from tools.acceptance import MAX_CONTROLLER_CPU
+        self.assertGreater(MAX_CONTROLLER_CPU, 0.0)
+        self.assertLess(MAX_CONTROLLER_CPU, 1.0)
+
+    def test_the_bound_is_tight_enough_to_be_meaningful(self):
+        """Measured peak is ~0.0052. A bound of 0.5 would never fail."""
+        from tools.acceptance import MAX_CONTROLLER_CPU
+        self.assertLessEqual(MAX_CONTROLLER_CPU, 0.02)
+
+    def test_a_run_over_the_bound_is_reported_as_fail(self):
+        """Proved, not asserted: feed the gate a synthetic soak."""
+        from tools import acceptance
+
+        def fake_results(sub):
+            if sub == "data/host_gate_soak":
+                return [{"duration_s": 1800.0,
+                         "samples": [{"cpu_fraction": v} for v in
+                                     (acceptance.MAX_CONTROLLER_CPU * 3,) * 10]}]
+            return []
+
+        real, acceptance._results = acceptance._results, fake_results
+        try:
+            rows = dict((n, (st, d)) for n, st, d
+                        in acceptance.check_experiment_evidence())
+        finally:
+            acceptance._results = real
+
+        self.assertIn("controller CPU overhead", rows)
+        status, detail = rows["controller CPU overhead"]
+        self.assertEqual(status, acceptance.FAIL,
+                         f"a run at 3x the bound was not failed: {detail}")
+
+    def test_a_run_under_the_bound_is_reported_as_pass(self):
+        """The other direction, so the gate is not simply always failing."""
+        from tools import acceptance
+
+        def fake_results(sub):
+            if sub == "data/host_gate_soak":
+                return [{"duration_s": 1800.0,
+                         "samples": [{"cpu_fraction": 0.0049} for _ in range(50)]}]
+            return []
+
+        real, acceptance._results = acceptance._results, fake_results
+        try:
+            rows = dict((n, (st, d)) for n, st, d
+                        in acceptance.check_experiment_evidence())
+        finally:
+            acceptance._results = real
+        self.assertEqual(rows["controller CPU overhead"][0], acceptance.PASS)
+
+    def test_the_gate_reads_cpu_from_the_soak_evidence(self):
+        """It must be measured on a kernel, not taken from the unit benchmark."""
+        from pathlib import Path as _P
+        src = (_P(__file__).resolve().parents[1] / "tools" / "acceptance.py").read_text()
+        self.assertIn("cpu_fraction", src)
+        self.assertIn("MAX_CONTROLLER_CPU", src)
+        self.assertIn("host_gate_soak", src)
+
+    def test_cpu_fraction_is_the_controller_not_the_machine(self):
+        """RUSAGE_SELF, so the figure is the controller's own cost."""
+        from pathlib import Path as _P
+        src = (_P(__file__).resolve().parents[1] / "aciq" / "metrics.py").read_text()
+        self.assertIn("RUSAGE_SELF", src)
