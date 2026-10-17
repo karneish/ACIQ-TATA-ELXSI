@@ -234,6 +234,30 @@ def _make_bottleneck_source(harness: "Harness"):
                                 ns=harness.bottleneck_ns)
 
 
+#: Seconds of standing buffer the emulated bottleneck is allowed to hold.
+#: 50 ms is a realistic CPE figure; netem's own default is ~20x that.
+BUFFER_S = 0.05
+#: Largest packet used for the sizing, so the limit is never optimistic.
+_MTU_BYTES = 1500
+#: Floor on the packet limit. Below roughly 4 Mbps, BUFFER_S would be about
+#: four packets -- too few for netem to distinguish a full queue from an idle
+#: one, so the target is unreachable and the floor wins instead. This is a real
+#: limitation of the emulation at very low rates, not a rounding detail, and
+#: `test_harness_live` pins the floor so it cannot drift upward unnoticed.
+_MIN_BUFFER_PACKETS = 32
+
+
+def _netem_limit(rate_mbps: float) -> int:
+    """Packets of buffer for a given rate, sized in seconds not in packets.
+
+    The /8 is bits-to-bytes. Leaving it out produces a limit 8x too large --
+    400 ms of buffer instead of 50 -- which looks plausible next to netem's
+    default and is therefore easy to ship by accident.
+    """
+    bytes_per_s = rate_mbps * 1e6 / 8
+    return max(_MIN_BUFFER_PACKETS, int(bytes_per_s * BUFFER_S / _MTU_BYTES))
+
+
 def _qdisc_reports_rate(text: str, want_mbps: float) -> bool:
     """Does `tc qdisc show` report this netem limit, numerically?
 
@@ -476,7 +500,22 @@ class Harness:
             # `replace` so repeated calls are idempotent, matching the way the
             # controller's own rebuild behaves.
             pre + ("tc", "qdisc", "replace", "dev", self.bottleneck_dev,
-                   "root", "netem", "rate", rate),
+                   "root", "netem", "rate", rate,
+                   # A REALISTIC buffer, not netem's default.
+                   #
+                   # netem defaults to `limit 1000` packets. At 20 Mbps and a
+                   # 1500-byte worst case that is ~1.2 MB -- roughly 480 ms of
+                   # standing queue. Measured in a real congested run, the netem
+                   # queue held 206 packets median and 625 at peak while the
+                   # controller's OWN queue for the interactive class held
+                   # **0 bytes at every tick**. So the ~860 ms p95 was almost
+                   # entirely the testbed's buffer, not the controller, and it
+                   # inflated all three systems alike.
+                   #
+                   # No broadband CPE ships half a second of buffer. Sized here
+                   # to BUFFER_S seconds of the emulated rate, at MTU, with a
+                   # floor so a very slow link still queues enough to shape.
+                   "limit", str(_netem_limit(capacity_mbps))),
             # Read back. Applying a bottleneck is no more proof that the link is
             # limited than a `tc qdisc add` returning 0 -- the same standard the
             # rollback work established.
