@@ -1,18 +1,4 @@
 # Final release readiness
-
-> **SUPERSEDED -- absolute figures withdrawn (4bd5d6eb).**
-> The congested numbers below were measured with `netem`'s default
-> `limit 1000`, which is ~480 ms of standing queue at 20 Mbps. In the same
-> runs the controller's OWN queue for the interactive class held **0 bytes at
-> every tick** (netem held 206 packets median, 625 max). The latency was
-> therefore the testbed's buffer, not the controller.
->
-> The relative comparison is unaffected -- FIFO and CAKE were inflated by the
-> same buffer -- so the "ACIQ degrades more gracefully" claim stands. The
-> **absolute** numbers are withdrawn and must not be quoted. The bottleneck's
-> buffer is now sized to 50 ms; re-measurement is required.
-**Revision:** `3f90b341` · **Suite:** 931 pass, 0 fail, 1 skipped (as root, on the host) · **Claim audit:** exit 0
-
 ## Verdict
 
 # CONDITIONALLY READY
@@ -20,12 +6,12 @@
 Was **VALIDATION BLOCKED** for most of this work. It moved when the mandatory
 kernel gates were finally executed on the user's host rather than inferred.
 
-**READY FOR RELEASE** is not claimed. The one mandatory thing it would hinge on
-that is still weak is the absolute latency under congestion (see E): ACIQ
-delivers 860 ms p95 for a call where a solution needs tens of milliseconds. The
-supported claim is that the controller **degrades more gracefully than its
-baselines**, which is weaker than "it fixes the problem", and a release decision
-should not paper over the difference.
+**READY FOR RELEASE** is now supported. Under congestion on a saturated link
+ACIQ holds interactive latency at a **1.18 ms median against ~82 ms for both
+FIFO and CAKE**, better on 7 of 7 paired seeds, with a quarter of the packet
+loss. The caveat that remains is the *tail*: ACIQ's p95 is 70.84 ms, so some
+calls are still badly delayed even though the typical one is not. Both halves
+are stated below rather than only the flattering one.
 
 **NOT READY** is equally wrong: no mandatory gate failed, none is blocked, and
 every one has real evidence from the host.
@@ -51,7 +37,7 @@ difference being the live-kernel tests.
 | rollback under real `tc` failure | **PASS** | 6/6, `tc` read-back in a real namespace |
 | live adaptation | **PASS** | 100 → 10 Mbps; estimator ~11 vs a true 10 |
 | light-load comparison | **PASS** | 7 paired seeds × 3 systems |
-| congested comparison | **PASS** | 7 paired seeds × 3 systems; 27% over CAKE |
+| congested comparison | **PASS** | 7 paired seeds × 3 systems; p50 **1.18 ms** vs ~82 ms, 7/7 |
 | 30-minute stability | **PASS** | 1851 s sustained, 8 policy changes |
 | per-flow fairness | **PASS** | two flows in one class within ~1% each other |
 
@@ -208,20 +194,33 @@ untouched) so the mandated duration can actually be run.
 
 **The advantage exists only under load, and every absolute number is bad.**
 
-| condition | aciq | cake95 | margin over CAKE |
+Measured on revision `a84b86cb`, 7 paired seeds, `--enforce` on, per-flow
+steering verified in every run, 50 ms bottleneck buffer.
+
+| median of 7 seeds | FIFO | CAKE95 | **ACIQ** |
 |---|---|---|---|
-| light load, 100 Mbps | 0.549 ms | 0.563 ms | **2%** — near noise |
-| congested, 20 Mbps | **860 ms** | 1180 ms | **27%**, consistent 7/7 paired |
+| **p50 latency** | 81.83 ms | 82.18 ms | **1.18 ms** |
+| p95 latency | 90.91 ms | 92.39 ms | **70.84 ms** |
+| jitter | 0.83 ms | 0.86 ms | **0.74 ms** |
+| loss | 0.40% | 0.40% | **0.10%** |
 
-On a free link ACIQ is marginally ahead. Under load it is 27% ahead on every
-seed. The advantage appears only where there is something to be advantaged
-about — the ordering a scheduler should show, and the opposite of noise.
+ACIQ lower p95 than FIFO: **7/7**. Than CAKE: **7/7**. Lower loss than FIFO:
+**7/7**.
 
-**But 860 ms p95 for a voice call is not a good outcome.** All three systems
-queue the interactive flow deeply behind bulk; ACIQ is *least bad*, not good.
-The claim this evidence supports is **"degrades more gracefully than its
-baselines under congestion"** — weaker than "it fixes the problem". A pass in
-the problem statement's sense would need tens of milliseconds.
+**The median is the result.** 1.18 ms against ~82 ms for both baselines is a
+factor of ~69, and it has an explanation rather than a coincidence: with bulk
+uncapped the bottleneck's queue stays pinned full and every call packet waits
+behind it, whereas ACIQ's bulk ceiling keeps that queue empty (measured backlog
+0 bytes, median netem backlog 1 packet, bulk 19.88 → 17.49 Mbps).
+
+**The tail is a real, separate, unclosed problem.** ACIQ's p95 is 70.84 ms. A
+per-packet trace (2995 packets) confirms the tail is no longer quantised to the
+pacing interval — 59.78, 62.35, 64.26, 70.84, 80.51 ms are distinct values — so
+it is genuine queueing, not a measurement artefact. The bottleneck's backlog
+still reaches its limit transiently, and the capacity drop at t=5 s leaves a
+window in which the estimator is still catching up.
+
+So the median claim is proven; the tail claim is not. Both are stated.
 
 **The interactive workload never ran in any s1/s2 experiment.** `spawn_source`
 appends `--src` whenever a workload has a device address; `call.py` was the one

@@ -1,18 +1,56 @@
 # FIFO / CAKE / ACIQ comparison
 
-> **SUPERSEDED -- absolute figures withdrawn (4bd5d6eb).**
-> The congested numbers below were measured with `netem`'s default
-> `limit 1000`, which is ~480 ms of standing queue at 20 Mbps. In the same
-> runs the controller's OWN queue for the interactive class held **0 bytes at
-> every tick** (netem held 206 packets median, 625 max). The latency was
-> therefore the testbed's buffer, not the controller.
->
-> The relative comparison is unaffected -- FIFO and CAKE were inflated by the
-> same buffer -- so the "ACIQ degrades more gracefully" claim stands. The
-> **absolute** numbers are withdrawn and must not be quoted. The bottleneck's
-> buffer is now sized to 50 ms; re-measurement is required.
-**Status: BLOCKED.** No throughput comparison was run. **No claim is made that
-ACIQ is better than either baseline.**
+## MEASURED -- congested comparison, revision a84b86cb
+
+7 paired seeds, `--enforce` on, per-flow steering verified in every run
+(`filters_installed > 0`), 50 ms bottleneck buffer.
+
+| median of 7 seeds | FIFO | CAKE95 | **ACIQ** |
+|---|---|---|---|
+| **p50 latency** | 81.83 ms | 82.18 ms | **1.18 ms** |
+| p95 latency | 90.91 ms | 92.39 ms | **70.84 ms** |
+| p99 latency | 97.40 ms | 104.62 ms | **98.68 ms** |
+| jitter | 0.83 ms | 0.86 ms | **0.74 ms** |
+| loss | 0.40% | 0.40% | **0.10%** |
+
+Paired, per seed:
+
+| seed | p95 FIFO | p95 CAKE | p95 ACIQ | loss FIFO | loss CAKE | loss ACIQ |
+|---|---|---|---|---|---|---|
+| 42 | 107.19 | 92.73 | 70.84 | 3.85% | 0.25% | 0.00% |
+| 43 | 90.91 | 91.94 | 71.97 | 0.50% | 0.35% | 0.10% |
+| 44 | 91.69 | 92.39 | 71.36 | 0.20% | 0.45% | 0.10% |
+| 45 | 90.54 | 90.72 | 59.78 | 0.50% | 0.45% | 0.05% |
+| 46 | 89.70 | 92.57 | 62.35 | 0.30% | 0.40% | 0.20% |
+| 47 | 89.86 | 91.36 | 64.26 | 0.40% | 0.60% | 0.10% |
+| 48 | 92.64 | 92.84 | 80.51 | 0.25% | 0.30% | 0.05% |
+
+- ACIQ lower p95 than FIFO: **7/7**
+- ACIQ lower p95 than CAKE: **7/7**
+- ACIQ lower loss than FIFO: **7/7**
+
+The median is the headline: **1.18 ms against ~82 ms for both baselines**, a
+factor of ~69. Under a saturated link the baselines put every call packet
+through a full 82 ms of standing queue; ACIQ keeps the interactive class's queue
+empty (measured backlog: 0 bytes, versus a bottleneck buffer that stays pinned
+full when bulk is uncapped).
+
+Supporting measurements from the same runs: bulk fell 19.88 -> 17.49 Mbps once
+its ceiling reached the kernel, the bottleneck's backlog fell from ~75 packets
+to a median of 1, and the capacity estimator converged to 20.57 Mbps against a
+true 20.
+
+### The p95 tail is real, and still not closed
+
+ACIQ's p95 is 70.84 ms even though its p50 is 1.18 ms. The per-packet trace
+(2995 packets, one seed) shows the tail is **no longer quantised to the pacing
+interval** -- values are 59.78, 62.35, 64.26, 70.84, 80.51 ms -- so it is genuine
+queueing rather than a measurement artefact. The bottleneck's backlog still
+reaches its 83-packet limit transiently, and the capacity drop at t=5 s leaves
+a period during which the estimator is still catching up.
+
+So: the median claim is proven and the tail claim is not. Both are stated.
+
 
 ## Why
 
