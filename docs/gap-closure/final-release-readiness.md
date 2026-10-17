@@ -170,15 +170,22 @@ reasoning: `min-rate-scope-decision.md`.
 `run_experiments.py` (replaces the scenario, does not mutate it, defaults
 untouched) so the mandated duration can actually be run.
 
-**Comparison is light-load only, and a congested one is now its own gate.**
-`s3_tv_and_gaming` has no capacity change and the interactive workload runs at
-30 pps (~1200 packets in 40 s). Every system had an uncongested link. ACIQ beats
-FIFO decisively (p95 0.563 vs 33.612 ms) but that is the do-nothing case.
-Against CAKE the margin is ~5% (0.563 vs 0.592 ms), consistent 7/7 paired seeds.
-**No advantage under congestion is claimed, and none was measured** — so
-`host_gate.sh --full` now also runs all three systems against `s2_wan_drop`
-with `--drop 20`, and the acceptance harness judges it separately, requiring
-measurements rather than run counts.
+**The advantage exists only under load, and every absolute number is bad.**
+
+| condition | aciq | cake95 | margin over CAKE |
+|---|---|---|---|
+| light load, 100 Mbps | 0.549 ms | 0.563 ms | **2%** — near noise |
+| congested, 20 Mbps | **860 ms** | 1180 ms | **27%**, consistent 7/7 paired |
+
+On a free link ACIQ is marginally ahead. Under load it is 27% ahead on every
+seed. The advantage appears only where there is something to be advantaged
+about — the ordering a scheduler should show, and the opposite of noise.
+
+**But 860 ms p95 for a voice call is not a good outcome.** All three systems
+queue the interactive flow deeply behind bulk; ACIQ is *least bad*, not good.
+The claim this evidence supports is **"degrades more gracefully than its
+baselines under congestion"** — weaker than "it fixes the problem". A pass in
+the problem statement's sense would need tens of milliseconds.
 
 **The interactive workload never ran in any s1/s2 experiment.** `spawn_source`
 appends `--src` whenever a workload has a device address; `call.py` was the one

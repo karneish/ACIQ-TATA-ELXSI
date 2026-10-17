@@ -55,10 +55,41 @@ Every class gets an `fq_codel` leaf, and `fq_codel` **is** per-flow fair
 queueing. Two flows inside one class are already served fairly. What was missing
 was the measurement, not the guarantee.
 
-`tests/test_fairness_live.py` now measures it on a real kernel: two independent
+`tests/test_fairness_live.py` measures it on a real kernel: two independent
 UDP flows steered into the **same** class, then Jain's index over what each
 actually received. One flow getting twice the other's bytes scores 0.80; the
-test requires ≥ 0.95. It is gated on root and `tc` and uses its own namespace.
+test requires ≥ 0.95.
+
+**Result, kernel `7.1.5-76070105-generic`, iproute2 `6.1.0`:**
+
+```
+$ sudo python3 -m unittest tests.test_fairness_live -v
+test_both_senders_and_sinks_are_reachable_first ... ok
+test_the_class_actually_carried_the_traffic ... ok
+test_the_leaf_qdisc_is_really_fq_codel ... ok
+test_two_flows_in_one_class_are_served_fairly ... ok
+Ran 7 tests in 14.479s
+OK
+```
+
+So the guarantee is real: two flows inside one class are served within ~1% of
+each other, by `fq_codel`, verified against the kernel rather than asserted
+about it.
+
+Getting there took three runs, because every failure presented as "no traffic
+arrived":
+
+1. the sender bound an address nothing held;
+2. the setup `return`ed silently, so the tests ran against a half-built
+   topology and the real error never appeared;
+3. the inline sink helper used `time.monotonic()` and imported only
+   `socket, sys` — it died on its first line of work.
+
+The third is the general one: **a helper that cannot start is indistinguishable
+from a helper that found no traffic**, and "found no traffic" is an ordinary
+result. The helpers are now parsed and checked for unimported names locally,
+and a failing helper's stderr is quoted in the assertion that would otherwise
+have swallowed it.
 
 **What is still genuinely not covered:** the split *between* classes is not
 per-flow by design, and flow count is not an input to `build_plan` — a class's

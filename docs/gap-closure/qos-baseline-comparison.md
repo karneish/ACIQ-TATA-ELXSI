@@ -121,3 +121,63 @@ alone**, having verified 7 runs per system and nothing else. That is the same
 failure as everywhere else this session: counting something that is not the
 evidence. It now requires measurements and reports the medians, so a tree of
 runs containing no latency data is `NOT RUN`.
+
+
+## Congested comparison — the one that matters
+
+`s2_wan_drop`, link 100 → 20 Mbps, 7 paired seeds, kernel `7.1.5`, revision
+`2fb66c39`.
+
+| system | p95 median | min | max |
+|---|---|---|---|
+| `b0_fifo` | 1240.192 ms | 1240.146 | 1240.198 |
+| `b1_cake95` | 1180.197 ms | 1160.262 | 1240.131 |
+| **`aciq`** | **860.134 ms** | 480.172 | 860.343 |
+
+Paired, seed for seed:
+
+| comparison | seeds where aciq is better |
+|---|---|
+| aciq p95 < cake95 p95 | **7/7** |
+| aciq p95 < fifo p95 | **7/7** |
+
+Per seed (ms):
+
+```
+seed   aciq    cake95    fifo
+  0   480.17   1240.05   1240.15
+  1   860.15   1160.26   1240.20
+  2   860.11   1240.12   1240.19
+  3   860.04   1160.34   1240.19
+  4   860.18   1240.13   1240.19
+  5   860.34   1160.28   1240.19
+  6   860.13   1180.20   1240.19
+```
+
+### The margin depends entirely on the condition
+
+| condition | aciq | cake95 | margin over CAKE |
+|---|---|---|---|
+| light load, 100 Mbps | 0.549 ms | 0.563 ms | **2%** |
+| congested, 20 Mbps | 860 ms | 1180 ms | **27%** |
+
+On a free link ACIQ is marginally ahead, which is close to noise. Under load it
+is 27% ahead, consistently, on every paired seed. **The advantage appears only
+where there is something to be advantaged about** — which is the ordering a
+scheduler should show and the opposite of what a result that was noise would do.
+
+### What this does NOT show
+
+**All three numbers are bad.** 860 ms p95 for a voice call is not a good
+outcome; ACIQ is *least bad*, not good. Every system queues the interactive
+flow deeply behind bulk when the link drops to 20 Mbps, and none of them
+protects the call the way the problem statement's first use case implies it
+should.
+
+So the honest reading is: **the controller degrades more gracefully than its
+baselines under congestion**, and that is a weaker claim than "it fixes the
+problem". A pass that meant "the interactive class is protected" would need
+latency in the tens of milliseconds, not the hundreds.
+
+Also unchanged: one scenario, one link, one VM, seven seeds. Nothing here
+establishes a general advantage.
