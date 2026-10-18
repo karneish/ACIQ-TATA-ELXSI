@@ -45,6 +45,7 @@ FULL=0
 CONGESTED_ONLY=0
 LATENCY_TAIL=0
 LIGHT_ONLY=0
+SCENARIO_A=0
 OBSERVE=""
 for arg in "$@"; do
   case "$arg" in
@@ -53,6 +54,7 @@ for arg in "$@"; do
     --congested-only) CONGESTED_ONLY=1 ;;
     --latency-tail) LATENCY_TAIL=1 ;;
     --light-only) LIGHT_ONLY=1 ;;
+    --scenario-a) SCENARIO_A=1 ;;
     --observe) OBSERVE="--observe" ;;
     -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
@@ -203,6 +205,28 @@ light_comparison() {
   log "  evidence: data/host_gate_{b0_fifo,b1_cake95,aciq}"
 }
 
+# The brief's scenario A: "A large ISO download starts during a video
+# conference; the controller limits the bulk queue and protects call latency."
+#
+# This is the scenario that was never run. s2_wan_drop (B) and s3_tv_and_gaming
+# (C) both have evidence; s1_iso_during_call had none anywhere in data/. The
+# audit prompt is explicit that all three mandatory scenarios need reproducible
+# procedures and evidence, so it is wired here rather than left implicit in the
+# scenario table.
+scenario_a_comparison() {
+  log "== gate 4a: scenario A (ISO download during a call), 7 paired seeds =="
+  log "  ~20 min plus testbed build"
+  for sysname in b0_fifo b1_cake95 aciq; do
+    stamp "data/host_gate_s1_${sysname}"
+    python3 run_experiments.py --scenario s1_iso_during_call --system "$sysname" \
+        --seeds 7 --seed 42 --enforce $OBSERVE \
+        --results-dir "data/host_gate_s1_${sysname}" 2>&1 \
+        | tee -a "$OUT/comparison-s1.log" | tail -2
+  done
+  assert_flow_steering data/host_gate_s1_aciq
+  log "  evidence: data/host_gate_s1_{b0_fifo,b1_cake95,aciq}"
+}
+
 # A PASS must not be able to mean "nothing happened".
 #
 # The previous congested gate reported results from a run in which the
@@ -241,6 +265,9 @@ print(max((s.get('filters_installed') or 0) for s in d.get('samples',[])) if d.g
 if [ "$LATENCY_TAIL" -eq 1 ]; then
   latency_tail_probe
   log ""
+elif [ "$SCENARIO_A" -eq 1 ]; then
+  scenario_a_comparison
+  log ""
 elif [ "$LIGHT_ONLY" -eq 1 ]; then
   light_comparison
   log ""
@@ -258,6 +285,9 @@ elif [ "$FULL" -eq 1 ]; then
   log ""
 
   light_comparison
+  log ""
+
+  scenario_a_comparison
   log ""
 
   congested_comparison

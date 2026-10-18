@@ -402,6 +402,38 @@ def check_experiment_evidence() -> list[tuple]:
             f"{worst*100:.1f}% of packets, above the "
             f"{TAIL_MAX_FRACTION*100:.0f}% limit"))
 
+    # 4c-s1. scenario A of the brief.
+    #
+    # The audit found this scenario had NO evidence anywhere in data/, while B
+    # and C both did. It is the scenario the brief actually describes in prose
+    # -- "a large ISO download starts during a video conference" -- so its
+    # absence is a real gap, not a cosmetic one. Reported as NOT RUN rather than
+    # omitted, because an absent gate is not a passing gate.
+    s1 = {"b0_fifo": "data/host_gate_s1_b0_fifo",
+          "b1_cake95": "data/host_gate_s1_b1_cake95",
+          "aciq": "data/host_gate_s1_aciq"}
+    s1c = {k: len(_results(v)) for k, v in s1.items()}
+    s1m = {k: _probe_summary(v) for k, v in s1.items()}
+    s1have = {k: v for k, v in s1c.items() if v and s1m[k]["n"]}
+    if not s1have:
+        rows.append(("scenario A: ISO download during call", NOT_RUN,
+                     "no data/host_gate_s1_*; run: "
+                     "sudo tools/host_gate.sh --scenario-a"))
+    elif len(s1have) < 3:
+        rows.append(("scenario A: ISO download during call", NOT_RUN,
+                     f"only {sorted(s1have)} have runs AND measurements "
+                     f"({s1c}); all three systems are required"))
+    elif min(s1have.values()) < MIN_COMPARISON_SEEDS:
+        rows.append(("scenario A: ISO download during call", NOT_RUN,
+                     f"{min(s1have.values())} paired seeds, need "
+                     f"{MIN_COMPARISON_SEEDS}"))
+    else:
+        med = "; ".join(f"{k} p95={s1m[k]['p95']:.3f}ms"
+                        for k in sorted(s1m) if s1m[k]["n"])
+        rows.append(("scenario A: ISO download during call", PASS,
+                     ", ".join(f"{k}={v}" for k, v in sorted(s1c.items()))
+                     + f" paired seeds, {med}"))
+
     # 4e. the policy must leave the link unsaturated
     cong = _results("data/host_gate_congested_aciq")
     if not cong:
