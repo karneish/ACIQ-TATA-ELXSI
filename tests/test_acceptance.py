@@ -1322,3 +1322,62 @@ class TestLintGateJudgesFromEvidence(unittest.TestCase):
         block = src[i:i + 400]
         self.assertIn("BLOCKED", block,
                       "with no evidence the gate must stay BLOCKED, never PASS")
+
+
+class TestHostGateEvidenceDirectoryIsCreated(unittest.TestCase):
+    """Every `tee` in host_gate.sh writes under $OUT, so $OUT must exist.
+
+    The reordering that moved the root check ahead of directory creation deleted
+    the `mkdir -p "$OUT"` along with its `|| exit 1`, on the assumption the call
+    still existed further down. It did not. On the host every tee failed:
+
+        tee: artifacts/validation/<rev>/host/host-gate.log: No such file
+
+    and gate 1 reported a FALSE FAILURE:
+
+        [FAIL] live rollback -- see rollback-live.log
+
+    because it decides its verdict by grepping a log that was never written. A
+    gate that fails because its own evidence could not be recorded is worse than
+    one that reports nothing.
+    """
+    SCRIPT = "tools/host_gate.sh"
+
+    def _src(self):
+        return (Path(__file__).resolve().parents[1] / self.SCRIPT).read_text()
+
+    def _code(self):
+        """Script text with comments and blanks removed.
+
+        The script documents this exact bug in a long comment that mentions both
+        `if [ "$(id -u)" -ne 0 ]` and `mkdir -p "$OUT"`, so a naive substring
+        search finds the prose before the code and compares the wrong two lines.
+        """
+        out = []
+        for line in self._src().splitlines():
+            t = line.strip()
+            if not t or t.startswith("#"):
+                continue
+            out.append(line)
+        return "\n".join(out)
+
+    def test_the_evidence_directory_is_created(self):
+        self.assertIn('mkdir -p "$OUT"', self._src())
+
+    def test_creation_happens_after_the_privilege_check(self):
+        """Order is the whole point: refuse before touching the filesystem."""
+        src = self._code()
+        self.assertLess(src.index('if [ "$(id -u)" -ne 0 ]'),
+                        src.index('mkdir -p "$OUT"'))
+
+    def test_a_failed_creation_is_fatal_not_silent(self):
+        src = self._code()
+        i = src.index('mkdir -p "$OUT"')
+        self.assertIn("exit 1", src[i:i + 200],
+                      "an uncreatable evidence directory must stop the run")
+
+    def test_creation_failure_names_the_directory(self):
+        """A bare `|| exit 1` with no message is what made this hard to read."""
+        src = self._code()
+        i = src.index('mkdir -p "$OUT"')
+        self.assertIn("evidence directory", src[i:i + 200])

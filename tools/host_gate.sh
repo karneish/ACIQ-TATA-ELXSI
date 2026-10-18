@@ -59,6 +59,30 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
+# ...and only now, with privilege established, is anything created.
+#
+# The first version of the reordering above deleted the `mkdir -p "$OUT"` along
+# with its early `|| exit 1`, on the assumption that the call still existed
+# further down. It did not. The result on the host was every `tee` in the script
+# failing:
+#
+#     tee: artifacts/validation/235d4eb1/host/host-gate.log: No such file or
+#     directory
+#
+# and, worse, a FALSE FAILURE:
+#
+#     [FAIL] live rollback -- see rollback-live.log
+#
+# because gate 1 decides its verdict by grepping a log that was never written.
+# A gate that reports failure because its own evidence could not be recorded is
+# worse than one that reports nothing, and this project has spent its whole
+# life removing checks that cannot fail -- it had now introduced one that
+# cannot pass.
+mkdir -p "$OUT" || {
+  echo "cannot create evidence directory: $OUT" >&2
+  exit 1
+}
+
 CHECK_ONLY=0
 FULL=0
 CONGESTED_ONLY=0

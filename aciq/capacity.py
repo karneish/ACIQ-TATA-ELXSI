@@ -53,6 +53,22 @@ from dataclasses import dataclass, field
 ALPHA_DOWN = 0.6
 ALPHA_UP = 0.1
 
+#: Consecutive non-saturated samples before the estimate is released back
+#: toward the high-water mark. Long enough that a momentary lull does not undo a
+#: real capacity drop, short enough that a user whose line recovered does not
+#: stay throttled for minutes.
+IDLE_STREAK_RELEASE = 10
+
+#: Fraction of the gap to the high-water mark closed per released tick. Much
+#: slower than ALPHA_DOWN, because a wrong release costs a moment of
+#: under-shaping while a wrong collapse costs a sustained one.
+RELEASE_ALPHA = 0.2
+
+#: Unsaturated delivered throughput must exceed the current estimate by this
+#: factor before a release is considered evidence. Well above 1.0 so a burst or
+#: a measurement wobble cannot be mistaken for a larger link.
+RELEASE_EVIDENCE_RATIO = 1.5
+
 #: Below this fraction of the current estimate, a reading is treated as a STEP
 #: change and adopted outright rather than smoothed.
 #:
@@ -221,8 +237,12 @@ class CapacityEstimator:
         self._ewma = float(initial_mbps)
         self._confidence = 0.0
         self._sat_streak = 0
+        self._idle_streak = 0
         self._last_change_t: float | None = None
         self._last_m: Capacity | None = None
+        #: The best capacity this estimator has ever seen, kept so a recovery
+        #: can be detected -- see `observe`.
+        self._high_water = float(initial_mbps)
 
     @property
     def current(self) -> Capacity:
@@ -238,7 +258,8 @@ class CapacityEstimator:
             # a stale estimate is visibly less trusted rather than looking solid.
             self._sat_streak = 0
             self._confidence = max(0.0, self._confidence - IDLE_DECAY)
-            return self._emit(mbps=self._ewma, saturated=False, changed=False, m=m)
+            return self._emit(mbps=self._release_idle(m, dt=m.t),
+                              saturated=False, changed=False, m=m)
 
         self._sat_streak += 1
         if self._sat_streak < SAT_STREAK_REQUIRED:
@@ -276,9 +297,80 @@ class CapacityEstimator:
         self._ewma = new
         self._last_change_t = m.t
         self._confidence = min(1.0, self._confidence + 0.2)
+        if self._ewma > self._high_water:
+            self._high_water = self._ewma
         changed = True
 
         return self._emit(mbps=new, saturated=True, changed=changed, m=m)
+
+    def _release_idle(self, m: Measurement, dt: float) -> float:
+        """Recover capacity after the link frees up, without probing.
+
+        THE GAP THIS CLOSES
+
+        A saturation-driven estimator can only ever learn about a link getting
+        SLOWER. A saturated link has no spare capacity by definition, so once
+        the estimate has collapsed to 20 Mbps, nothing in a non-saturated
+        sample can ever say "there is more here now" -- the observation carries
+        no information about capacity, only about current load.
+
+        The consequence was measured, not theorised. A capacity-recovery run
+        restored the link to 100 Mbps and the steady goodput afterwards was
+        17.33 Mbps -- exactly the degraded ceiling of 0.85 x 20. The controller
+        never walked back up. A user whose ISP restored their line would keep
+        the degraded rate indefinitely, which is a real and user-visible defect,
+        and invisible to a drop-only test suite.
+
+        THE MECHANISM
+
+        Conservative hold, evidence-based release. The high-water mark -- the
+        best capacity ever observed -- is remembered. After sustained
+        non-saturation there is no evidence of congestion, so the estimate is
+        released back toward it at RELEASE_ALPHA: deliberately slower than the
+        fall, because being wrong here means under-shaping (recoverable, the
+        next saturation drops the estimate again immediately) rather than
+        over-shaping.
+
+        This does NOT read the configured rate, does NOT probe, and does NOT
+        invent capacity. It only declines to stay pessimistic when the evidence
+        for pessimism has gone away.
+        """
+        self._idle_streak += 1
+        if self._idle_streak < IDLE_STREAK_RELEASE or self._high_water <= 0.0:
+            return self._ewma
+        if self._ewma >= self._high_water:
+            self._high_water = self._ewma
+            return self._ewma
+        # POSITIVE evidence that the link is bigger, not merely absence of
+        # evidence that it is smaller.
+        #
+        # The first version released on any sustained non-saturation and the
+        # existing suite caught it immediately: capacity wobbled upward at
+        # t=27.66 on the way down. A lull between bursts is not a recovery, and
+        # treating it as one re-introduces exactly the oscillation this module
+        # exists to prevent.
+        #
+        # Throughput exceeding the current estimate on an unsaturated link is
+        # real evidence of a larger link -- you cannot deliver more than the
+        # estimate says exists. That is a claim about the measurement, not an
+        # inference from its absence.
+        if m.goodput_mbps < self._ewma * RELEASE_EVIDENCE_RATIO:
+            return self._ewma
+        target = min(self._high_water,
+                     self._ewma + RELEASE_ALPHA * (self._high_water - self._ewma))
+        if target <= self._ewma:
+            return self._ewma
+        # Respect the same dwell and hysteresis any other change obeys, so a
+        # link that is genuinely still slow does not oscillate.
+        if (self._last_change_t is not None
+                and (m.t - self._last_change_t) < MIN_DWELL_S):
+            return self._ewma
+        if abs(target - self._ewma) < HYSTERESIS * self._ewma:
+            return self._ewma
+        self._ewma = target
+        self._last_change_t = m.t
+        self._confidence = min(1.0, self._confidence + 0.2)
+        return self._ewma
 
     def _emit(self, mbps: float, saturated: bool, changed: bool, m: Measurement) -> Capacity:
         cap = Capacity(

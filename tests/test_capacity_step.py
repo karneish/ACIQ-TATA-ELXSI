@@ -118,3 +118,79 @@ class TestCapacityStepIsNotSmoothed(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestCapacityCanRecover(unittest.TestCase):
+    """A saturation-driven estimator can only learn that a link got SLOWER.
+
+    A saturated link has no spare capacity by definition, so once the estimate
+    has collapsed it holds forever: nothing in a non-saturated sample carries
+    information about capacity.
+
+    That was not theorised. A recovery run restored the link to 100 Mbps and the
+    steady goodput afterwards was 17.33 Mbps -- exactly the degraded ceiling of
+    0.85 x 20. The controller never walked back up, and a user whose ISP
+    restored their line would stay throttled indefinitely.
+    """
+
+    @staticmethod
+    def _drop_then_recover(e):
+        """100 Mbps saturated, then a 20 Mbps drop, then the link opens up."""
+        t = 0.0
+        for _ in range(4):
+            e.observe(_sat(t, 100.0)); t += 1.0
+        for _ in range(4):
+            e.observe(_sat(t, 20.0)); t += 1.0
+        return t
+
+    def test_the_estimate_falls_on_a_drop(self):
+        e = CapacityEstimator()
+        self._drop_then_recover(e)
+        self.assertLess(e.current.mbps, 40.0, "precondition: the drop landed")
+
+    def test_the_estimate_recovers_toward_the_high_water_mark(self):
+        e = CapacityEstimator()
+        t = self._drop_then_recover(e)
+        degraded = e.current.mbps
+        # The link opens up: unsaturated, and carrying much more than the
+        # degraded estimate says exists.
+        for _ in range(60):
+            e.observe(Measurement(t=t, goodput_mbps=70.0,
+                                  bottleneck_backlog_bytes=0,
+                                  link_overlimit_rate_per_s=0.0))
+            t += 1.0
+        self.assertGreater(e.current.mbps, degraded * 1.5,
+                           "the estimate never recovered after the link did")
+        self.assertGreater(e.current.mbps, 40.0)
+
+    def test_recovery_never_exceeds_the_high_water_mark(self):
+        e = CapacityEstimator()
+        t = self._drop_then_recover(e)
+        for _ in range(200):
+            e.observe(Measurement(t=t, goodput_mbps=90.0,
+                                  bottleneck_backlog_bytes=0,
+                                  link_overlimit_rate_per_s=0.0))
+            t += 1.0
+        self.assertLessEqual(e.current.mbps, 100.0 + 1e-6,
+                             "the release invented capacity above anything "
+                             "ever observed")
+
+    def test_a_lull_is_not_taken_as_a_recovery(self):
+        """The first version released on any lull, and the estimate wobbled
+        upward on the way down. A burst below the ratio is not evidence."""
+        e = CapacityEstimator()
+        self._drop_then_recover(e)
+        before = e.current.mbps
+        t = 100.0
+        for _ in range(30):
+            e.observe(Measurement(t=t, goodput_mbps=12.0,
+                                  bottleneck_backlog_bytes=0,
+                                  link_overlimit_rate_per_s=0.0))
+            t += 1.0
+        self.assertAlmostEqual(
+            e.current.mbps, before, delta=0.5,
+            msg="a quiet link was mistaken for a recovered one")
+
+    def test_release_requires_positive_evidence(self):
+        """Throughput below the estimate can never raise it."""
+        from aciq.capacity import RELEASE_EVIDENCE_RATIO
+        self.assertGreater(RELEASE_EVIDENCE_RATIO, 1.2)
