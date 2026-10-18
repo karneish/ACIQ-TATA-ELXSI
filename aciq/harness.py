@@ -573,6 +573,33 @@ class Harness:
             return None
         return src.drop_rate(dt)
 
+    def bottleneck_delivered_mbps(self, dt: float) -> float | None:
+        """Mbps the bottleneck actually delivered, or None if unreadable.
+
+        Fed to the estimator in preference to the per-class sum, which is
+        offered load measured upstream of the queue. See
+        `BottleneckDropSource.delivered_bytes` for the measurement behind it.
+
+        None means "no reading", and the caller falls back rather than feeding
+        the estimator a zero that would collapse the estimate.
+        """
+        src = self._bottleneck_drops()
+        if src is None:
+            return None
+        now_bytes = src.delivered_bytes()
+        if now_bytes is None:
+            return None
+        prev = getattr(self, "_prev_delivered_bytes", None)
+        self._prev_delivered_bytes = now_bytes
+        if prev is None or dt <= 0:
+            return None
+        # A counter that goes backwards means the qdisc was replaced between
+        # ticks; that delta is meaningless, so report no reading instead.
+        if now_bytes < prev:
+            return None
+        from .metrics import goodput_mbps as _gbps
+        return _gbps(prev, now_bytes, dt)
+
     def capture_bottleneck(self) -> str:
         """Record the bottleneck's real state, for the run's evidence."""
         pre = ("ip", "netns", "exec", self.bottleneck_ns)
@@ -722,8 +749,18 @@ class Harness:
             self._prev_counters = counters
             self._prev_link = link
             return None, False
-        gbps = sum(goodput_mbps(prev[k].rx_bytes, counters[k].rx_bytes, dt)
-                   for k in counters if k in prev)
+        offered = sum(goodput_mbps(prev[k].rx_bytes, counters[k].rx_bytes, dt)
+                      for k in counters if k in prev)
+        # Prefer the bottleneck's own delivered rate. The class sum is offered
+        # load: `rx_bytes` on veth-lan counts a packet the moment it is handed
+        # to the queue, so anything the queue later drops is included. That is
+        # how a 20 Mbps link was read as 22.39 and how a latency tail got
+        # written into a controller that was otherwise working. Fall back to the
+        # offered figure only when the bottleneck cannot be read, so a missing
+        # counter degrades to the old behaviour instead of to zero.
+        gbps = self.bottleneck_delivered_mbps(dt)
+        if gbps is None:
+            gbps = offered
         # Child rates are still computed, but they no longer drive saturation.
         drate = sum(rate_per_s(prev[k].drops, counters[k].drops, dt)
                     for k in counters if k in prev)

@@ -127,6 +127,17 @@ MAX_CONTROLLER_CPU = 0.02
 #: above 5 ms is unambiguously not the protected path working.
 TAIL_THRESHOLD_MS = 5.0
 
+#: Under a working policy the link must not be driven to saturation.
+#:
+#: This is the check that would have caught the offered-load bug, and the ratio
+#: could not: the estimator read 22.39 against a true 20 -- 1.12x -- which looks
+#: ordinary next to the 1.12x it read for a true 10. The telling number was that
+#: the resulting goodput then ran AT the link: 19.98 Mbps against a 20 Mbps
+#: link, versus 17.62 when the policy was working. If a controller meant to
+#: reserve capacity is instead consuming all of it, the policy is not reserving
+#: anything.
+SATURATION_HEADROOM = 0.98
+
 #: Slow packets must be confined to the adaptation transient rather than spread
 #: across the whole run. A run where they are scattered is a different finding.
 TAIL_MAX_FRACTION = 0.10
@@ -392,6 +403,30 @@ def check_experiment_evidence() -> list[tuple]:
             f"slow packets are not confined to the adaptation transient: "
             f"{worst*100:.1f}% of packets, above the "
             f"{TAIL_MAX_FRACTION*100:.0f}% limit"))
+
+    # 4e. the policy must leave the link unsaturated
+    cong = _results("data/host_gate_congested_aciq")
+    if not cong:
+        rows.append(("policy leaves headroom", NOT_RUN,
+                     "no data/host_gate_congested_aciq; run: "
+                     "sudo tools/host_gate.sh --congested-only"))
+    else:
+        target = cong[0].get("link_end_mbps")
+        shape = _steady_goodput(cong[0])
+        note = _revision_note("data/host_gate_congested_aciq", rev()[:8])
+        if not target:
+            rows.append(("policy leaves headroom", NOT_RUN,
+                         "run recorded no link_end_mbps"))
+        elif shape > SATURATION_HEADROOM * float(target):
+            rows.append(("policy leaves headroom", FAIL,
+                         f"steady goodput {shape:.2f} Mbps on a "
+                         f"{target} Mbps link: the policy is consuming the whole "
+                         f"link, so it is reserving nothing{note}"))
+        else:
+            rows.append(("policy leaves headroom", PASS,
+                         f"steady goodput {shape:.2f} of {target} Mbps "
+                         f"({shape / float(target) * 100:.0f}%), leaving "
+                         f"{(1 - shape / float(target)) * 100:.0f}% headroom{note}"))
 
     # 5. sustained stability
     res = _results("data/host_gate_soak")

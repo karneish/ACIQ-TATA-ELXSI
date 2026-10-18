@@ -120,6 +120,40 @@ class BottleneckDropSource:
             total += int(m.group(1))
         return total if seen else None
 
+    def delivered_bytes(self) -> int | None:
+        """Bytes the bottleneck actually forwarded, or None if unreadable.
+
+        This is the vantage point the capacity estimator needed and did not
+        have. `ClassMetrics.goodput_mbps` is `rx_bytes` on `veth-lan`, which is
+        UPSTREAM of this queue: a packet counted there has been handed to the
+        bottleneck, not delivered by it. Packets the bottleneck later drops were
+        already counted, so that figure is OFFERED load. Read during a congested
+        run it came back 22.39 Mbps against a true 20 -- a 12% over-read, which
+        is not a rounding error when bulk's ceiling is a fraction of the
+        estimate: the error propagated straight into bulk's share, saturated the
+        link, filled this queue, and produced a 70 ms latency tail on a link
+        whose median was 1.18 ms.
+
+        netem's own `Sent N bytes` is what left the queue, i.e. what the link
+        really carried. It is an observation, not a setting: reading
+        `netem rate 20mbit` would hand the estimator its own answer, and this
+        class exists precisely to avoid that. Counting what a rate limiter
+        forwarded is the ordinary inference a physical link supports.
+        """
+        cmd = ["ip", "netns", "exec", self.ns, "tc", "-s", "qdisc", "show",
+               "dev", self.dev] if self.ns else [
+               "tc", "-s", "qdisc", "show", "dev", self.dev]
+        try:
+            r = self._run(cmd, capture_output=True, text=True, timeout=5)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if r.returncode != 0:
+            return None
+        # Real output: `Sent 82913218 bytes 59214 pkt (dropped 91, ...)`
+        for m in re.finditer(r"\bSent\s+(\d+)\s+bytes", r.stdout or ""):
+            return int(m.group(1))
+        return None
+
     def backlog(self) -> int | None:
         """Bytes queued at the bottleneck, or None if unreadable.
 

@@ -1154,3 +1154,41 @@ class TestLatencyTailMustBeExplained(unittest.TestCase):
         from tools.acceptance import TAIL_THRESHOLD_MS
         self.assertGreater(TAIL_THRESHOLD_MS, 2.0)
         self.assertLess(TAIL_THRESHOLD_MS, 20.0)
+
+
+class TestPolicyMustLeaveHeadroom(unittest.TestCase):
+    """A controller meant to reserve capacity must not consume all of it.
+
+    This is the check the estimator ratio could not be. The estimator read
+    22.39 against a true 20 -- 1.12x -- which looks ordinary beside the 1.12x
+    it read for a true 10. The telling number was that the resulting goodput ran
+    AT the link: 19.98 Mbps against a 20 Mbps link, versus 17.62 when the
+    policy worked. A controller driving the link to saturation is not reserving
+    anything, whatever its estimate says.
+    """
+
+    def test_headroom_threshold_is_a_fraction(self):
+        from tools.acceptance import SATURATION_HEADROOM
+        self.assertGreater(SATURATION_HEADROOM, 0.0)
+        self.assertLessEqual(SATURATION_HEADROOM, 1.0)
+
+    def test_goodput_below_the_threshold_passes(self):
+        from tools import acceptance
+        r = {"samples": [{"per_class": {"bulk": {"goodput_mbps": 17.62}}} for _ in range(5)],
+             "link_end_mbps": 20.0}
+        self.assertLessEqual(acceptance._steady_goodput(r),
+                             acceptance.SATURATION_HEADROOM * 20.0)
+
+    def test_goodput_at_the_link_is_saturation(self):
+        from tools import acceptance
+        r = {"samples": [{"per_class": {"bulk": {"goodput_mbps": 19.98}}}
+                         for _ in range(5)], "link_end_mbps": 20.0}
+        self.assertGreater(acceptance._steady_goodput(r),
+                           acceptance.SATURATION_HEADROOM * 20.0)
+
+    def test_the_exact_measured_failure_is_reproduced(self):
+        """seed 42 on disk: 19.98 Mbps against a 20 Mbps link."""
+        from tools import acceptance
+        r = {"samples": [{"per_class": {"bulk": {"goodput_mbps": 19.98}}}
+                         for _ in range(5)], "link_end_mbps": 20.0}
+        self.assertAlmostEqual(acceptance._steady_goodput(r), 19.98, places=6)
