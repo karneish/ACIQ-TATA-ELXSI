@@ -422,6 +422,40 @@ not queueing behaviour, and the gate names it rather than hiding it. Under a
 sustained load with no capacity change — the 30-minute soak — the tail does not
 recur.
 
+### All three case-study scenarios (revision 459e17f2)
+
+Scenario A had never been run. It is the brief's headline case in prose -- "a
+large ISO download starts during a video conference" -- so its absence was a real
+gap. It is now measured with the same 7 paired seeds and the same baselines.
+
+| | FIFO | CAKE95 | **ACIQ** |
+|---|---|---|---|
+| p50 | 102.831 ms | 0.259 ms | **0.266 ms** |
+| p95 | 119.531 ms | 0.407 ms | **0.368 ms** |
+| jitter | 0.581 ms | 0.076 ms | **0.057 ms** |
+| loss | 0.004 | 0.000 | **0.000** |
+
+**ACIQ beats FIFO on every metric at p = 0.0156 — but it does NOT beat CAKE on
+median or p99 latency** (p50 p = 0.5000, p99 p = 0.4688). On this scenario CAKE
+solves the problem about as well as ACIQ does, and the statistics say so rather
+than being asked to.
+
+Across all three scenarios, exact Wilcoxon paired by seed:
+
+| scenario | significant | vs FIFO not significant | vs CAKE not significant |
+|---|---|---|---|
+| A — ISO during call | 7 / 9 | none | p50, p99 |
+| B — WAN drop 100→20 | 8 / 10 | p99 | p99 |
+| C — three TVs + gaming | 7 / 8 | none | p99 |
+
+**p99 is not statistically significant against either baseline in any
+scenario.** That is the honest limit of this evidence and it is reported rather
+than buried. ACIQ's large, well-established advantage is at the **median**; the
+worst call in a run is not shown to be better than CAKE.
+
+Where ACIQ's advantage is real and large: against FIFO on every metric in every
+scenario, and against CAKE at the median under congestion (scenario B).
+
 ### Light-load comparison (re-measured, revision fc65349e)
 
 7 paired seeds, `--enforce` on, steering verified in every run.
