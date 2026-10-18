@@ -701,3 +701,52 @@ class TestTheAuditRecordsWhatWasApplied(unittest.TestCase):
             if e["event"] == "committed":
                 self.assertNotIn("1:1", e.get("applied") or {},
                                  "a commit with no applied tree")
+
+
+class TestUnitTestsNeverShellOut(unittest.TestCase):
+    """A unit test with a FakeRunner must not read the real kernel.
+
+    Four closed-loop tests failed as root and passed unprivileged after
+    `delivered_bytes()` was added, because `BottleneckDropSource` defaults to
+    `subprocess.run` and ignored the harness's fake runner. Unprivileged there is
+    no `ip` on PATH, so the call raised and returned None; as root it ran for
+    real.
+
+    The lesson is not "guard the root path". It is that a test which only
+    validates in the weaker environment has not been validated. This test pins
+    the property in BOTH environments by making any real subprocess explode --
+    so it fails identically whether or not `ip` exists.
+    """
+
+    def _explode(self, *a, **kw):
+        raise AssertionError(
+            "a unit test shelled out to the real system; the FakeRunner was "
+            "bypassed. This reproduces the four as-root-only failures.")
+
+    def test_adaptation_never_invokes_a_subprocess(self):
+        import subprocess as _sp
+        real = _sp.run
+        _sp.run = self._explode
+        try:
+            h = Harness(runner=FakeRunner(auto_readback=True), clock=lambda: 0.0)
+            h.adapt_step(counters(rx=0), dt=1.0, now=0.0, link=link())
+            h.adapt_step(counters(rx=0, overlimits=9000), dt=1.0, now=1.0,
+                         link=link(overlimits=9000))
+            cap, changed = h.adapt_step(
+                counters(rx=2_500_000, overlimits=18000), dt=1.0, now=10.0,
+                link=link(overlimits=18000))
+        finally:
+            _sp.run = real
+        self.assertTrue(changed, "no policy change -- the estimator saw no drop")
+        self.assertIsNotNone(cap)
+
+    def test_the_bottleneck_source_is_suppressed_under_a_fake_runner(self):
+        h = Harness(runner=FakeRunner(auto_readback=True), clock=lambda: 0.0)
+        self.assertIsNone(h._bottleneck_drops(),
+                          "a real bottleneck source was built for a fake runner")
+
+    def test_delivered_rate_is_none_without_a_kernel(self):
+        """No source means no reading, and no reading means the caller falls
+        back to the offered sum rather than to zero."""
+        h = Harness(runner=FakeRunner(auto_readback=True), clock=lambda: 0.0)
+        self.assertIsNone(h.bottleneck_delivered_mbps(1.0))

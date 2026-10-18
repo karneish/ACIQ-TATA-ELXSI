@@ -233,7 +233,37 @@ def _class_ids_of(plan) -> dict:
 
 
 def _make_bottleneck_source(harness: Harness):
+    """The bottleneck's own counter source.
+
+    Returns None when the harness is NOT driving a real kernel, because
+    `BottleneckDropSource` defaults to `subprocess.run` and would otherwise
+    shell out for real regardless of the runner the rest of the harness uses.
+
+    That was harmless while this source only supplied `dropped()` and `backlog()`:
+    an unreachable device returned None and every caller treated that as "no
+    signal". Adding `delivered_bytes()` made it load-bearing, because a real
+    number there OVERRIDES the estimator's goodput input. So on a host where
+    `ip` and `tc` exist -- including one with a leftover `router` namespace from
+    a previous testbed run -- a unit test using FakeRunner began reading real
+    counters, the estimator saw no capacity drop, and four closed-loop tests
+    failed as root while passing unprivileged:
+
+        test_adapts_down_when_counters_show_saturation   changed is False
+        test_policy_changes_are_counted                  0 >= 1
+        test_adaptation_rebuilds_the_tree_...            '1:10' not found in ''
+        test_adaptive_path_needs_no_out_of_band_capacity changed is False
+
+    The asymmetry is the lesson: four failures under root and none otherwise, on
+    a change that had passed every unprivileged run. A test that only validates
+    in the weaker environment is not a validated test.
+
+    The source is injectable so a unit test can supply one deliberately, and so
+    this real one is not built when there is no real kernel to read.
+    """
     from .metrics import BottleneckDropSource
+    from .txn import FakeRunner
+    if isinstance(getattr(harness, "runner", None), FakeRunner):
+        return None
     return BottleneckDropSource(dev=harness.bottleneck_dev,
                                 ns=harness.bottleneck_ns)
 
