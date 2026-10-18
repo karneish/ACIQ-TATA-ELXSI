@@ -65,7 +65,7 @@ class _DelayedEcho(threading.Thread):
         while self.running:
             try:
                 data, addr = self.sock.recvfrom(4096)
-            except (socket.timeout, OSError):
+            except (TimeoutError, OSError):
                 continue
             time.sleep(self.delay_s)
             try:

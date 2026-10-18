@@ -8,9 +8,7 @@ from __future__ import annotations
 import unittest
 
 from aciq.capacity import (
-    ALPHA_DOWN,
     BACKLOG_MIN_BYTES,
-    SAT_OVERLIMIT_MIN,
     HYSTERESIS,
     MIN_DWELL_S,
     SAT_OVERLIMIT_MIN,

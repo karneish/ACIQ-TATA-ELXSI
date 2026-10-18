@@ -28,9 +28,9 @@ websocket.
 from __future__ import annotations
 
 import html
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
+from collections.abc import Iterable, Sequence
 
 #: Panel height in user units. SVG viewBox units, not pixels; the page scales.
 PANEL_W = 420
@@ -120,8 +120,13 @@ def panels_from_samples(samples: Iterable[dict], classes: Sequence[str] = ()) ->
         pc = r.get("per_class") or {}
         for cls in names:
             m = pc.get(cls) or {}
-            for panel, field in per_class_metrics:
-                put(panel, cls, t, m.get(field))
+            # `field` is a dataclasses import in this module; a loop variable of
+            # the same name shadows it for the rest of this function. It happens
+            # not to matter today because no @dataclass appears after this
+            # loop, which is exactly the kind of latent breakage that only
+            # announces itself when someone adds one.
+            for panel, metric_name in per_class_metrics:
+                put(panel, cls, t, m.get(metric_name))
         # Fairness is a property of the link, not of a class.
         put("fairness", "fairness", t, r.get("fairness"))
 
@@ -343,7 +348,7 @@ def summary_tiles(rows: Sequence[dict]) -> list[tuple[str, str, str]]:
 
     changes = 0
     for r in rows:
-        changes += int(bool((r.get("verdicts") or {})))
+        changes += int(bool(r.get("verdicts") or {}))
     if changes:
         out.append(("flows steered", str(changes), "ticks with a verdict"))
 

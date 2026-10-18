@@ -25,7 +25,6 @@ sys.path.insert(0, str(ROOT))
 from aciq.experiment import DryLauncher, ExperimentRunner, NetnsLauncher, RESULTS_DIR
 from aciq.harness import CapacityMode, Harness, SystemSpec
 from aciq.report import build_report
-from aciq.txn import FakeRunner
 
 
 def setup_testbed() -> bool:

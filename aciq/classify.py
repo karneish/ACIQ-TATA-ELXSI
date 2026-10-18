@@ -406,11 +406,13 @@ def classify(f: FlowFeatures, capacity_mbps: float = 100.0,
             evidence=(f"known bulk port {f.flow.dport} *and* "
                       f"{f.rate_mbps:.2f} Mbps / asymmetry {f.asymmetry:.0f}"),
         )
-    if f.flow.dport in BULK_PORTS:
-        # Port says bulk; behaviour does not. Declined, and said so.
-        declined_port = f.flow.dport
-    else:
-        declined_port = None
+    # A bulk port is not decisive on its own. Reaching this point means the
+    # port said bulk and the behaviour above did not corroborate it, so the
+    # port claim is declined and classification continues on the behavioural
+    # evidence. It used to be assigned to a local that nothing read, which
+    # meant this comment claimed the decline was "said so" when nothing said
+    # anything -- the decision was made, then silently discarded. Surfacing it
+    # in the evidence string below is what makes the decision auditable.
 
     # Interactive: small packets, low rate. Size bounds are wide enough to admit
     # a real video call (1200-1500 byte packets), not just audio.
@@ -424,7 +426,10 @@ def classify(f: FlowFeatures, capacity_mbps: float = 100.0,
         return Classification(
             flow=f.flow, cls=TrafficClass.INTERACTIVE, confidence=0.55, tier="B",
             evidence=(f"small media: avg_pkt={f.avg_packet_bytes:.0f}B "
-                      f"rate={f.rate_mbps:.3f} Mbps"),
+                      f"rate={f.rate_mbps:.3f} Mbps"
+                      + (f"; declined bulk-port {f.flow.dport} (port alone "
+                         f"insufficient)" if f.flow.dport in BULK_PORTS
+                         else "")),
         )
 
     # ---- Tier C: honest gaps ----------------------------------------------

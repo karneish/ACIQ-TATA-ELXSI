@@ -18,7 +18,6 @@ from pathlib import Path
 from aciq.classify import FlowFeatures, classify, finalise
 from aciq.corrections import (
     SCHEMA_VERSION,
-    Correction,
     CorrectionError,
     CorrectionStore,
     parse_correction,

@@ -35,7 +35,6 @@ class TestCapacityIsEnforcedOutOfBand(unittest.TestCase):
     def test_set_capacity_does_not_write_the_root_class(self):
         """The controller's plan owns 1:1. Nothing else may write it."""
         from aciq.tc import build_tree
-        from aciq.model import RatePlan
         h = Harness()
         plan = h.build_plan_for_test(20.0) if hasattr(h, "build_plan_for_test") \
             else _plan(20.0)
@@ -125,7 +124,7 @@ class TestCapacityIsEnforcedOutOfBand(unittest.TestCase):
             "same reason rollback verification exists")
 
 
-def _plan(cap: float) -> "RatePlan":  # noqa: F821
+def _plan(cap: float) -> RatePlan:  # noqa: F821
     from aciq.policy import build_plan
     return build_plan(cap)
 
@@ -250,7 +249,6 @@ class TestTheRunThatExposedIt(unittest.TestCase):
         testing anything the moment the evidence moves on.
         """
         from aciq.txn import FakeRunner
-        from aciq.harness import _qdisc_reports_rate
 
         class Refuses(FakeRunner):
             def run(self, argv, **kw):
@@ -522,7 +520,6 @@ class TestProbeIngestionLandsInAClass(unittest.TestCase):
         r._ingest_probes(collector, self._paths(d),
                          [("call", 5001, 46)], "s2_wan_drop")
         frame = collector.poll()
-        from aciq.model import TrafficClass
         vals = [v for v in frame.per_class.values()]
         self.assertTrue(all(v.metric_status == "no_probe" for v in vals),
                         "an unclassifiable flow must not report a latency")

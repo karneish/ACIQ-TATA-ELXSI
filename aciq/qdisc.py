@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 #: `class htb 1:10 root prio 0 rate 40Mbit ceil 100Mbit burst 15Kb ...`
 #: Requires `rate` on the class line. That is how a class is recognised at all,

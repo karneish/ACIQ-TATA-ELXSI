@@ -12,11 +12,12 @@ Turns run artefacts into a Markdown report. Two rules it will not break:
 from __future__ import annotations
 
 import json
+import shutil
 import statistics
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .harness import CapacityMode, SystemSpec
 
 #: Paired Wilcoxon signed-rank needs >= 6 pairs to reach p < 0.05 at all: the
 #: smallest attainable two-sided p is 2^(1-n), which is 0.0625 at n=5.
@@ -47,8 +48,63 @@ class Metric:
             cells.append("n/a" if v is None else f"{v:.3f}{self.unit}")
         star = self.best(lower_is_better)
         row = " | ".join(cells)
-        mark = f" <- best" if star else ""
+        mark = " <- best" if star else ""
         return f"| {self.name} | {row} |{mark}"
+
+
+def load_runs_multi(dirs: dict[str, Path]) -> dict:
+    """Load several results directories into ONE combined results tree.
+
+    The comparison gate runs each system into its own directory
+    (`host_gate_congested_aciq`, `..._b0_fifo`, `..._b1_cake95`) so that a
+    crashed system cannot corrupt another's evidence. That is right, and it had
+    a consequence nobody noticed: `build_report` reads a single directory, so
+    every generated report contained ACIQ alone, the `systems` table never held
+    more than one entry, and `paired_pvalues` therefore never ran.
+
+    So the brief's central requirement -- compare against a deterministic
+    baseline, with a statistical method -- was satisfied only by numbers typed
+    by hand into a document, never by the report generator. This merges the
+    trees under a temporary layout so the existing table, section and p-value
+    code is reused unchanged rather than duplicated.
+
+    Read-only with respect to the evidence directories: nothing is moved,
+    copied or deleted.
+    """
+    merged = Path(tempfile.mkdtemp(prefix="aciq-merged-"))
+    try:
+        for system, src in dirs.items():
+            if not src.exists():
+                continue
+            for run in sorted(src.iterdir()):
+                if not run.is_dir() or not (run / "result.json").is_file():
+                    continue
+                # Re-tag the system name from the result itself, so the merged
+                # row says which system it was rather than which directory it
+                # came from. Directories from different gates never collide
+                # because the run directory names carry the system already.
+                try:
+                    res = json.loads((run / "result.json").read_text())
+                except (OSError, ValueError):
+                    continue
+                if res.get("system") and res.get("system") != system:
+                    continue
+                dst = merged / f"{system}__{run.name}"
+                shutil.copytree(run, dst)
+        return merged
+    except Exception:
+        shutil.rmtree(merged, ignore_errors=True)
+        raise
+
+
+def compare_report(dirs: dict[str, Path], title: str) -> str:
+    """A report across every system, with paired Wilcoxon tests."""
+    merged = load_runs_multi(dirs)
+    try:
+        body = build_report(merged, title)
+    finally:
+        shutil.rmtree(merged, ignore_errors=True)
+    return body
 
 
 def load_runs(results_dir: Path) -> list[dict]:

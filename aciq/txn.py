@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass, field
 
 from .model import RatePlan
-from .qdisc import parse_qdisc_text, read_class_state
+from .qdisc import parse_qdisc_text
 from .shield import Mode, Shield, Violation
 from .tc import (TcTree, Mismatch, build_tree, canon_classid, compare_states,
                  parse_class_state, render, verify, unverified_fields)

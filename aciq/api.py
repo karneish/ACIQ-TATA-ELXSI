@@ -35,7 +35,8 @@ import json
 import re
 import secrets
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from .intent import IntentError, LeaseBook, lease_to_dict
 
@@ -205,8 +206,11 @@ def _num(v, default: float, name: str) -> float:
     if isinstance(v, str):
         try:
             v = float(v)
-        except ValueError:
-            raise IntentError(f"{name} must be a number, got {v!r}")
+        except ValueError as e:
+            # `from e` so a traceback distinguishes "the client sent nonsense"
+            # from "our own conversion broke" -- the two have very different
+            # causes and were indistinguishable in the log.
+            raise IntentError(f"{name} must be a number, got {v!r}") from e
     if not isinstance(v, (int, float)):
         raise IntentError(f"{name} must be a number, got {type(v).__name__}")
     v = float(v)

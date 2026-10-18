@@ -12,9 +12,7 @@ from aciq.harness import (
     CapacityMode,
     Harness,
     RunResult,
-    Scenario,
     SystemSpec,
-    Workload,
     baseline_tree,
 )
 from aciq.intent import Lease

@@ -12,13 +12,11 @@ from aciq.experiment import (DryLauncher, ExperimentRunner, RunPaths,
 from aciq.harness import CapacityMode, Harness, SystemSpec
 from aciq.report import (
     MIN_PAIRS_FOR_PVALUE,
-    build_report,
     Metric,
     build_report,
     can_report_pvalue,
     load_runs,
     mean,
-    workload_latency,
 )
 from aciq.txn import FakeRunner
 

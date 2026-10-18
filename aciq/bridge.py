@@ -102,7 +102,6 @@ from .marks import (
     CLASS_INTERACTIVE,
     CLASS_LEASED,
     CLASS_UNCLASSIFIED,
-    class_handle,
     encode,
 )
 from . import tc
@@ -182,7 +181,7 @@ FLOW_FILTER_PRIO = {"ip": 5, "ipv6": 6}
 MAX_FLOW_HANDLE = 0xFFFFFFFF
 
 
-def handle_for(key: "FlowKey") -> int:
+def handle_for(key: FlowKey) -> int:
     """Deterministic tc filter handle for a flow. Never 0, which tc treats as
     "unassigned" and would reject or silently misplace."""
     digest = zlib.crc32("|".join(map(str, key.signature)).encode()) & MAX_FLOW_HANDLE
@@ -498,7 +497,7 @@ def generate_steer_filters(dev: str, ns: str | None = None,
     return tuple(cmds)
 
 
-def generate_flow_filter(key: "FlowKey", class_id: int, dev: str,
+def generate_flow_filter(key: FlowKey, class_id: int, dev: str,
                          handle: int, ns: str | None = None) -> tuple[str, ...]:
     """One `tc flower` filter matching a flow's key directly.
 
@@ -763,7 +762,7 @@ class BridgeState:
     handle rather than looking it up.
     """
 
-    slots: dict[tuple[str, str, str, int], "FlowSlot"] = field(default_factory=dict)
+    slots: dict[tuple[str, str, str, int], FlowSlot] = field(default_factory=dict)
 
     @property
     def membership(self) -> dict:

@@ -29,7 +29,7 @@ from enum import Enum
 
 from .model import RatePlan
 from .policy import floor_mbps
-from .tc import BARE_CLASS_ID, Mismatch, TcTree
+from .tc import Mismatch
 
 #: Minimum seconds between policy changes.
 MIN_CHANGE_WINDOW_S = 5.0

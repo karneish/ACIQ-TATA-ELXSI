@@ -15,7 +15,7 @@ smoothed, so the fix does not buy speed by reintroducing flapping.
 """
 import unittest
 
-from aciq.capacity import (ALPHA_DOWN, ALPHA_UP, FAST_DROP_RATIO,
+from aciq.capacity import (FAST_DROP_RATIO,
                            CapacityEstimator, Measurement)
 
 

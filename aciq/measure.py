@@ -46,8 +46,8 @@ dashboard label negative latency.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
-from typing import Iterable, Sequence
+from dataclasses import dataclass
+from collections.abc import Iterable, Sequence
 
 #: Below this many valid RTT samples, percentiles are reported as None rather
 #: than computed. A p99 from three samples is a number, not an estimate, and

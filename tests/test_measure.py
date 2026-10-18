@@ -18,7 +18,6 @@ from aciq.measure import (
     MIN_SAMPLES_FOR_PERCENTILES,
     NOT_MEASURED,
     VALID,
-    Metrics,
     Observation,
     compute,
     dedupe,

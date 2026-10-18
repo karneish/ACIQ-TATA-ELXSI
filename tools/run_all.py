@@ -12,8 +12,7 @@ import os
 import platform
 import shutil
 import subprocess
-import sys
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,7 +45,7 @@ def revision() -> str:
 
 
 def manifest(extra: dict) -> dict:
-    return {"started_utc": datetime.now(timezone.utc).isoformat(),
+    return {"started_utc": datetime.now(UTC).isoformat(),
             "revision": revision(), "kernel": platform.release(),
             "python": platform.python_version(), **extra}
 

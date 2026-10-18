@@ -13,13 +13,13 @@ collector is testable without root, namespaces, or a network.
 from __future__ import annotations
 
 import json
-import os
 import resource
 import re
 import subprocess
 import time
 from dataclasses import dataclass, field
-from typing import Iterable, Protocol
+from typing import Protocol
+from collections.abc import Iterable
 
 from .measure import NOT_MEASURED, VALID
 from .model import TrafficClass
@@ -214,7 +214,7 @@ class CounterSnapshot:
     #: the class rates, which raised the children's overlimits again — a death
     #: spiral that collapsed a 100 Mbps link to 7.2 Mbps in one run.
     #: Only the parent's overlimits mean the link is actually full.
-    link: "ClassCounters | None" = None
+    link: ClassCounters | None = None
 
 
 class CounterSource(Protocol):

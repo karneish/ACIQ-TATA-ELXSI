@@ -83,7 +83,7 @@ class EchoSink:
         while not self._stop.is_set():
             try:
                 data, addr = self.sock.recvfrom(4096)
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 break
@@ -98,7 +98,7 @@ class EchoSink:
             self.packets += 1
             self.bytes += len(data)
 
-    def start(self) -> "EchoSink":
+    def start(self) -> EchoSink:
         self.thread.start()
         return self
 
@@ -322,7 +322,7 @@ class UdpProbe:
         while True:
             try:
                 data, _ = self.sock.recvfrom(4096)
-            except socket.timeout:
+            except TimeoutError:
                 return
             except OSError:
                 return

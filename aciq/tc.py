@@ -19,8 +19,7 @@ Leaf qdisc handles are derived from the classid so they are unique per device.
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from .model import RatePlan, TrafficClass
 

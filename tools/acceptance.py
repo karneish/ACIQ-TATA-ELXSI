@@ -21,8 +21,7 @@ import re
 import shutil
 import subprocess
 import sys
-import time
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -393,7 +392,6 @@ def check_experiment_evidence() -> list[tuple]:
                      "with --observe to account for the tail"))
     else:
         worst = max(_slowest_fraction(r) for r in cong if _slowest_fraction(r))
-        limit = _slowest_fraction(cong[-1])
         rows.append((
             "interactive latency tail", PASS if worst <= TAIL_MAX_FRACTION else FAIL,
             f"slowest {worst*100:.1f}% of packets sit in a "
@@ -611,7 +609,7 @@ def main() -> int:
         return 1
     env = {
         "run_id": run_id, "revision": rev(),
-        "started_utc": datetime.now(timezone.utc).isoformat(),
+        "started_utc": datetime.now(UTC).isoformat(),
         "kernel": platform.release(), "python": platform.python_version(),
         "uid": os.geteuid(), "hostname": platform.node(),
     }
@@ -712,6 +710,30 @@ def main() -> int:
         for g, st, detail in check_experiment_evidence():
             record(g, st, detail)
 
+    # 6b. static analysis (G21: "lint and type checks")
+    #
+    # There was no lint configuration of any kind in this repository before
+    # pyproject.toml was added, so "lint passes" was not a statement that could
+    # be made or falsified. Configuring ruff immediately found a duplicate test
+    # class that had been silently discarding four tests for the life of the
+    # file -- see TestNoSilentlyLostTests.
+    #
+    # Ruff is invoked through `python3 -m` and its absence is a BLOCKED, never
+    # a PASS: an environment where the linter cannot run must not read as an
+    # environment where the code is clean.
+    print("\nphase 6b: static analysis")
+    rc, txt = run([sys.executable, "-m", "ruff", "check", "."])
+    (outdir / "ruff.log").write_text(txt)
+    if "No module named ruff" in txt or "can't open file" in txt:
+        record("lint (ruff)", BLOCKED,
+               "ruff not installed; pip install ruff")
+    elif rc == 0:
+        record("lint (ruff)", PASS, "no findings")
+    else:
+        n = txt.count("\n") and len(
+            [l for l in txt.splitlines() if ": " in l and l[:1].isalpha()])
+        record("lint (ruff)", FAIL, f"{n} findings -- see ruff.log")
+
     # 7. claim audit
     print("\nphase 7: claim audit")
     rc, txt = run([sys.executable, str(ROOT / "tools" / "audit_claims.py")])
@@ -721,7 +743,7 @@ def main() -> int:
 
     counts = {s: sum(1 for g in gates if g["status"] == s)
               for s in (PASS, FAIL, BLOCKED, NOT_RUN)}
-    env["finished_utc"] = datetime.now(timezone.utc).isoformat()
+    env["finished_utc"] = datetime.now(UTC).isoformat()
     env["gates"] = gates
     env["counts"] = counts
     # A complete acceptance run has no BLOCKED gates *and* no skipped tests.

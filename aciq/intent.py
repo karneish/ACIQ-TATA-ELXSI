@@ -37,7 +37,7 @@ import threading
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 
 #: Where `aciqctl lease` and `aciqctl leases` share state.
 #:
@@ -47,7 +47,7 @@ from typing import Callable
 #: rather than as two processes never having met.
 DEFAULT_PATH = Path("data/leases.json")
 
-from .model import Flow, Lease, TrafficClass
+from .model import Flow, Lease
 
 #: Default time-to-live. Long enough to cover a meeting or a film, short enough
 #: that an abandoned request is not a permanent change to the household.
@@ -107,7 +107,7 @@ class LeaseStore:
     # ---- writes ----------------------------------------------------------
     def request(self, target: str, *, ip: str | None = None, flow: str | None = None,
                 weight: float = 0.4, ttl_s: float = DEFAULT_TTL_S,
-                lease_id: str | None = None) -> tuple["LeaseStore", Lease]:
+                lease_id: str | None = None) -> tuple[LeaseStore, Lease]:
         """Create a lease, replacing any existing one on the same scope."""
         _validate(target, ip, flow, weight, ttl_s)
         key = _scope_key(target, ip, flow)
@@ -118,7 +118,7 @@ class LeaseStore:
                       ttl_s=ttl_s, created_at=created)
         return replace(self, leases=kept + (lease,), _seq=self._seq + 1), lease
 
-    def release(self, lease_id: str) -> tuple["LeaseStore", Lease | None]:
+    def release(self, lease_id: str) -> tuple[LeaseStore, Lease | None]:
         """Remove by id. Returns the removed lease, or None if already gone."""
         for l in self.leases:
             if l.id == lease_id:
@@ -126,7 +126,7 @@ class LeaseStore:
                 return replace(self, leases=kept), l
         return self, None
 
-    def sweep(self, now: float | None = None) -> "LeaseStore":
+    def sweep(self, now: float | None = None) -> LeaseStore:
         """Drop expired leases. Called before every read.
 
         Expiry is enforced here *and* by `Lease.expired`, so an unswept store
@@ -209,7 +209,7 @@ def _scope_prec(lease: Lease) -> int:
 
 
 def load(path: Path | str = DEFAULT_PATH, clock: Callable[[], float] = time.time
-         ) -> "LeaseBook":
+         ) -> LeaseBook:
     """Read the shared lease file, dropping anything already expired.
 
     A corrupt or absent file yields an empty book rather than an exception: the
@@ -246,7 +246,7 @@ def load(path: Path | str = DEFAULT_PATH, clock: Callable[[], float] = time.time
                      clock=clock, path=p)
 
 
-def save(book: "LeaseBook", path: Path | str = DEFAULT_PATH) -> None:
+def save(book: LeaseBook, path: Path | str = DEFAULT_PATH) -> None:
     """Write the shared lease file, expired entries removed.
 
     Atomic via a temp file and rename, so a crash mid-write cannot leave a

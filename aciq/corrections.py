@@ -188,7 +188,7 @@ class CorrectionStore:
         self.reload()
 
     # -- reading -----------------------------------------------------------
-    def reload(self) -> "CorrectionStore":
+    def reload(self) -> CorrectionStore:
         """Re-read the file. Called once at construction; call it again if
         corrections are added while the process runs."""
         self._by_key.clear()

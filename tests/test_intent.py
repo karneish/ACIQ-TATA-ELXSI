@@ -811,7 +811,7 @@ class TestDashboardRendering(unittest.TestCase):
         self.assertEqual(html.count('class="panel"'), 6)
 
     def test_values_are_escaped_in_titles(self):
-        from aciq.dashboard import render_panel, Series
+        from aciq.dashboard import render_panel
         out = render_panel("x", "<script>alert(1)</script>", [])
         self.assertNotIn("<script>alert", out)
         self.assertIn("&lt;script&gt;", out)
@@ -1062,7 +1062,6 @@ class TestALeaseThatNeverLands(unittest.TestCase):
     def test_a_tick_that_raises_is_counted_not_swallowed(self):
         """The bare `except Exception` also caught BridgeError, so a filter the
         kernel refused looked like a tick that found no flows."""
-        from aciq.bridge import BridgeError
         runner = ExperimentRunner(
             launcher=_LiveishLauncher(),
             harness=Harness(runner=FakeRunner(auto_readback=True), clock=lambda: 0.0),
@@ -1142,7 +1141,6 @@ class TestMissingFiltersAreReported(unittest.TestCase):
             self.assertEqual(r._filter_loss_note(-1), "")
 
     def test_every_sample_records_the_filter_count(self):
-        from aciq.experiment import ExperimentRunner as R
         with tempfile.TemporaryDirectory() as d:
             r = self._runner(d)
             r.run("s3_tv_and_gaming", ACIQ, enforce=True)

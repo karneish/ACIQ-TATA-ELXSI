@@ -39,7 +39,7 @@ def sink(port: int, out: dict, stop: threading.Event | None = None) -> None:
     while not (stop is not None and stop.is_set()):
         try:
             conn, _ = srv.accept()
-        except socket.timeout:
+        except TimeoutError:
             continue
         except OSError:
             break

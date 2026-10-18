@@ -21,7 +21,7 @@ import unittest
 
 from aciq.policy import build_plan
 from aciq.shield import Shield
-from aciq.tc import Mismatch, build_tree, canon_classid, compare_states
+from aciq.tc import build_tree, canon_classid, compare_states
 from aciq.txn import (
     COMMANDS_FAILED,
     NO_TARGET,

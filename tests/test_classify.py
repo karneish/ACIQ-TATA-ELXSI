@@ -17,7 +17,6 @@ from __future__ import annotations
 import unittest
 
 from aciq.classify import (
-    ADAPTIVE_MIN_MBPS,
     BULK_MIN_CAPACITY_FRAC,
     DSCP_EF,
     EF_FAST_CONFLICT_CAPACITY_FRAC,

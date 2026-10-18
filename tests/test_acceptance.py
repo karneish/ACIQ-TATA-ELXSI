@@ -272,7 +272,6 @@ class TestCitationTraceability(unittest.TestCase):
         a good way to teach everyone to ignore it.
         """
         import re as _re
-        from pathlib import Path as _P
         exempt = _re.compile(r"never existed|does not exist|do not exist|"
                              r"not a real test|invented|was wrong", _re.I)
         line = ("6. Correcting those names revealed that a test named "
@@ -294,7 +293,7 @@ class TestCitationTraceability(unittest.TestCase):
                           f"{condition} must reach the audit exit code")
 
 
-class TestHostGateScript(unittest.TestCase):
+class TestCitedCliValues(unittest.TestCase):
     """CLI values cited in the gap-closure docs must exist.
 
     The docs named a scenario `s4_voip_under_load` and a system `cake`. Neither
@@ -329,7 +328,6 @@ class TestHostGateScript(unittest.TestCase):
         """A 30-minute soak is a mandatory gate and no shipped scenario is
         longer than 40s, so the override is what makes it possible."""
         import dataclasses
-        import importlib
         from aciq.harness import SCENARIOS
         original = {n: s.duration_s for n, s in SCENARIOS.items()}
         try:
@@ -346,7 +344,6 @@ class TestHostGateScript(unittest.TestCase):
         self.assertEqual({n: s.duration_s for n, s in SCENARIOS.items()}, original)
 
     def test_duration_flag_is_advertised(self):
-        import re
         from pathlib import Path as _P
         src = (_P(__file__).resolve().parents[1] / "run_experiments.py").read_text()
         self.assertIn("--duration-s", src)
@@ -1192,3 +1189,55 @@ class TestPolicyMustLeaveHeadroom(unittest.TestCase):
         r = {"samples": [{"per_class": {"bulk": {"goodput_mbps": 19.98}}}
                          for _ in range(5)], "link_end_mbps": 20.0}
         self.assertAlmostEqual(acceptance._steady_goodput(r), 19.98, places=6)
+
+
+class TestNoSilentlyLostTests(unittest.TestCase):
+    """A duplicated test class silently discards every test in the first one.
+
+    Found by `ruff check --select F811` in this very file: `TestHostGateScript`
+    was defined at line 297 and again at line 356. Python keeps the second, so
+    the four tests in the first -- the ones checking that scenarios and systems
+    cited in the documentation actually exist -- never ran. Nothing failed,
+    nothing warned, and the suite was green.
+
+    Ruff was configured after these tests were written, which is exactly why the
+    check has to be asserted here as well: a lint rule that is only run by
+    hand is not a gate.
+    """
+
+    ROOT = Path(__file__).resolve().parents[1]
+
+    def _test_modules(self):
+        return sorted(self.ROOT.glob("tests/test_*.py"))
+
+    def test_no_duplicate_class_names_in_any_test_module(self):
+        import ast
+        offenders = {}
+        for f in self._test_modules():
+            tree = ast.parse(f.read_text())
+            names = [n.name for n in tree.body if isinstance(n, ast.ClassDef)]
+            dupes = {n for n in names if names.count(n) > 1}
+            if dupes:
+                offenders[f.name] = sorted(dupes)
+        self.assertEqual(offenders, {},
+                         f"duplicate test classes lose their tests: {offenders}")
+
+    def test_no_duplicate_function_names_at_module_level(self):
+        """Same hazard for module-level helpers and constants."""
+        import ast
+        offenders = {}
+        for f in self._test_modules():
+            tree = ast.parse(f.read_text())
+            names = [n.name for n in tree.body
+                     if isinstance(n, (ast.FunctionDef, ast.ClassDef))]
+            dupes = {n for n in names if names.count(n) > 1}
+            if dupes:
+                offenders[f.name] = sorted(dupes)
+        self.assertEqual(offenders, {},
+                         f"duplicate module-level definitions: {offenders}")
+
+    def test_the_ruff_ruleset_that_caught_this_is_enabled(self):
+        """The rule is configured, so the finding was not luck."""
+        cfg = (self.ROOT / "pyproject.toml").read_text()
+        self.assertIn("F", cfg)
+        self.assertIn("[tool.ruff.lint]", cfg)

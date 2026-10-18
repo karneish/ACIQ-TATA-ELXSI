@@ -54,11 +54,11 @@ from .capacity import CapacityEstimator
 from .closedloop import ClosedLoop, Verdict
 from .classify import FlowFeatures
 from .corrections import CorrectionStore
-from .metrics import ClassCounters, CounterSnapshot, MetricsCollector
+from .metrics import ClassCounters, MetricsCollector
 from .model import Lease, RatePlan, TrafficClass
 from .policy import build_plan
 from .shield import Shield
-from .tc import BARE_CLASS_ID, ROOT_CLASS_ID, ROOT_HANDLE, build_tree, render
+from .tc import BARE_CLASS_ID, ROOT_CLASS_ID, render
 from .txn import Runner, TransactionManager
 
 
@@ -106,8 +106,12 @@ class Scenario:
         """
         rng = random.Random(seed)
         out = []
-        for i, w in enumerate(self.workloads):
-            for n in range(w.count):
+        # `enumerate` and the inner `range` index were both unused -- only the
+        # count matters, since each entry draws a fresh random port. Binding an
+        # index that is never read is the kind of thing that later reads as if
+        # the index were significant.
+        for w in self.workloads:
+            for _ in range(w.count):
                 out.append((w.label, 5100 + rng.randrange(0, 400), w.dscp))
         return out
 
@@ -228,7 +232,7 @@ def _class_ids_of(plan) -> dict:
     return {c: CLASS_IDS[c] for c in plan.rates}
 
 
-def _make_bottleneck_source(harness: "Harness"):
+def _make_bottleneck_source(harness: Harness):
     from .metrics import BottleneckDropSource
     return BottleneckDropSource(dev=harness.bottleneck_dev,
                                 ns=harness.bottleneck_ns)

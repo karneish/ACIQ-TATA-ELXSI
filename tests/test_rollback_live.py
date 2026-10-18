@@ -27,7 +27,6 @@ import os
 import re
 import shutil
 import subprocess
-import time
 import unittest
 import uuid
 

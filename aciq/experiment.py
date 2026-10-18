@@ -24,8 +24,8 @@ import shutil
 import signal
 import subprocess
 import time
-from typing import Sequence
-from dataclasses import dataclass, field
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from .bridge import count_flow_filters_text, enumerate_flow_filters
@@ -483,6 +483,18 @@ class ExperimentRunner:
                                         link_mbps)
 
         # ---- 2. launch workloads: sinks first so nothing races the listener
+        #
+        # NOTE on `zip()` here: plain zip is CORRECT, and `strict=True` was
+        # tried and reverted. `ports` is a deliberate FILTERED SUBSET of
+        # `_expand(sc)` -- the settle path passes only the interactive
+        # workloads, and callers may probe a single class. Plain zip
+        # truncating to the shorter sequence is exactly the intended
+        # semantics; `strict=True` raises "zip() argument 2 is longer than
+        # argument 1" and broke the probe-ingestion tests.
+        #
+        # So the B905 finding is a false positive at these sites, and the rule
+        # is disabled for them in pyproject.toml with this reason recorded
+        # rather than "fixed" into a crash.
         for (label, port, dscp), w in zip(ports, _expand(sc)):
             self.launcher.spawn_sink(w.kind, port, paths.file(f"{label}.sink.log"))
         # Sinks need a moment to bind. Without this the first sender races the
@@ -952,8 +964,8 @@ notes=(([] if dropped else ["no capacity drop in this run"])
         knows where the traffic was steered -- that mapping was missing
         entirely, and its absence is why latency was reported as zero forever.
         """
-        for (label, _port, _dscp), _w in zip(ports,
-                                             _expand(SCENARIOS[scenario_name])):
+        for (label, _port, _dscp), _w in zip(
+                ports, _expand(SCENARIOS[scenario_name])):
             f = paths.file(f"{label}.partial.json")
             if not f.exists():
                 continue

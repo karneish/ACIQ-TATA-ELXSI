@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from aciq.model import Lease, RatePlan, TrafficClass
+from aciq.model import RatePlan, TrafficClass
 from aciq.policy import build_plan
 from aciq.shield import (
     BACKOFF_S,
@@ -14,11 +14,9 @@ from aciq.shield import (
     MIN_CHANGE_WINDOW_S,
     Mode,
     Shield,
-    ShieldState,
 )
 from aciq.qdisc import ClassState, parse_class_json, parse_class_text
 from aciq.tc import (
-    BARE_CLASS_ID,
     ROOT_CLASS_ID,
     ROOT_HANDLE,
     build_tree,
