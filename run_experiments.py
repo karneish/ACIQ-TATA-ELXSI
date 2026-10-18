@@ -38,9 +38,12 @@ def teardown() -> None:
 
 
 # All three scenarios from the brief. s2 needs --drop-at to be meaningful.
-ALL_SCENARIOS = ["s1_iso_during_call", "s2_wan_drop", "s3_tv_and_gaming"]
+# s4 is the rising edge: without --recover-at/--recover-to it behaves like s2.
+ALL_SCENARIOS = ["s1_iso_during_call", "s2_wan_drop", "s3_tv_and_gaming",
+                 "s4_capacity_recovery"]
 #: Scenarios that only do something interesting with an explicit drop time.
-NEEDS_DROP_AT = {"s2_wan_drop"}
+#: s4 needs it too -- there is no recovery without a drop first.
+NEEDS_DROP_AT = {"s2_wan_drop", "s4_capacity_recovery"}
 ALL_SYSTEMS = [SystemSpec.B0, SystemSpec.B1, SystemSpec.ACIQ]
 
 
@@ -62,6 +65,14 @@ def main() -> int:
     ap.add_argument("--drop", type=float, default=20.0)
     ap.add_argument("--drop-at", type=float, default=None,
                     help="seconds into the run at which capacity drops")
+    ap.add_argument("--recover-at", type=float, default=None,
+                    help="seconds into the run at which the link is restored to "
+                         "--recover-to. Tests the RISING edge of adaptation, "
+                         "which no shipped scenario exercised: a controller that "
+                         "cannot walk back up, or a policy left pinned at the "
+                         "degraded rate, is invisible to a drop-only test.")
+    ap.add_argument("--recover-to", type=float, default=None,
+                    help="capacity to restore at --recover-at, in Mbps")
     ap.add_argument("--duration-s", type=float, default=None,
                     help="override each scenario's duration. The shipped "
                          "scenarios are 30-40s, which cannot demonstrate "
@@ -132,6 +143,11 @@ def main() -> int:
             SCENARIOS[name] = dataclasses.replace(sc, duration_s=args.duration_s)
         print(f"note: scenario durations overridden to {args.duration_s}s",
               file=sys.stderr)
+
+    if args.recover_at is not None and args.recover_to is None:
+        print("note: --recover-at without --recover-to is a no-op; "
+              "restoring to the same rate tests nothing", file=sys.stderr)
+        args.recover_at = None
 
     scenarios = args.scenario or ["s1_iso_during_call", "s3_tv_and_gaming"]
     if args.scenario and any(sc in NEEDS_DROP_AT for sc in args.scenario) \
@@ -210,6 +226,8 @@ def main() -> int:
                     res = runner.run(
                         sc, sysspec, m, seed, args.link, args.drop, args.drop_at,
                         settle_s=args.settle, enforce=args.enforce,
+                        recover_at_s=args.recover_at,
+                        recover_to_mbps=args.recover_to,
                         lease_ips=args.lease, lease_weight=args.lease_weight,
                         lease_ttl_s=args.lease_ttl_s)
                     for n in res.notes:

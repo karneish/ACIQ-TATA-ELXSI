@@ -314,8 +314,14 @@ class TestCitedCliValues(unittest.TestCase):
 
     def test_cited_scenarios_exist(self):
         real = set(self._harness().ALL_SCENARIOS)
+        # s4_capacity_recovery is the rising edge of adaptation, added because
+        # every other scenario drops the link and leaves it down, so nothing
+        # tested whether the controller can walk back UP.
         self.assertEqual(real, {"s1_iso_during_call", "s2_wan_drop",
-                                "s3_tv_and_gaming"})
+                                "s3_tv_and_gaming",
+                                "s4_capacity_recovery"})
+        # Still not a scenario. It was invented by an earlier report and cited
+        # in the docs as if it existed; that report was wrong.
         self.assertNotIn("s4_voip_under_load", real)
 
     def test_cited_systems_exist(self):
@@ -402,7 +408,7 @@ class TestHostGateScript(unittest.TestCase):
             used |= set(re.findall(r"--[a-z][a-z-]+", ln))
         own = {"--check", "--full", "--help", "--congested-only",
           "--latency-tail", "--light-only", "--observe",
-          "--scenario-a"}  # the script's own options
+          "--scenario-a", "--recovery"}  # the script's own options
         for flag in sorted(used - own):
             self.assertIn(flag, driver,
                           f"{flag} is passed to an ACIQ driver by host_gate.sh "

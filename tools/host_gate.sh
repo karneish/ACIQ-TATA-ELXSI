@@ -65,6 +65,7 @@ CONGESTED_ONLY=0
 LATENCY_TAIL=0
 LIGHT_ONLY=0
 SCENARIO_A=0
+RECOVERY=0
 OBSERVE=""
 for arg in "$@"; do
   case "$arg" in
@@ -74,6 +75,7 @@ for arg in "$@"; do
     --latency-tail) LATENCY_TAIL=1 ;;
     --light-only) LIGHT_ONLY=1 ;;
     --scenario-a) SCENARIO_A=1 ;;
+    --recovery) RECOVERY=1 ;;
     --observe) OBSERVE="--observe" ;;
     -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
@@ -243,6 +245,24 @@ scenario_a_comparison() {
   log "  evidence: data/host_gate_s1_{b0_fifo,b1_cake95,aciq}"
 }
 
+# Capacity recovery: 100 -> 20 -> back to 100.
+#
+# Every adaptation gate so far tested only the falling edge. This restores the
+# link mid-run so the controller has to walk the estimate back UP and rebuild
+# the plan from it. A policy left pinned at the degraded rate after the link
+# recovers is a real, user-visible defect that no drop-only test can see.
+recovery_gate() {
+  log "== gate 3b: capacity recovery, 100 -> 20 -> 100 =="
+  log "  ~2 min plus testbed build"
+  stamp data/host_gate_recovery
+  python3 run_experiments.py --scenario s4_capacity_recovery --system aciq \
+      --enforce --drop 20 --drop-at 10 --seed 42 --duration-s 60 \
+      --recover-at 30 --recover-to 100 \
+      --results-dir data/host_gate_recovery 2>&1 \
+      | tee "$OUT/recovery.log" | tail -5
+  log "  evidence: data/host_gate_recovery"
+}
+
 # A PASS must not be able to mean "nothing happened".
 #
 # The previous congested gate reported results from a run in which the
@@ -281,6 +301,9 @@ print(max((s.get('filters_installed') or 0) for s in d.get('samples',[])) if d.g
 if [ "$LATENCY_TAIL" -eq 1 ]; then
   latency_tail_probe
   log ""
+elif [ "$RECOVERY" -eq 1 ]; then
+  recovery_gate
+  log ""
 elif [ "$SCENARIO_A" -eq 1 ]; then
   scenario_a_comparison
   log ""
@@ -304,6 +327,9 @@ elif [ "$FULL" -eq 1 ]; then
   log ""
 
   scenario_a_comparison
+  log ""
+
+  recovery_gate
   log ""
 
   congested_comparison

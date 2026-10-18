@@ -303,6 +303,8 @@ class ExperimentRunner:
         link_mbps: float = 100.0,
         drop_mbps: float = 20.0,
         drop_at_s: float | None = None,
+        recover_at_s: float | None = None,
+        recover_to_mbps: float | None = None,
         settle_s: float | None = None,
         enforce: bool = False,
         lease_ips: Sequence[str] = (),
@@ -410,7 +412,9 @@ class ExperimentRunner:
         cfg = {
             "scenario": sc.name, "system": system.value, "mode": mode.value,
             "seed": seed, "link_mbps": link_mbps, "drop_mbps": drop_mbps,
-            "drop_at_s": drop_at_s, "duration_s": sc.duration_s,
+            "drop_at_s": drop_at_s,
+            "recover_at_s": recover_at_s, "recover_to_mbps": recover_to_mbps,
+            "duration_s": sc.duration_s,
             "settle_s": settle,
             "workloads": [{"kind": w.kind, "label": w.label, "dscp": w.dscp}
                           for w in sc.workloads],
@@ -532,6 +536,7 @@ class ExperimentRunner:
         t0 = time.monotonic()
         ticks = int(sc.duration_s / self.tick_s) + 1
         dropped = False
+        recovered = False
         for i in range(ticks):
             now = time.monotonic()
             if self.real_time:
@@ -623,6 +628,26 @@ class ExperimentRunner:
                 "filters_json": n_json, "filters_text": n_text,
             })
 
+            # The recovery: the link comes BACK. Without this the controller was
+            # only ever tested falling, never recovering -- so a bug that left a
+            # policy stuck at the degraded rate, or an estimator that could not
+            # walk back up, would never have been caught. The brief grades
+            # "adaptation speed and policy stability", and stability after a
+            # recovery is half of that.
+            #
+            # Only the link changes here too. The controller has to notice from
+            # counters, the same as for the drop.
+            if (recover_at_s is not None and dropped and not recovered
+                    and recover_to_mbps is not None
+                    and elapsed >= recover_at_s):
+                recovered = True
+                self._cap_t = elapsed
+                self.harness.set_capacity(recover_to_mbps)
+                if not self.harness._capacity_change_ok:
+                    self._capacity_change_failed = True
+                    self._capacity_change_error = \
+                        self.harness._capacity_change_error
+
             # the drop: the link changes, and only the link changes
             if drop_at_s is not None and not dropped and elapsed >= drop_at_s:
                 dropped = True
@@ -706,6 +731,8 @@ class ExperimentRunner:
             scenario=sc.name, system=system.value, capacity_mode=mode.value,
             seed=seed, link_start_mbps=link_mbps,
             link_end_mbps=drop_mbps if dropped else link_mbps,
+            capacity_recovered=recovered,
+            capacity_recover_to_mbps=recover_to_mbps if recovered else None,
             capacity_change_applied=not self._capacity_change_failed,
             capacity_change_error=self.harness._capacity_change_error,
             estimator_mbps=round(est, 2) if est else None,

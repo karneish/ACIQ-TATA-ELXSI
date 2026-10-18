@@ -119,6 +119,21 @@ class Scenario:
 #: TATA's scenarios. DSCP EF on the call and game is realistic: real VoIP
 #: endpoints mark interactive media EF, which is exactly the signal M1 uses.
 SCENARIOS: dict[str, Scenario] = {
+    # The rising edge of adaptation. Every other scenario here drops the link and
+    # leaves it down, so nothing in the suite has ever tested whether the
+    # controller can walk back UP. That is half of what the brief grades as
+    # "adaptation speed and policy stability": a policy left pinned at the
+    # degraded rate after the link recovers is a real, user-visible defect, and
+    # a drop-only suite cannot see it.
+    "s4_capacity_recovery": Scenario(
+        name="s4_capacity_recovery",
+        workloads=(
+            Workload("call", "call", 1, dscp=46),
+            Workload("bulk", "bulk", 1),
+        ),
+        duration_s=60.0,
+        settle_s=4.0,
+    ),
     "s1_iso_during_call": Scenario(
         name="s1_iso_during_call",
         workloads=(
@@ -166,6 +181,14 @@ class RunResult:
     #: capacity_change_applied False with no reason anywhere, which sent me
     #: looking in the wrong place twice.
     capacity_change_error: str = ""
+    #: Did the link come BACK UP during the run, and to what rate.
+    #:
+    #: Every adaptation experiment so far tested only the falling edge. Half of
+    #: "adaptation speed and policy stability" is what happens on recovery: an
+    #: estimator that cannot walk back up, or a policy left pinned at the
+    #: degraded rate, is a defect that a drop-only test can never see.
+    capacity_recovered: bool = False
+    capacity_recover_to_mbps: float | None = None
     estimator_mbps: float | None = None
     samples: list[dict] = field(default_factory=list)
     policy_changes: int = 0

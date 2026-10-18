@@ -434,6 +434,36 @@ def check_experiment_evidence() -> list[tuple]:
                      ", ".join(f"{k}={v}" for k, v in sorted(s1c.items()))
                      + f" paired seeds, {med}"))
 
+    # 4d-s4. capacity RECOVERY -- the rising edge.
+    #
+    # Every adaptation experiment in this repository dropped the link and left
+    # it down. Half of what the brief grades as "adaptation speed and policy
+    # stability" is what happens when the link comes back: a policy left pinned
+    # at the degraded rate is a real, user-visible defect that a drop-only suite
+    # cannot see. Reported as NOT RUN rather than omitted.
+    rec = _results("data/host_gate_recovery")
+    if not rec:
+        rows.append(("capacity recovery (rising edge)", NOT_RUN,
+                     "no data/host_gate_recovery; run: "
+                     "sudo tools/host_gate.sh --recovery"))
+    else:
+        r = rec[0]
+        if not r.get("capacity_recovered"):
+            rows.append(("capacity recovery (rising edge)", FAIL,
+                         "run finished without the link being restored; the "
+                         "recovery path never ran"))
+        else:
+            target = r.get("capacity_recover_to_mbps")
+            # After recovery the link is wide again, so bulk SHOULD be using it.
+            shape = _steady_goodput(r)
+            rows.append((
+                "capacity recovery (rising edge)",
+                PASS if (target and shape > 0.5 * float(target)) else FAIL,
+                f"link restored to {target} Mbps; steady goodput "
+                f"{shape:.2f} Mbps afterwards"
+                + ("" if (target and shape > 0.5 * float(target)) else
+                   " -- the policy appears pinned at the degraded rate")))
+
     # 4e. the policy must leave the link unsaturated
     cong = _results("data/host_gate_congested_aciq")
     if not cong:
