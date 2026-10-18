@@ -1,0 +1,152 @@
+{
+  "run_id": "664274d4",
+  "revision": "664274d40af6df9ab6ef0750cba8c454c8e69320",
+  "started_utc": "2026-10-18T16:23:39.242139+00:00",
+  "kernel": "7.1.5-76070105-generic",
+  "python": "3.12.3",
+  "uid": 0,
+  "hostname": "pop-os",
+  "tests": {
+    "tests": 1017,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 1,
+    "ok": true,
+    "summary": "Ran 1017 tests in 51.485s",
+    "skipped_tests": [
+      "tests.test_acceptance.TestHostGateScript.test_it_refuses_without_root_and_changes_nothing"
+    ]
+  },
+  "finished_utc": "2026-10-18T16:27:00.292684+00:00",
+  "gates": [
+    {
+      "gate": "unit+integration+socket",
+      "status": "PASS",
+      "detail": "1017 tests, 1 skipped, exit 0",
+      "log": "unittest.log"
+    },
+    {
+      "gate": "metric integrity",
+      "status": "PASS",
+      "detail": "arithmetic + socket recomputation",
+      "log": "metric-integrity.log"
+    },
+    {
+      "gate": "api security",
+      "status": "PASS",
+      "detail": "auth, bind policy, rate limit, audit",
+      "log": "api-security.log"
+    },
+    {
+      "gate": "classifier evaluation",
+      "status": "PASS",
+      "detail": "16 constructed cases, two capacities",
+      "log": "classifier-eval.log"
+    },
+    {
+      "gate": "control-plane benchmark",
+      "status": "PASS",
+      "detail": "",
+      "log": "benchmark.log"
+    },
+    {
+      "gate": "live rollback verification (kernel)",
+      "status": "PASS",
+      "detail": "tc read-back in an isolated namespace",
+      "log": "rollback-live.log"
+    },
+    {
+      "gate": "testbed gate (21 checks)",
+      "status": "PASS",
+      "detail": "exit 0",
+      "log": "gate.log"
+    },
+    {
+      "gate": "live enforcement",
+      "status": "PASS",
+      "detail": "20 PASS, 1 MEASURED, 0 FAIL (gate-20261013-135720.log)",
+      "log": ""
+    },
+    {
+      "gate": "rollback under real tc failure",
+      "status": "PASS",
+      "detail": "live rollback tests passed (rollback-live-20261013.log)",
+      "log": ""
+    },
+    {
+      "gate": "live adaptation loop",
+      "status": "PASS",
+      "detail": "100.0 -> 10.0 Mbps, estimator 11.23, 41 samples [evidence from revision 2fb66c39, not 664274d4]",
+      "log": ""
+    },
+    {
+      "gate": "FIFO/CAKE/ACIQ comparison",
+      "status": "PASS",
+      "detail": "aciq=7, b0_fifo=7, b1_cake95=7 paired seeds, aciq p95=0.553ms; b0_fifo p95=2.555ms; b1_cake95 p95=0.608ms [evidence from revision fc65349e, not 664274d4]",
+      "log": ""
+    },
+    {
+      "gate": "congested FIFO/CAKE/ACIQ comparison",
+      "status": "PASS",
+      "detail": "aciq=7, b0_fifo=7, b1_cake95=7 paired seeds on a dropped link, aciq p95=65.108ms; b0_fifo p95=92.841ms; b1_cake95 p95=92.602ms",
+      "log": ""
+    },
+    {
+      "gate": "controller CPU overhead",
+      "status": "PASS",
+      "detail": "median 0.0049, peak 0.0052 of one core over 1851s; bound 0.02 [evidence from revision 2fb66c39, not 664274d4]",
+      "log": ""
+    },
+    {
+      "gate": "interactive latency tail",
+      "status": "PASS",
+      "detail": "slowest 8.3% of packets sit in a 3s adaptation transient (limit 10%)",
+      "log": ""
+    },
+    {
+      "gate": "scenario A: ISO download during call",
+      "status": "PASS",
+      "detail": "aciq=7, b0_fifo=7, b1_cake95=7 paired seeds, aciq p95=0.363ms; b0_fifo p95=119.539ms; b1_cake95 p95=0.401ms",
+      "log": ""
+    },
+    {
+      "gate": "capacity recovery (rising edge)",
+      "status": "FAIL",
+      "detail": "link restored to 100.0 Mbps; steady goodput 17.34 Mbps afterwards -- the policy appears pinned at the degraded rate",
+      "log": ""
+    },
+    {
+      "gate": "policy leaves headroom",
+      "status": "PASS",
+      "detail": "steady goodput 17.30 of 20.0 Mbps (86%), leaving 14% headroom [evidence from revision ce53da12, not 664274d4]",
+      "log": ""
+    },
+    {
+      "gate": "30-minute stability",
+      "status": "PASS",
+      "detail": "1851s sustained, 8 policy changes [evidence from revision 2fb66c39, not 664274d4]",
+      "log": ""
+    },
+    {
+      "gate": "lint (ruff)",
+      "status": "BLOCKED",
+      "detail": "ruff not importable by THIS interpreter and no lint record for this revision. Lint needs no root: run ./tools/lint.sh",
+      "log": ""
+    },
+    {
+      "gate": "claim audit",
+      "status": "PASS",
+      "detail": "constants, evidence, red-flag phrases",
+      "log": "claim-audit.log"
+    }
+  ],
+  "counts": {
+    "PASS": 18,
+    "FAIL": 1,
+    "BLOCKED": 1,
+    "NOT RUN": 0
+  },
+  "skipped": 1,
+  "skipped_mandatory": [],
+  "complete": false
+}

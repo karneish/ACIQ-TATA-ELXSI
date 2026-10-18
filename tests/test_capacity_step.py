@@ -31,7 +31,9 @@ def _sat(t, mbps, **kw):
     # with both None it treats the reader as blind and refuses to declare
     # saturation, which is the safe direction. So a saturated reading has to
     # supply them.
-    kw.setdefault("link_overlimit_rate_per_s", 3000.0)
+    # Genuine external congestion: the out-of-band queue is non-empty. Option A
+    # makes that the authority, so parent overlimits alone must NOT be used to
+    # fake saturation here.
     kw.setdefault("bottleneck_backlog_bytes", 40000)
     return Measurement(t=t, goodput_mbps=mbps, **kw)
 
@@ -155,8 +157,7 @@ class TestCapacityCanRecover(unittest.TestCase):
         # degraded estimate says exists.
         for _ in range(60):
             e.observe(Measurement(t=t, goodput_mbps=70.0,
-                                  bottleneck_backlog_bytes=0,
-                                  link_overlimit_rate_per_s=0.0))
+                                  bottleneck_backlog_bytes=0))
             t += 1.0
         self.assertGreater(e.current.mbps, degraded * 1.5,
                            "the estimate never recovered after the link did")
@@ -167,8 +168,7 @@ class TestCapacityCanRecover(unittest.TestCase):
         t = self._drop_then_recover(e)
         for _ in range(200):
             e.observe(Measurement(t=t, goodput_mbps=90.0,
-                                  bottleneck_backlog_bytes=0,
-                                  link_overlimit_rate_per_s=0.0))
+                                  bottleneck_backlog_bytes=0))
             t += 1.0
         self.assertLessEqual(e.current.mbps, 100.0 + 1e-6,
                              "the release invented capacity above anything "
@@ -189,8 +189,7 @@ class TestCapacityCanRecover(unittest.TestCase):
         before = e.current.mbps
         for _ in range(IDLE_STREAK_RELEASE - 3):
             e.observe(Measurement(t=t, goodput_mbps=12.0,
-                                  bottleneck_backlog_bytes=0,
-                                  link_overlimit_rate_per_s=0.0))
+                                  bottleneck_backlog_bytes=0))
             t += 1.0
         self.assertAlmostEqual(
             e.current.mbps, before, delta=0.5,
@@ -199,23 +198,25 @@ class TestCapacityCanRecover(unittest.TestCase):
     def test_an_incorrect_release_self_corrects(self):
         """The whole safety argument: rising is slow, falling is fast.
 
-        A release that turns out to be wrong must not persist. One saturated
-        sample at a low throughput has to collapse the estimate again, because
-        that is what makes bounded optimism acceptable here at all.
+        A release that turns out to be wrong must not persist. Genuine external
+        congestion -- a NON-EMPTY bottleneck queue -- has to collapse the
+        estimate again, because that is what makes bounded optimism acceptable.
+
+        Simulated through `bottleneck_backlog_bytes`, not through parent
+        overlimits: under Option A a parent overlimit is no longer evidence of
+        anything external, so using it here would test the wrong path.
         """
         e = CapacityEstimator()
         t = self._drop_then_recover(e)
         for _ in range(60):
             e.observe(Measurement(t=t, goodput_mbps=70.0,
-                                  bottleneck_backlog_bytes=0,
-                                  link_overlimit_rate_per_s=0.0))
+                                  bottleneck_backlog_bytes=0))
             t += 1.0
         self.assertGreater(e.current.mbps, 40.0, "precondition: it released")
-        # The link was never that wide after all.
+        # The link was never that wide after all: its queue fills.
         for _ in range(6):
             e.observe(Measurement(t=t, goodput_mbps=20.0,
-                                  bottleneck_backlog_bytes=0,
-                                  link_overlimit_rate_per_s=9000.0))
+                                  bottleneck_backlog_bytes=40000))
             t += 1.0
         self.assertLess(e.current.mbps, 40.0,
                         "an incorrect release did not self-correct")
@@ -226,8 +227,7 @@ class TestCapacityCanRecover(unittest.TestCase):
         t = self._drop_then_recover(e)
         for _ in range(300):
             e.observe(Measurement(t=t, goodput_mbps=0.0,
-                                  bottleneck_backlog_bytes=0,
-                                  link_overlimit_rate_per_s=0.0))
+                                  bottleneck_backlog_bytes=0))
             t += 1.0
         self.assertLessEqual(e.current.mbps, 100.0 + 1e-6)
 

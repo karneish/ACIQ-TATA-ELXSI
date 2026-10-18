@@ -174,30 +174,66 @@ class Measurement:
 
     @property
     def saturated(self) -> bool:
+        """Is the EXTERNAL link congested?
+
+        OPTION A -- the out-of-band bottleneck is the authority.
+
+        The defect this replaces is recorded in
+        docs/gap-closure/capacity-recovery-defect.md. In short: the old order
+        consulted the controller's OWN parent class first, and under the
+        differentiated-ceiling policy the sum of child ceilings always exceeds
+        the parent rate:
+
+            build_plan(estimate=20.26)
+              -> 1:1 rate  = 20
+              -> children  = bulk 17.0 + adaptive 6.0 + interactive 10.0 = 33
+              -> 33 > 20, so class 1:1 is overlimit BY CONSTRUCTION, always
+              -> `overlimits` rises every tick
+              -> saturated = True, forever
+
+        So the controller reported congestion caused by its own shaping, a stale
+        estimate made it permanent, and the capacity-release path could never
+        start. Measured on the host: the link was restored to 100 Mbps and
+        `saturated` stayed True on every tick from t=30 to t=59.5.
+
+        The same argument the module already applies to CHILD overlimits --
+        "a child exceeding its own guarantee is routine and must not be read as
+        congestion" -- applies verbatim to the parent whenever the policy's
+        ceilings sum above it. It simply was not applied.
+
+        WHEN THE BOTTLENECK CAN BE READ, IT DECIDES. Nothing the controller does
+        to its own tree can change a number read off the far side of the link.
+
+        WHEN IT CANNOT BE READ, THE OLD ORDER STANDS. Both telemetry fields are
+        Optional and None means "could not read", which is genuinely
+        distinguishable from "read 0": before `set_capacity` installs the
+        netem qdisc, `tc -s qdisc show` reports `qdisc noqueue` with no backlog
+        line at all, so both fields are None and the parent signals are still
+        the only evidence available. Startup detection at 100 Mbps therefore
+        keeps working, and a missing reading is never read as a clear link.
+        """
+        bb = self.bottleneck_backlog_bytes
+        bd = self.bottleneck_drop_rate_per_s
+        if bb is not None or bd is not None:
+            # The bottleneck is observable, so it decides. Deliberately NOT
+            # combined with the parent: an intentional parent overlimit is not
+            # evidence of anything external.
+            if (bd or 0.0) > 0.0:
+                return True
+            if (bb or 0) > 0:
+                return True
+            return False
+
+        # No external telemetry. Fall back, and stay conservative.
         lo = self.link_overlimit_rate_per_s
         ld = self.link_drop_rate_per_s
         if lo is None and ld is None:
             # The reader cannot see the parent class. Treat as NOT saturated:
-            # assuming saturation would shrink capacity on no evidence.
             return False
         if (ld or 0.0) > 0.0:
             return True
         if (lo or 0.0) >= SAT_OVERLIMIT_MIN:
             return True
-        # The out-of-band bottleneck is dropping: the traffic offered exceeds
-        # what the link will carry, which is saturation, whatever the
-        # controller's own parent class happens to be doing.
-        if (self.bottleneck_drop_rate_per_s or 0.0) > 0.0:
-            return True
-        # ...or the bottleneck simply cannot keep up. This is the common case
-        # for a rate limiter, which delays rather than drops.
-        if (self.bottleneck_backlog_bytes or 0) > 0:
-            return True
-        # A child queue that is not empty means the shaper wanted to send and
-        # could not. Note this is consulted *after* the parent counters, so a
-        # reader that cannot see the parent still refuses to declare saturation
-        # from backlog alone -- assuming saturation without evidence is what
-        # shrank capacity to 7.2 Mbps once.
         return self.child_backlog_bytes >= BACKLOG_MIN_BYTES
 
 
@@ -216,11 +252,17 @@ class CapacityEstimator:
 
     Invariants worth stating, because each one is a bug that was avoided:
 
-    * Saturation is decided by the **parent** class's overlimit *rate*, above a
-      threshold taken from measured runs. Child overlimits are ignored.
-      A child's overlimits mean that child exceeded its own guarantee, which is
-      routine on a lightly loaded link; reading them as congestion shrinks
-      capacity, which shrinks the class rates, which raises them again.
+    * Saturation is decided by the EXTERNAL bottleneck whenever it can be read.
+      Child overlimits are ignored: a child exceeding its own guarantee is
+      routine, and reading it as congestion shrinks capacity, which shrinks the
+      class rates, which raises them again.
+    * The controller's own PARENT overlimit is ignored too, whenever the
+      bottleneck is readable. The differentiated-ceiling policy makes
+      sum(children ceils) > parent rate true BY CONSTRUCTION, so the parent is
+      permanently overlimit and says nothing about the link. Consulting it made
+      a stale estimate self-sustaining and blocked capacity recovery entirely.
+      When the bottleneck cannot be read, the parent signals are used instead --
+      missing telemetry is never treated as a clear link.
 * Never updates from an unsaturated sample. An idle link reports offered
       load, not capacity.
     * Never reports a change smaller than HYSTERESIS.
