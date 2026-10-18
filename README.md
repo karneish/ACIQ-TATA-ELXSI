@@ -35,7 +35,10 @@ to let a user grant a **time-boxed lease** to one device or flow.
 | | |
 |---|---|
 | Testbed gate | **20 PASS + 1 MEASURED**, 0 FAIL — re-run 2026-10-09 against current code |
-| Unit tests | **595 passing**, none requiring root |
+| Unit tests | **1006 passing** unprivileged · 1003 as root, 1 skip (the test that asserts the gate refuses unprivileged) |
+| Lint | `ruff` clean, 0 findings (`./tools/lint.sh`, no root needed) |
+| Scenarios measured | all three from the brief (A, B, C), 7 paired seeds × 3 systems each |
+| Evidence | revision-stamped; `tools/compare.py` emits paired Wilcoxon statistics |
 | Modules built | M1 (classifier), M2 (capacity), M3 (policy), M4 (tc enforcement), M5 (metrics), M6 (harness), M7 (intent API), M8 (dashboard), M9 (shield/rollback), M10 (report) |
 | Modules **not** built | — |
 | Measured runs | [`data/matrix6/`](data/matrix6/) — 54 runs, 6 seeds/config |
@@ -113,34 +116,76 @@ python3 aciqctl dashboard \
 
 ---
 
-## Measured results (v0)
+## Measured results
 
-Frozen before further work. Single seed — see
-[limitations](docs/limitations.md#9-no-aggregation-over-repeated-runs).
+**7 paired seeds, three systems, on a real Linux kernel.** Every figure below is
+reproducible with `sudo tools/host_gate.sh --full`, and every evidence directory
+is stamped with the revision that produced it.
 
-**Scenario 1 — ISO download during a video call** (call latency, ms)
+### Scenario B — WAN capacity drop, 100 → 20 Mbps
 
-| System | p50 | p95 | p99 | loss |
-|---|---|---|---|---|
-| **ACIQ** | **0.207** | 0.899 | 19.422 | 0.000 |
-| `cake` at 95% | 0.244 | **0.711** | **1.494** | 0.000 |
-| `pfifo` | 120.061 | 120.544 | 121.751 | 0.00267 |
+The case the brief names: *"the controller limits the bulk queue and protects
+call latency."*
 
-**Scenario 3 — three TVs streaming plus gaming** (game latency, ms)
-
-| System | p50 | p95 | p99 |
+| median of 7 seeds | FIFO | CAKE95 | **ACIQ** |
 |---|---|---|---|
-| **ACIQ** | 0.393 | **0.546** | **0.785** |
-| `cake` at 95% | **0.277** | 0.710 | 1.425 |
-| `pfifo` | 0.302 | 33.475 | 33.618 |
+| **p50 latency** | 83.13 ms | 82.18 ms | **1.22 ms** |
+| p95 latency | 92.84 ms | 92.60 ms | **65.11 ms** |
+| jitter | 0.89 ms | 0.88 ms | **0.71 ms** |
+| loss | 0.45% | 0.30% | **0.00%** |
 
-**Read honestly.** ACIQ wins s1 p50 and removes the `pfifo` bufferbloat
-(120 ms → 0.2 ms). It **loses** s1 p95 and p99 to `cake`, and **loses** s3 p50 to
-both baselines. The 19.4 ms p99 against cake's 1.5 ms is unexplained.
+Paired Wilcoxon, exact, by seed: **8 of 10 comparisons reach p < 0.05.**
+**p99 does not** (p = 0.4688 against FIFO, 0.0781 against CAKE).
 
-The capacity estimator works: **100.49 Mbps measured against a 100 Mbps
-shaper**, 0.5% error, from counters alone, with no probe and no access to the
-configured rate.
+### Scenario A — ISO download during a video call
+
+| median of 7 seeds | FIFO | CAKE95 | **ACIQ** |
+|---|---|---|---|
+| p50 | 102.831 ms | 0.259 ms | 0.266 ms |
+| p95 | 119.531 ms | 0.407 ms | **0.368 ms** |
+| jitter | 0.581 ms | 0.076 ms | **0.057 ms** |
+
+**7 of 9 significant.** ACIQ beats FIFO on every metric at p = 0.0156. It beats
+CAKE on p95 and jitter — but **not on median latency** (p = 0.5000) or p99
+(p = 0.4688). On this scenario CAKE solves the problem about as well as ACIQ
+does, and the statistics say so rather than being asked to.
+
+### Scenario C — three TVs streaming plus gaming
+
+| median of 7 seeds | FIFO | CAKE95 | **ACIQ** |
+|---|---|---|---|
+| p50 | 0.475 ms | 0.473 ms | **0.457 ms** |
+| p95 | 2.555 ms | 0.608 ms | **0.553 ms** |
+| jitter | 0.542 ms | 0.109 ms | **0.100 ms** |
+
+Small margins, as expected on a free link: a scheduler cannot help when there is
+nothing to schedule.
+
+### The honest summary
+
+| claim | status |
+|---|---|
+| Beats FIFO on every metric, every scenario | **YES**, p = 0.0156 |
+| Beats CAKE at the **median** under a capacity drop | **YES**, p = 0.0156 |
+| Beats CAKE on scenario A median | **NO** — p = 0.5000 |
+| Beats CAKE or FIFO on **p99** anywhere | **NOT ESTABLISHED** — no scenario reaches p < 0.05 |
+
+**Read that fourth row before quoting this project.** The median advantage is
+large and reproducible. The advantage on the worst call in a run is not
+established. Reporting only the first is the failure this project's own
+verification harness exists to catch.
+
+### Supporting measurements
+
+| | |
+|---|---|
+| Capacity estimator, true 20 Mbps | 20.21–20.86 Mbps, 1 policy application per change |
+| Convergence after a 5× drop | 1 tick (≈1 s) |
+| Policy leaves headroom | 17.30 of 20 Mbps (86%), 14% reserved |
+| Controller CPU cost | 0.0049 of a core median, 0.0052 peak |
+| Per-flow fairness | two flows in one class within ~1% |
+| Rollback under real `tc` failure | 6 / 6 |
+| Sustained stability | 1851 s, 8 policy changes |
 
 ---
 
@@ -148,7 +193,8 @@ configured rate.
 
 ```bash
 # no root needed
-python3 -m unittest discover -s tests       # 260 tests
+python3 -m unittest discover -s tests -t . # 1006 tests (12 live-kernel
+                                               # ones skip without root)
 python3 testbed/workloads/selftest.py      # generator self-checks
 
 # needs root
@@ -230,7 +276,8 @@ aciq/            the system
   harness.py     M6   closed loop, baselines, capacity variants
   experiment.py  M6   run sequencing, artefacts
   report.py      M10  Markdown report, honest verdicts per percentile
-tests/           260 tests, none requiring root
+tests/           1006 tests. The live-kernel ones (12) need root and skip
+                 without it; the rest run as any user.
 testbed/
   setup.sh       namespaces, veth, IPv4+IPv6, offloads off
   gate.sh        14 checks, stops at first failure
