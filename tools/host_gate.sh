@@ -38,7 +38,26 @@ REV="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 # evidence can never be silently combined with a report for a different commit.
 stamp() { mkdir -p "$1" && git rev-parse HEAD > "$1/REVISION" 2>/dev/null || true; }
 OUT="artifacts/validation/${REV}/host"
-mkdir -p "$OUT" || exit 1
+
+# Privilege is checked BEFORE anything is created.
+#
+# This used to `mkdir -p "$OUT" || exit 1` first, which meant an unprivileged
+# run created (or tried to create) a directory and then reported "Nothing has
+# been changed" -- and, when a previous root run had left the tree owned by
+# root, it died on a raw `mkdir: Permission denied` instead of ever reaching the
+# refusal message. So the script changed the filesystem on the path where it
+# promises it changes nothing, and the error a user saw was the one they least
+# needed.
+#
+# The test that catches this is
+# test_it_refuses_without_root_and_changes_nothing -- which was silently
+# discarded for the life of the file by a duplicate class definition, so
+# neither the bug nor the fix was ever exercised. See TestNoSilentlyLostTests.
+if [ "$(id -u)" -ne 0 ]; then
+  echo "ACIQ host gate must run under sudo: it configures network namespaces." >&2
+  echo "Nothing has been changed." >&2
+  exit 1
+fi
 
 CHECK_ONLY=0
 FULL=0
@@ -77,12 +96,9 @@ log ""
 log "-- prerequisites --"
 MISSING=()
 MISSING_ROOT=0
-if [ "$(id -u)" -ne 0 ]; then
-  log "  [FAIL] euid=$(id -u); this script must run under sudo"
-  MISSING_ROOT=1
-else
-  log "  [ok ] root"
-fi
+# Root was already required above, before anything was created. Re-asserting it
+# here is harmless but the `else` branch was dead code.
+log "  [ok ] root"
 
 for t in ip tc iperf3; do
   if command -v "$t" >/dev/null 2>&1; then

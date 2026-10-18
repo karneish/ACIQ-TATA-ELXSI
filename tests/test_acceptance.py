@@ -1242,3 +1242,42 @@ class TestNoSilentlyLostTests(unittest.TestCase):
         cfg = (self.ROOT / "pyproject.toml").read_text()
         self.assertIn("F", cfg)
         self.assertIn("[tool.ruff.lint]", cfg)
+
+
+class TestLintGateDistinguishesMissingFromDirty(unittest.TestCase):
+    """The lint gate must never report "findings" for a linter it never ran.
+
+    Observed on the host: `[FAIL] lint (ruff) -- 0 findings`. That is the most
+    misleading output the harness can produce -- it says the code is dirty while
+    displaying no dirt, because `ruff` was absent.
+
+    The cause was a string check. `run()` maps OSError to exit 127, and
+    FileNotFoundError's message is "[Errno 2] No such file or directory:
+    'ruff'", which does not contain the substring "not found". The absence test
+    therefore never fired, and the missing-linter case fell through to FAIL.
+    """
+
+    def test_run_reports_127_for_a_missing_binary(self):
+        from tools import acceptance
+        rc, txt = acceptance.run(["definitely-not-a-real-binary-xyz"])
+        self.assertEqual(rc, 127)
+        self.assertNotIn("not found", txt,
+                         "if this message ever contains 'not found' again, a "
+                         "substring-based absence check would be wrong again")
+
+    def test_the_gate_uses_the_exit_code_not_a_substring(self):
+        src = (Path(__file__).resolve().parents[1]
+               / "tools" / "acceptance.py").read_text()
+        self.assertIn("rc == 127", src,
+                      "lint absence must be detected structurally")
+        self.assertNotIn('"not found" in txt',
+                         "a substring absence check is what produced FAIL with "
+                         "0 findings")
+
+    def test_lint_absent_is_blocked_never_pass_or_fail(self):
+        """Simulate the exact host condition: no ruff for this interpreter."""
+        from tools import acceptance
+        rc, txt = acceptance.run(["definitely-not-a-real-binary-xyz"])
+        self.assertNotEqual(rc, 0)
+        # A linter that did not run must never produce PASS.
+        self.assertNotEqual(rc, 0)

@@ -762,14 +762,29 @@ def main() -> int:
     # BLOCKED even though the linter is installed and working. That is what
     # happened on the host. Both invocation styles are tried so the gate
     # reports the truth about the CODE rather than about whose PATH was used.
+    #
+    # `run()` maps an OSError to exit 127, and FileNotFoundError's message is
+    # "[Errno 2] No such file or directory: 'ruff'" -- which does NOT contain
+    # the string "not found". The first version of this check tested for
+    # "not found", so a missing `ruff` binary on PATH fell through and the gate
+    # reported FAIL with "0 findings", which is the most misleading possible
+    # outcome: it says the code is dirty with no findings to show for it.
+    #
+    # The absence is now detected structurally -- exit 127 means the
+    # interpreter or the binary does not exist, as opposed to exit 1 meaning
+    # ruff ran and found something.
     attempts = ([sys.executable, "-m", "ruff", "check", "."], ["ruff", "check", "."])
-    txt = ""
+    rc, txt = 127, ""
     for argv in attempts:
         rc, txt = run(argv)
-        if "No module named ruff" not in txt and "not found" not in txt:
+        # "No module named ruff" is a successful interpreter that lacks the
+        # package; 127 means the binary itself is absent.
+        if "No module named ruff" not in txt and rc != 127:
             break
     (outdir / "ruff.log").write_text(txt)
-    if "No module named ruff" in txt or "not found" in txt or "can't open file" in txt:
+    missing = (rc == 127 or "No module named ruff" in txt
+               or "can't open file" in txt)
+    if missing:
         record("lint (ruff)", BLOCKED,
                "ruff not importable by THIS interpreter. Lint needs no root, so "
                "either run it directly -- python3 -m ruff check . -- or install "
