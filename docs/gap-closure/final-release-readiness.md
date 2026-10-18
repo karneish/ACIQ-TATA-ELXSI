@@ -352,75 +352,76 @@ still unmeasured, and this environment is not where that can be found out.
 | # | Evaluation criterion | Status | Evidence |
 |---|---|---|---|
 | 21 | Classification + estimation accuracy | **PASS** | 15/16 cases; estimator 20.57 vs a true 20 Mbps |
-| 22 | Reduce interactive latency, jitter, loss | **PASS (median)** | p50 **1.24 ms** vs ~81 ms, 7/7 paired; loss 0.10% vs 0.35-0.50% |
+| 22 | Reduce interactive latency, jitter, loss | **PASS** | p50 **1.22 ms** vs ~83 ms; loss 0.00% vs 0.30-0.45%; all 7/7 paired |
 | 23 | Fairness, absence of starvation | **PASS** | per-flow within ~1%; class floors; 1851 s soak |
-| 24 | Adaptation speed + policy stability | **PASS, with a measured cost** | detection ~1 s; full per-flow convergence 3.3-5.4 s, which is where the residual p95 tail lives |
+| 24 | Adaptation speed + policy stability | **PASS** | a 5x capacity step is adopted in **one** tick and **one** policy application; convergence window down from 5.4 s to ~3 s, inside the tail gate |
 | 25 | CPU overhead, reproducibility, clarity | **PASS** | 0.0049 of a core median, 0.0052 peak over 1851 s, bound 0.02; revision-stamped evidence |
 
-### Congested comparison, final (revision 26be63fd)
+### Congested comparison, final (revision ce53da12)
 
-The offered-load fix closed the tail's root cause. Before and after, same
-scenario, ACIQ only:
+All gates pass on evidence produced by this revision. Three defects were found
+and fixed in sequence, each by a gate that had been written to fail first:
 
-| | seed 42 before | seed 42 after |
+| | seed 42 at the first measurement | now |
 |---|---|---|
-| estimator | 22.39 | **20.20** |
-| steady goodput | 19.98 Mbps | **17.29 Mbps** |
-| headroom | 0% | **14%** |
-| netem backlog | fills | **1 packet** |
-| slow packets (>5 ms) | 45.1% | **3.0%** |
+| estimator | 22.39 (offered load) | **20.21** |
+| steady goodput | 19.98 Mbps — link saturated | **17.30 Mbps — 14% headroom** |
+| policy applications | 5 | **1** |
+| p95 | 70.8 ms | **65.1 ms** |
+| slow packets (>5 ms) | 45.1% | **3.0%** (worst seed 8.3%) |
 
-All 7 seeds, after the fix:
+Median of 7 paired seeds, `--enforce` on, steering verified in every run:
 
-| | seed42 | 43 | 44 | 45 | 46 | 47 | 48 |
-|---|---|---|---|---|---|---|---|
-| estimator | 20.20 | 20.64 | 20.98 | 20.72 | 20.76 | 20.75 | 20.66 |
-| goodput | 17.29 | 17.66 | 17.95 | 17.73 | 17.76 | 17.76 | 17.68 |
-| headroom | 14% | 12% | 10% | 11% | 11% | 11% | 12% |
+| | FIFO | CAKE95 | **ACIQ** |
+|---|---|---|---|
+| **p50 latency** | 83.13 ms | 82.18 ms | **1.22 ms** |
+| p95 latency | 92.84 ms | 92.60 ms | **65.11 ms** |
+| p99 latency | 99.56 ms | 103.72 ms | 97.87 ms |
+| jitter | 0.89 ms | 0.88 ms | **0.71 ms** |
+| loss | 0.45% | 0.30% | **0.00%** |
 
-Against a true 20 Mbps link, and with the two gates that would have caught the
-defect now reading:
+ACIQ better than FIFO: p50 **7/7**, p95 **7/7**, loss **7/7**.
+ACIQ better than CAKE: p95 **7/7**.
+
+The gates, reading this evidence:
 
     [PASS] policy leaves headroom
-           steady goodput 17.29 of 20.0 Mbps (86%), leaving 14% headroom
+           steady goodput 17.30 of 20.0 Mbps (86%), leaving 14% headroom
+    [PASS] interactive latency tail
+           slowest 8.3% of packets sit in a 3s adaptation transient (limit 10%)
 
-| median of 7 seeds | FIFO | CAKE95 | **ACIQ** |
-|---|---|---|---|
-| **p50 latency** | 82.91 ms | 79.83 ms | **1.24 ms** |
-| p95 latency | 92.12 ms | 92.72 ms | **71.52 ms** |
-| p99 latency | 99.62 ms | 105.07 ms | 100.64 ms |
-| loss | 0.50% | 0.35% | **0.10%** |
+### What the three fixes were
 
-ACIQ better p50 than FIFO **7/7**, better p95 than FIFO **7/7**, better p95
-than CAKE **7/7**.
+1. **The probe measured its own sleep.** It slept until the next send and
+   drained replies only on the send tick, so with a round trip longer than
+   `DRAIN_TIMEOUT_S` (1.2 ms vs 0.5 ms) every RTT carried a full 20 ms pacing
+   interval. Values came out as exact multiples — 80.126, 100.265 — and FIFO,
+   CAKE and ACIQ agreed to 0.01 ms, because all three were reporting the same
+   sleep.
 
-### The tail: 5 of 7 seeds pass, 2 fail, and the reason is measured
+2. **The ceiling never reached the kernel.** `build_plan` computed a 17 Mbps
+   bulk ceiling and `build_tree` discarded it with `ceil_mbps=min(cap, cap)`.
+   Every test on the policy still passed.
 
-The `interactive latency tail` gate takes the **worst** seed, not the aggregate.
-Aggregate is 8.99%, under the 10% limit. Per seed:
+3. **The estimator read offered load.** `goodput_mbps` was `rx_bytes` on
+   `veth-lan`, upstream of the netem bottleneck, so packets the bottleneck later
+   dropped were already counted. The 12% over-read became a 12% larger bulk
+   share, which saturated the link.
 
-| seed | slow (>5 ms) | window |
-|---|---|---|
-| 42 | 3.0% | t=6.2-7.4 s |
-| 43, 48 | 8.2% | t=0.0-3.3 s |
-| 44, 45 | 8.2% | t=0.0-39.4 s |
-| **46, 47** | **13.6%** | t=0.0-5.4 s |
+Fixing (3) exposed (4): the estimator then took six EWMA ticks — 52, 33, 25,
+22, 21, 20 — to walk 100 Mbps down to a true 20, which is the 5.4 s convergence
+measured on the host and the source of the residual tail. A 5x change is a step,
+not noise, so it is now adopted outright.
 
-The slow packets are the **convergence window**, not a shaping defect. Each
-scenario runs a 4 s settle with measurement off; bulk then starts, and the
-controller takes **3.3 s (best) to 5.4 s (worst)** to classify and steer. At
-50 pps that is 8.2% of a 40 s run -- exactly the figure observed.
+### Honest residual
 
-The worst seeds sit at 5.4 s, which is one `MIN_DWELL_S` (5.0 s) away: the dwell
-between capacity-driven policy changes, there to stop the controller flapping.
-So this is a genuine adaptation-speed-versus-stability trade-off, and it is the
-same quantity the brief grades as **"adaptation speed and policy stability"** --
-not an unexplained anomaly. Both numbers are reported rather than one.
+ACIQ's p95 is 65 ms while its p50 is 1.22 ms. The remaining slow packets sit in
+a **3 s window at the start of each run**, after the settle phase ends and bulk
+begins, while the controller classifies and steers. That is adaptation latency,
+not queueing behaviour, and the gate names it rather than hiding it. Under a
+sustained load with no capacity change — the 30-minute soak — the tail does not
+recur.
 
-Tuning `TAIL_MAX_FRACTION` above 13.6% would turn the gate green immediately. It
-has been left at 10%, so the gate continues to report the two slow seeds as a
-failure until adaptation is either faster or the trade-off is explicitly
-accepted.
 ### Light-load comparison (re-measured, revision fc65349e)
 
 7 paired seeds, `--enforce` on, steering verified in every run.
