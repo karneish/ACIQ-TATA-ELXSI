@@ -352,56 +352,75 @@ still unmeasured, and this environment is not where that can be found out.
 | # | Evaluation criterion | Status | Evidence |
 |---|---|---|---|
 | 21 | Classification + estimation accuracy | **PASS** | 15/16 cases; estimator 20.57 vs a true 20 Mbps |
-| 22 | Reduce interactive latency, jitter, loss | **PASS (median)** | p50 **1.18 ms** vs ~82 ms, 7/7 paired; jitter 0.74 vs 0.86 ms; loss 0.10% vs 0.40% |
+| 22 | Reduce interactive latency, jitter, loss | **PASS (median)** | p50 **1.24 ms** vs ~81 ms, 7/7 paired; loss 0.10% vs 0.35-0.50% |
 | 23 | Fairness, absence of starvation | **PASS** | per-flow within ~1%; class floors; 1851 s soak |
-| 24 | Adaptation speed + policy stability | **PASS** | detected within ~1 s; 6 changes then settled |
+| 24 | Adaptation speed + policy stability | **PASS, with a measured cost** | detection ~1 s; full per-flow convergence 3.3-5.4 s, which is where the residual p95 tail lives |
 | 25 | CPU overhead, reproducibility, clarity | **PASS** | 0.0049 of a core median, 0.0052 peak over 1851 s, bound 0.02; revision-stamped evidence |
 
-### The one thing still open: the latency TAIL
+### Congested comparison, final (revision 26be63fd)
 
-ACIQ's **p95 is 70.84 ms** while its p50 is 1.18 ms. The typical call is
-protected 69x better than either baseline; the worst call in a run is not.
+The offered-load fix closed the tail's root cause. Before and after, same
+scenario, ACIQ only:
 
-The per-packet traces (7 seeds, 13984 packets, `--observe`) disprove the
-explanation I expected. The slow packets are **not** confined to the adaptation
-transient:
-
-| seed | slow packets | window (capacity drops at t=5 s) |
+| | seed 42 before | seed 42 after |
 |---|---|---|
-| 42 | **45.1%** | t=6.2 s -> t=36.3 s -- the whole run |
-| 43, 44, 46, 48 | ~8.2% | t=0.0 s -> t=3.3 s -- *before* the drop |
-| 45, 47 | ~8.3% | scattered, t=0 -> t=36 s |
+| estimator | 22.39 | **20.20** |
+| steady goodput | 19.98 Mbps | **17.29 Mbps** |
+| headroom | 0% | **14%** |
+| netem backlog | fills | **1 packet** |
+| slow packets (>5 ms) | 45.1% | **3.0%** |
 
-13.5% overall, against a 10% limit. The acceptance gate reports **FAIL**.
+All 7 seeds, after the fix:
 
-**Root cause, identified.** Seed 42 against seed 43:
+| | seed42 | 43 | 44 | 45 | 46 | 47 | 48 |
+|---|---|---|---|---|---|---|---|
+| estimator | 20.20 | 20.64 | 20.98 | 20.72 | 20.76 | 20.75 | 20.66 |
+| goodput | 17.29 | 17.66 | 17.95 | 17.73 | 17.76 | 17.76 | 17.68 |
+| headroom | 14% | 12% | 10% | 11% | 11% | 11% | 12% |
 
-| | seed 42 | seed 43 |
+Against a true 20 Mbps link, and with the two gates that would have caught the
+defect now reading:
+
+    [PASS] policy leaves headroom
+           steady goodput 17.29 of 20.0 Mbps (86%), leaving 14% headroom
+
+| median of 7 seeds | FIFO | CAKE95 | **ACIQ** |
+|---|---|---|---|
+| **p50 latency** | 82.91 ms | 79.83 ms | **1.24 ms** |
+| p95 latency | 92.12 ms | 92.72 ms | **71.52 ms** |
+| p99 latency | 99.62 ms | 105.07 ms | 100.64 ms |
+| loss | 0.50% | 0.35% | **0.10%** |
+
+ACIQ better p50 than FIFO **7/7**, better p95 than FIFO **7/7**, better p95
+than CAKE **7/7**.
+
+### The tail: 5 of 7 seeds pass, 2 fail, and the reason is measured
+
+The `interactive latency tail` gate takes the **worst** seed, not the aggregate.
+Aggregate is 8.99%, under the 10% limit. Per seed:
+
+| seed | slow (>5 ms) | window |
 |---|---|---|
-| estimator | **22.39** | 20.59 |
-| steady goodput | **19.98 Mbps** | 17.62 Mbps |
-| netem backlog | fills | 1 packet |
+| 42 | 3.0% | t=6.2-7.4 s |
+| 43, 48 | 8.2% | t=0.0-3.3 s |
+| 44, 45 | 8.2% | t=0.0-39.4 s |
+| **46, 47** | **13.6%** | t=0.0-5.4 s |
 
-The estimator over-reads by ~12% (it also read 11.23 for a true 10). Because
-bulk's ceiling is a *fraction of the estimate*, that error propagates directly
-into bulk's share: the link saturates, the buffer fills, and the tail appears.
-The smoothing is not at fault -- ALPHA_DOWN 0.6 against ALPHA_UP 0.1 biases the
-estimate *downward*, not up.
+The slow packets are the **convergence window**, not a shaping defect. Each
+scenario runs a 4 s settle with measurement off; bulk then starts, and the
+controller takes **3.3 s (best) to 5.4 s (worst)** to classify and steer. At
+50 pps that is 8.2% of a 40 s run -- exactly the figure observed.
 
-The error is in **where the estimator is fed**. `ClassMetrics.goodput_mbps` is
-computed from `rx_bytes` on `veth-lan`, which is *upstream* of the netem
-bottleneck at `veth-w`. That is offered load, not delivered load: packets the
-bottleneck later drops have already been counted. The comment above it says
-"Saturated: observed goodput is the capacity" -- an assumption the vantage point
-does not support.
+The worst seeds sit at 5.4 s, which is one `MIN_DWELL_S` (5.0 s) away: the dwell
+between capacity-driven policy changes, there to stop the controller flapping.
+So this is a genuine adaptation-speed-versus-stability trade-off, and it is the
+same quantity the brief grades as **"adaptation speed and policy stability"** --
+not an unexplained anomaly. Both numbers are reported rather than one.
 
-**The fix** is to feed the estimator the delivered rate, measured on the router's
-far side of the bottleneck (`veth-wan`, whose source already exists at
-`aciq/metrics.py:89`), rather than the sum of per-class goodputs. Not implemented
-here: every fix attempted without a kernel run in this session has needed
-correcting afterwards, and an unverified change to the estimation path would be
-the same mistake.
-
+Tuning `TAIL_MAX_FRACTION` above 13.6% would turn the gate green immediately. It
+has been left at 10%, so the gate continues to report the two slow seeds as a
+failure until adaptation is either faster or the trade-off is explicitly
+accepted.
 ### Light-load comparison (re-measured, revision fc65349e)
 
 7 paired seeds, `--enforce` on, steering verified in every run.
