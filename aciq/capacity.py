@@ -64,11 +64,6 @@ IDLE_STREAK_RELEASE = 10
 #: under-shaping while a wrong collapse costs a sustained one.
 RELEASE_ALPHA = 0.2
 
-#: Unsaturated delivered throughput must exceed the current estimate by this
-#: factor before a release is considered evidence. Well above 1.0 so a burst or
-#: a measurement wobble cannot be mistaken for a larger link.
-RELEASE_EVIDENCE_RATIO = 1.5
-
 #: Below this fraction of the current estimate, a reading is treated as a STEP
 #: change and adopted outright rather than smoothed.
 #:
@@ -262,6 +257,11 @@ class CapacityEstimator:
                               saturated=False, changed=False, m=m)
 
         self._sat_streak += 1
+        # Reset here. It measures SUSTAINED non-congestion, so a single
+        # congested sample has to clear it -- otherwise it just accumulates
+        # across a whole run and means nothing. This was missed when the
+        # mechanism was first written.
+        self._idle_streak = 0
         if self._sat_streak < SAT_STREAK_REQUIRED:
             # One burst is not a reading.
             return self._emit(mbps=self._ewma, saturated=True, changed=False, m=m)
@@ -341,21 +341,31 @@ class CapacityEstimator:
         if self._ewma >= self._high_water:
             self._high_water = self._ewma
             return self._ewma
-        # POSITIVE evidence that the link is bigger, not merely absence of
-        # evidence that it is smaller.
+        # WHY THERE IS NO THROUGHPUT TEST HERE
         #
-        # The first version released on any sustained non-saturation and the
-        # existing suite caught it immediately: capacity wobbled upward at
-        # t=27.66 on the way down. A lull between bursts is not a recovery, and
-        # treating it as one re-introduces exactly the oscillation this module
-        # exists to prevent.
+        # An earlier version required delivered goodput to exceed the estimate
+        # by 1.5x before releasing, reasoning that you cannot deliver more than
+        # the link has. On the host that condition was never satisfiable: after
+        # recovery the link was 100 Mbps, bulk's ceiling was 17, so delivered
+        # throughput was 17.3 -- below the 30 Mbps the condition demanded.
         #
-        # Throughput exceeding the current estimate on an unsaturated link is
-        # real evidence of a larger link -- you cannot deliver more than the
-        # estimate says exists. That is a claim about the measurement, not an
-        # inference from its absence.
-        if m.goodput_mbps < self._ewma * RELEASE_EVIDENCE_RATIO:
-            return self._ewma
+        # The controller throttles ITSELF below the link, so it can never
+        # observe throughput exceeding its own estimate. Passive observation
+        # cannot distinguish "this link is 20 Mbps" from "this link is 100 Mbps
+        # and we are only sending 17". That is information the measurement does
+        # not contain, so demanding it is demanding the impossible.
+        #
+        # THE ASYMMETRY INSTEAD
+        #
+        # Rising is slow (RELEASE_ALPHA, after IDLE_STREAK_RELEASE seconds of
+        # sustained non-congestion) and falling is fast (FAST_DROP_RATIO adopts
+        # a step in ONE tick). So an incorrect release is self-correcting: the
+        # moment it over-sends, the link saturates and the estimate snaps back
+        # down immediately. The cost of being wrong is bounded by one tick of
+        # over-shaping; the cost of never releasing is a user throttled forever.
+        #
+        # The dwell window and HYSTERESIS still apply, so this obeys the same
+        # anti-oscillation rules as every other change.
         target = min(self._high_water,
                      self._ewma + RELEASE_ALPHA * (self._high_water - self._ewma))
         if target <= self._ewma:

@@ -174,23 +174,66 @@ class TestCapacityCanRecover(unittest.TestCase):
                              "the release invented capacity above anything "
                              "ever observed")
 
-    def test_a_lull_is_not_taken_as_a_recovery(self):
-        """The first version released on any lull, and the estimate wobbled
-        upward on the way down. A burst below the ratio is not evidence."""
+    def test_a_brief_lull_does_not_release(self):
+        """A burst-sized gap between congested samples must not undo a drop.
+
+        This is the anti-oscillation property that matters. Sustained
+        non-congestion IS grounds for release now -- the controller throttles
+        itself below the link, so throughput evidence is unreachable -- but only
+        after IDLE_STREAK_RELEASE samples of it. A short gap must not qualify,
+        or the recorded-run suite wobbles upward on the way down.
+        """
+        from aciq.capacity import IDLE_STREAK_RELEASE
         e = CapacityEstimator()
-        self._drop_then_recover(e)
+        t = self._drop_then_recover(e)
         before = e.current.mbps
-        t = 100.0
-        for _ in range(30):
+        for _ in range(IDLE_STREAK_RELEASE - 3):
             e.observe(Measurement(t=t, goodput_mbps=12.0,
                                   bottleneck_backlog_bytes=0,
                                   link_overlimit_rate_per_s=0.0))
             t += 1.0
         self.assertAlmostEqual(
             e.current.mbps, before, delta=0.5,
-            msg="a quiet link was mistaken for a recovered one")
+            msg="a lull shorter than IDLE_STREAK_RELEASE triggered a release")
 
-    def test_release_requires_positive_evidence(self):
-        """Throughput below the estimate can never raise it."""
-        from aciq.capacity import RELEASE_EVIDENCE_RATIO
-        self.assertGreater(RELEASE_EVIDENCE_RATIO, 1.2)
+    def test_an_incorrect_release_self_corrects(self):
+        """The whole safety argument: rising is slow, falling is fast.
+
+        A release that turns out to be wrong must not persist. One saturated
+        sample at a low throughput has to collapse the estimate again, because
+        that is what makes bounded optimism acceptable here at all.
+        """
+        e = CapacityEstimator()
+        t = self._drop_then_recover(e)
+        for _ in range(60):
+            e.observe(Measurement(t=t, goodput_mbps=70.0,
+                                  bottleneck_backlog_bytes=0,
+                                  link_overlimit_rate_per_s=0.0))
+            t += 1.0
+        self.assertGreater(e.current.mbps, 40.0, "precondition: it released")
+        # The link was never that wide after all.
+        for _ in range(6):
+            e.observe(Measurement(t=t, goodput_mbps=20.0,
+                                  bottleneck_backlog_bytes=0,
+                                  link_overlimit_rate_per_s=9000.0))
+            t += 1.0
+        self.assertLess(e.current.mbps, 40.0,
+                        "an incorrect release did not self-correct")
+
+    def test_an_idle_run_never_exceeds_the_high_water_mark(self):
+        """The release is bounded above by what was actually observed."""
+        e = CapacityEstimator()
+        t = self._drop_then_recover(e)
+        for _ in range(300):
+            e.observe(Measurement(t=t, goodput_mbps=0.0,
+                                  bottleneck_backlog_bytes=0,
+                                  link_overlimit_rate_per_s=0.0))
+            t += 1.0
+        self.assertLessEqual(e.current.mbps, 100.0 + 1e-6)
+
+    def test_release_is_bounded_because_falling_is_fast(self):
+        """An incorrect release must be self-correcting, not sticky."""
+        from aciq.capacity import FAST_DROP_RATIO, RELEASE_ALPHA
+        self.assertGreater(FAST_DROP_RATIO, RELEASE_ALPHA,
+                           "rising must be slower than falling, or a bad "
+                           "release would persist instead of self-correcting")
