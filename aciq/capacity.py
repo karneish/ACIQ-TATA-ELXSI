@@ -53,6 +53,26 @@ from dataclasses import dataclass, field
 ALPHA_DOWN = 0.6
 ALPHA_UP = 0.1
 
+#: Below this fraction of the current estimate, a reading is treated as a STEP
+#: change and adopted outright rather than smoothed.
+#:
+#: Measured, not assumed. With ALPHA_DOWN 0.6 the EWMA needs six ticks to walk a
+#: 100 Mbps estimate down to a true 20 -- 52, 32.8, 25.1, 22.1, 20.8, 20.3 --
+#: which is the 5.4 s convergence measured on the host and the source of the
+#: residual latency tail: the controller keeps serving the old, too-large
+#: capacity for that whole window.
+#:
+#: Smoothing is right for noise and wrong for a step. A 5x change is not noise,
+#: and `SAT_STREAK_REQUIRED` already demands two consecutive saturated readings
+#: before any of this is believed, so the snap is not acting on a single sample.
+#:
+#: 0.5, not 0.7. At 0.7 the snap also fired on ordinary dips and the replayed
+#: 100 -> 10 trace converged to 8.61 Mbps against a 10 Mbps link -- a 14%
+#: undershoot, uncomfortably close to the 7.2 Mbps death-spiral this module
+#: exists to prevent. Half is the line between "the link changed" and "this
+#: sample is low", which is the distinction that matters.
+FAST_DROP_RATIO = 0.5
+
 #: Ignore changes smaller than this fraction. Stops the estimator chasing noise.
 HYSTERESIS = 0.10
 
@@ -234,6 +254,10 @@ class CapacityEstimator:
             new = target
         else:
             alpha = ALPHA_UP if target > self._ewma else ALPHA_DOWN
+            if target <= self._ewma * FAST_DROP_RATIO:
+                # A step, not noise: take the reading as the new capacity and
+                # let the normal smoothing resume from there.
+                alpha = 1.0
             new = self._ewma + alpha * (target - self._ewma)
 
         # Hysteresis: below the band, do not move at all.
