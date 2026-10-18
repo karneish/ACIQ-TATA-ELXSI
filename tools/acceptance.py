@@ -754,11 +754,26 @@ def main() -> int:
     # a PASS: an environment where the linter cannot run must not read as an
     # environment where the code is clean.
     print("\nphase 6b: static analysis")
-    rc, txt = run([sys.executable, "-m", "ruff", "check", "."])
+    # `python3 -m ruff` first, then a bare `ruff` on PATH.
+    #
+    # Under sudo these differ. `pip install --user ruff` puts it in the
+    # invoking user's site-packages, which `sudo python3` does not see -- so
+    # `python3 -m ruff` reports "No module named ruff" and the gate goes
+    # BLOCKED even though the linter is installed and working. That is what
+    # happened on the host. Both invocation styles are tried so the gate
+    # reports the truth about the CODE rather than about whose PATH was used.
+    attempts = ([sys.executable, "-m", "ruff", "check", "."], ["ruff", "check", "."])
+    txt = ""
+    for argv in attempts:
+        rc, txt = run(argv)
+        if "No module named ruff" not in txt and "not found" not in txt:
+            break
     (outdir / "ruff.log").write_text(txt)
-    if "No module named ruff" in txt or "can't open file" in txt:
+    if "No module named ruff" in txt or "not found" in txt or "can't open file" in txt:
         record("lint (ruff)", BLOCKED,
-               "ruff not installed; pip install ruff")
+               "ruff not importable by THIS interpreter. Lint needs no root, so "
+               "either run it directly -- python3 -m ruff check . -- or install "
+               "it for the invoking account: sudo python3 -m pip install ruff")
     elif rc == 0:
         record("lint (ruff)", PASS, "no findings")
     else:

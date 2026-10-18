@@ -39,6 +39,7 @@ from aciq.report import compare_report  # noqa: E402
 GATES = {
     "congested": "host_gate_congested",
     "light": "host_gate",
+    "s1": "host_gate_s1",
 }
 SYSTEMS = ("aciq", "b0_fifo", "b1_cake95")
 
@@ -54,18 +55,22 @@ def main() -> int:
                     help="compare on a dropped 20 Mbps link (s2_wan_drop)")
     ap.add_argument("--light", action="store_true",
                     help="compare at 100 Mbps (s3_tv_and_gaming)")
+    ap.add_argument("--s1", action="store_true",
+                    help="scenario A: ISO download during a call "
+                         "(s1_iso_during_call)")
     ap.add_argument("--out", default=str(ROOT / "data" / "COMPARISON.md"))
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args()
 
-    if not (a.congested or a.light):
-        ap.error("choose at least one of --congested / --light")
+    if not (a.congested or a.light or a.s1):
+        ap.error("choose at least one of --congested / --light / --s1")
 
     chunks = []
-    for gate, title in (("congested", "Congested link (100 -> 20 Mbps)"),
-                        ("light", "Light load (100 Mbps)")):
-        if not (a.congested and gate == "congested") and \
-           not (a.light and gate == "light"):
+    chosen = {"congested": a.congested, "light": a.light, "s1": a.s1}
+    for gate, title in (("s1", "Scenario A - ISO download during a call"),
+                        ("congested", "Scenario B - WAN drop 100 -> 20 Mbps"),
+                        ("light", "Scenario C - three TVs plus gaming")):
+        if not chosen.get(gate):
             continue
         dirs = dirs_for(gate)
         present = {k: v for k, v in dirs.items() if v.exists()}
