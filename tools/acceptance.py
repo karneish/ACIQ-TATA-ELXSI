@@ -785,10 +785,36 @@ def main() -> int:
     missing = (rc == 127 or "No module named ruff" in txt
                or "can't open file" in txt)
     if missing:
-        record("lint (ruff)", BLOCKED,
-               "ruff not importable by THIS interpreter. Lint needs no root, so "
-               "either run it directly -- python3 -m ruff check . -- or install "
-               "it for the invoking account: sudo python3 -m pip install ruff")
+        # Ruff cannot run here. Before calling that BLOCKED, look for evidence
+        # that it DID run for this revision -- the same revision-stamped
+        # judgement every other gate makes. tools/lint.sh writes that record.
+        #
+        # /usr/bin/python3 on this host has no pip, so a sudo'd harness can
+        # never install or import ruff, and would report BLOCKED forever on a
+        # machine where lint demonstrably passes. BLOCKED is still correct when
+        # no such record exists.
+        rev_now = rev()[:8]
+        rec = None
+        for cand in sorted((ROOT / "artifacts" / "validation").glob("*/lint.json")):
+            try:
+                d = json.loads(cand.read_text())
+            except (OSError, ValueError):
+                continue
+            if (d.get("revision") or "").startswith(rev_now):
+                rec = (cand, d)
+                break
+        if rec is None:
+            record("lint (ruff)", BLOCKED,
+                   "ruff not importable by THIS interpreter and no lint record "
+                   "for this revision. Lint needs no root: run ./tools/lint.sh")
+        elif rec[1].get("exit") != 0:
+            record("lint (ruff)", FAIL,
+                   f"{rec[1].get('findings', '?')} findings recorded by "
+                   f"tools/lint.sh for this revision -- see {rec[0].name}")
+        else:
+            record("lint (ruff)", PASS,
+                   f"0 findings, from tools/lint.sh at revision {rev_now} "
+                   f"(ruff is not importable here; evidence is revision-bound)")
     elif rc == 0:
         record("lint (ruff)", PASS, "no findings")
     else:

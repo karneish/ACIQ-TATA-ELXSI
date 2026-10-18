@@ -1281,3 +1281,38 @@ class TestLintGateDistinguishesMissingFromDirty(unittest.TestCase):
         self.assertNotEqual(rc, 0)
         # A linter that did not run must never produce PASS.
         self.assertNotEqual(rc, 0)
+
+
+class TestLintGateJudgesFromEvidence(unittest.TestCase):
+    """Lint must be judged from revision-stamped evidence, like every other gate.
+
+    `/usr/bin/python3` on this host has no pip, so a sudo'd acceptance run can
+    never install or import ruff -- and `pip install --user` puts it where sudo
+    cannot see it. So the harness reported BLOCKED forever on a machine where
+    lint demonstrably passed.
+
+    The fix reuses the mechanism the project already has: evidence on disk,
+    stamped with the revision that produced it. It is deliberately NOT a special
+    case for lint, because inventing a second mechanism for one gate is how the
+    other inconsistencies happened.
+    """
+
+    def test_lint_records_a_revision_stamped_result(self):
+        src = (Path(__file__).resolve().parents[1] / "tools" / "lint.sh").read_text()
+        self.assertIn("lint.json", src)
+        self.assertIn("git rev-parse HEAD", src,
+                      "the lint record must carry the revision")
+
+    def test_the_gate_falls_back_to_that_record(self):
+        src = (Path(__file__).resolve().parents[1]
+               / "tools" / "acceptance.py").read_text()
+        self.assertIn("lint.json", src)
+        self.assertIn("tools/lint.sh", src)
+
+    def test_no_record_still_means_blocked_not_pass(self):
+        src = (Path(__file__).resolve().parents[1]
+               / "tools" / "acceptance.py").read_text()
+        i = src.index('if rec is None:')
+        block = src[i:i + 400]
+        self.assertIn("BLOCKED", block,
+                      "with no evidence the gate must stay BLOCKED, never PASS")
