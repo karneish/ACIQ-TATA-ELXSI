@@ -295,3 +295,95 @@ class TestASingleBlipDoesNotCancelRecovery(unittest.TestCase):
         self.assertAlmostEqual(e.current.mbps, low, places=6,
                                msg="a genuinely congested link still allowed "
                                    "the estimate to rise")
+
+
+class TestRecoveryNeedsATarget(unittest.TestCase):
+    """Option A means capacity is learned ONLY from congestion -- so without a
+    seeded target the release has nothing to climb toward.
+
+    Measured on the host before the drop:
+
+        t=1.0 .. 9.5   saturated False   backlog 0   goodput 85.12
+
+    85 Mbps on a 100 Mbps link leaves the queue empty, so the link is correctly
+    judged uncongested and the estimator never learns 100. It starts at 0, so
+    `_high_water` stayed 0 until the drop, where it became exactly 20 -- the same
+    as `_ewma`. `_release_idle` then returns immediately, every tick, forever.
+
+    The structural consequence: the highest capacity ever observed is the LOWEST
+    capacity that ever caused congestion.
+    """
+
+    def _dropped(self, e):
+        """Reproduce the host run EXACTLY.
+
+        The pre-drop phase carries 85 Mbps on a 100 Mbps link, so the netem
+        queue stays EMPTY and the link is correctly judged uncongested --
+        `backlog=0`. An earlier draft of this helper used a saturated 100 Mbps
+        reading, which seeds `_high_water` implicitly and therefore tested
+        nothing: the estimator recovered, and the "no target" case never
+        occurred.
+        """
+        t = 0.0
+        for _ in range(8):
+            e.observe(Measurement(t=t, goodput_mbps=85.0,
+                                  bottleneck_backlog_bytes=0))
+            t += 1.0
+        for _ in range(4):
+            e.observe(_sat(t, 20.0)); t += 1.0
+        return t
+
+    def test_without_a_seeded_target_the_estimate_can_never_rise(self):
+        """The defect, isolated and deterministic."""
+        e = CapacityEstimator()
+        t = self._dropped(e)
+        low = e.current.mbps
+        for _ in range(200):
+            e.observe(Measurement(t=t, goodput_mbps=20.0,
+                                  bottleneck_backlog_bytes=0))
+            t += 1.0
+        self.assertAlmostEqual(e.current.mbps, low, places=6,
+                               msg="precondition: no release target exists")
+
+    def test_a_seeded_target_makes_recovery_possible(self):
+        e = CapacityEstimator()
+        e.seed_high_water(100.0)
+        t = self._dropped(e)
+        low = e.current.mbps
+        for _ in range(200):
+            e.observe(Measurement(t=t, goodput_mbps=20.0,
+                                  bottleneck_backlog_bytes=0))
+            t += 1.0
+        self.assertGreater(e.current.mbps, low,
+                           "a seeded recovery target did not enable recovery")
+
+    def test_seeding_does_not_change_the_estimate_itself(self):
+        """The boundary: the configured rate seeds the TARGET, not the estimate.
+
+        If seeding fed the estimate, the estimator could report a capacity it
+        never observed, which is exactly what the Measurement docstring forbids.
+        """
+        a = CapacityEstimator()
+        b = CapacityEstimator()
+        b.seed_high_water(100.0)
+        t = 0.0
+        for _ in range(6):
+            a.observe(_sat(t, 20.0))
+            b.observe(_sat(t, 20.0))
+            t += 1.0
+        self.assertAlmostEqual(a.current.mbps, b.current.mbps, places=9,
+                               msg="seeding leaked into the estimate")
+
+    def test_a_drop_is_still_detected_and_still_snaps(self):
+        """A seeded high-water must not slow the FALLING edge."""
+        e = CapacityEstimator()
+        e.seed_high_water(100.0)
+        t = 0.0
+        # A genuinely saturated wide link first, so 100 is observed, not seeded.
+        for _ in range(6):
+            e.observe(_sat(t, 100.0)); t += 1.0
+        # Then the real drop, with enough samples to clear the dwell window.
+        for _ in range(12):
+            e.observe(_sat(t, 20.0)); t += 1.0
+        self.assertLess(e.current.mbps, 30.0,
+                        "a seeded high-water delayed the drop detection")

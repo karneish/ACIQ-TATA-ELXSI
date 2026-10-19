@@ -226,6 +226,7 @@ def main() -> int:
                     res = runner.run(
                         sc, sysspec, m, seed, args.link, args.drop, args.drop_at,
                         settle_s=args.settle, enforce=args.enforce,
+                        initial_link_mbps=args.link,
                         recover_at_s=args.recover_at,
                         recover_to_mbps=args.recover_to,
                         lease_ips=args.lease, lease_weight=args.lease_weight,

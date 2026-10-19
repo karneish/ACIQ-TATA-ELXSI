@@ -354,6 +354,45 @@ class CapacityEstimator:
 
         return self._emit(mbps=new, saturated=True, changed=changed, m=m)
 
+    def seed_high_water(self, mbps: float) -> None:
+        """Give the recovery path a target: the capacity this link was
+        provisioned for.
+
+        THE GAP OPTION A OPENED
+
+        Option A -- judge external congestion by the external bottleneck -- is
+        correct about saturation, but it means the estimator learns capacity
+        ONLY from congestion. Measured on the host, before the drop:
+
+            t=1.0 .. 9.5   saturated False   backlog 0   goodput 85.12
+
+        85 Mbps on a 100 Mbps link leaves the netem queue empty, so the link is
+        correctly judged uncongested, so the estimator never learns 100. It
+        starts at 0, so `_high_water` stayed 0 until the drop, at which point it
+        became exactly 20 -- the same as `_ewma`. `_release_idle` then returns
+        immediately, because there is nothing to climb toward.
+
+        The structural consequence: **the highest capacity ever observed is the
+        LOWEST capacity that ever caused congestion.** A pure saturation-driven
+        estimator has no recovery target by construction, and Option A made that
+        visible rather than causing it.
+
+        WHAT THIS IS NOT
+
+        This does not feed the configured rate into the ESTIMATE. It seeds only
+        the recovery target, so it cannot make a drop detected faster, cannot
+        make the estimator skip a saturation it would otherwise have seen, and
+        cannot read the bottleneck's configured rate -- the boundary the
+        Measurement docstring draws is untouched.
+
+        And it is not new information. The harness already builds the initial
+        policy from the operator-configured link rate, exactly as a real router
+        is provisioned with its uplink speed. This is the same fact, used for a
+        second purpose.
+        """
+        if mbps > 0.0:
+            self._high_water = max(self._high_water, float(mbps))
+
     def _release_idle(self, m: Measurement, dt: float) -> float:
         """Recover capacity after the link frees up, without probing.
 

@@ -230,9 +230,16 @@ class ExperimentRunner:
         real_time: bool = True,
         source=None,
         bridge_executor=None,
+        initial_link_mbps: float | None = None,
     ):
         self.launcher = launcher or NetnsLauncher()
-        self.harness = harness or Harness()
+        # `link_mbps` seeds the estimator's RECOVERY TARGET only. It does not
+        # feed the estimate: under Option A capacity is still learned solely
+        # from observed external congestion. Without a target the release has
+        # nothing to climb toward -- measured on the host, the estimator learned
+        # 20 at the drop and 100 never, because 85 on a 100 Mbps link leaves
+        # the queue empty and is correctly judged uncongested.
+        self.harness = harness or Harness(link_mbps=initial_link_mbps)
         self.results_dir = results_dir
         self.tick_s = tick_s
         self.real_time = real_time

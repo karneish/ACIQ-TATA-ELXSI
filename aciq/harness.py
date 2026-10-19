@@ -351,6 +351,7 @@ class Harness:
         ns_wan: str = "wan",
         ns_router: str = "router",
         clock=time.monotonic,
+        link_mbps: float | None = None,
     ):
         self.runner = runner or Runner()
         # The bottleneck lives OUTSIDE the namespace and device the controller
@@ -395,6 +396,10 @@ class Harness:
         #: The last Measurement handed to the estimator, kept so per-sample
         #: evidence can record what the estimator actually saw.
         self.last_measurement = None
+        #: The link's provisioned rate, when the caller knows it. Seeds the
+        #: estimator's recovery target only -- see `seed_high_water`.
+        if link_mbps and link_mbps > 0.0:
+            self._estimator.seed_high_water(link_mbps)
         #: None until enable_enforcement() is called. See aciq/enforce.py for why
         #: this is opt-in rather than always-on.
         self._enforcer: ClosedLoop | None = None
