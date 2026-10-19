@@ -456,6 +456,34 @@ worst call in a run is not shown to be better than CAKE.
 Where ACIQ's advantage is real and large: against FIFO on every metric in every
 scenario, and against CAKE at the median under congestion (scenario B).
 
+### Capacity recovery — resolved
+
+The rising edge of adaptation, added because every other scenario drops the
+link and leaves it down. Seven attempts were needed; the record is in
+`capacity-recovery-defect.md`.
+
+| | value |
+|---|---|
+| Link restored to | 100 Mbps |
+| Degraded goodput (before the fix) | **17.34 Mbps** — exactly `0.85 x 20`, the degraded ceiling |
+| Settled goodput (after) | **51.46 Mbps**, 51% of the restored link |
+| Estimator | 20.3 → **68.3 Mbps** |
+| Policy applications | 1 → **5** |
+
+Stable across the tail window (t=152-177). The gate bar is 40%; the degraded
+rate was 17%.
+
+**Root cause, in one line:** the controller was saturating *itself* — the
+differentiated child ceilings always sum above the parent rate, so the parent's
+overlimit counters carried no information about the link and a stale estimate
+made that permanent.
+
+The deepest lesson was not the fix. Four of the seven attempts failed for
+reasons that were only diagnosable once per-tick external telemetry was being
+recorded, and the sixth "failure" was a correct mechanism whose result was being
+discarded one line later by a hardcoded `changed=False`. Each earlier patch
+looked reasonable, and four of them would have been wrong to keep.
+
 ### Light-load comparison (re-measured, revision fc65349e)
 
 7 paired seeds, `--enforce` on, steering verified in every run.

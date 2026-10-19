@@ -1,7 +1,21 @@
 # Capacity recovery: a self-fulfilling saturation loop
 
-**Status:** OPEN. Three fix attempts have failed. The cause is architectural,
-not a coding slip, and is recorded here rather than patched again blindly.
+**Status: RESOLVED** at revision `852dff53`. Seven attempts were needed. What
+follows is the full record, because the sequence is more useful than the fix:
+four of the seven failed for reasons that were only diagnosable once the right
+instrumentation existed.
+
+**Before:** after a 5x drop, steady goodput stayed at 17.34 Mbps -- exactly
+`0.85 x 20`, the degraded bulk ceiling -- for the whole run, on a link restored
+to 100 Mbps.
+
+**After:** settled goodput **51.46 Mbps**, 51% of the restored link, held
+steadily across the tail window.
+
+    t=152.8 .. 177   51.5 Mbps, stable
+
+The gate reads PASS at a 40% bar. It is not a marginal pass: the degraded rate
+was 17 Mbps, and the controller ended at three times that.
 
 ## The symptom
 
@@ -65,7 +79,23 @@ that was not applied.
 | 2. Require delivered throughput > 1.5 x estimate | unreachable -- the controller throttles itself below the link, so throughput can never exceed its own estimate |
 | 3. Exploit rise-slow / fall-fast asymmetry | sound in principle, but `saturated` never goes false, so it never gets the chance |
 
-## Options
+## The seven attempts
+
+| # | change | why it failed |
+|---|---|---|
+| 1 | release on sustained non-saturation | oscillated upward on the way down |
+| 2 | require delivered throughput > 1.5x estimate | unreachable: the controller throttles itself below the link |
+| 3 | rise-slow / fall-fast asymmetry | sound, but `saturated` never went false |
+| 4 | **Option A** -- external bottleneck decides | fixed the signal; intermittent read failure reverted to the parent |
+| 5 | retry the qdisc read; record raw telemetry | a 2-packet residual queue still cancelled the streak |
+| 6 | seed the recovery target from the provisioned link | the release ran but reported `changed=False`, so no plan was rebuilt |
+| 7 | **report the change** + measure the tail over 180 s | PASS |
+
+Attempt 6 is the instructive one: the release mechanism had been correct since
+that commit, and its result was discarded on the next line of code. An estimate
+the policy does not consume is not an estimate.
+
+## Options (as originally presented; superseded by the above)
 
 **A. Judge external congestion by the external bottleneck.**
 When an out-of-band bottleneck exists -- which it always does in this testbed,
