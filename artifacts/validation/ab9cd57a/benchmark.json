@@ -1,0 +1,56 @@
+{
+  "environment": {
+    "kernel": "7.1.5-76070105-generic",
+    "python": "3.12.3",
+    "machine": "x86_64",
+    "rss_mb_at_start": 16.6,
+    "note": "controller arithmetic only; no tc, no namespaces, no root",
+    "rss_mb_at_end": 16.6
+  },
+  "policy_planning": {
+    "build_plan_no_lease": {
+      "mean_us": 13.37,
+      "p99_us": 42.29,
+      "max_us": 2279.86,
+      "n": 500
+    },
+    "build_plan_with_lease": {
+      "mean_us": 10.79,
+      "p99_us": 19.18,
+      "max_us": 47.58,
+      "n": 500
+    }
+  },
+  "kernel_application": {
+    "build_tree_and_render": {
+      "mean_us": 69.5,
+      "p99_us": 109.9,
+      "max_us": 260.32,
+      "n": 500
+    },
+    "tc_commands_per_apply": 12,
+    "note": "rendering only. Issuing the commands, and the kernel's cost in doing so, are not measured here."
+  },
+  "observation": {
+    "parse_conntrack_line": {
+      "mean_us": 5.03,
+      "p99_us": 11.91,
+      "max_us": 284.95,
+      "n": 2000
+    }
+  },
+  "classification": {
+    "classify_one_flow": {
+      "mean_us": 11.36,
+      "p99_us": 21.86,
+      "max_us": 576.98,
+      "n": 2000
+    },
+    "flows_per_1hz_tick": {
+      "10": 0.114,
+      "50": 0.568,
+      "100": 1.136,
+      "500": 5.68
+    }
+  }
+}

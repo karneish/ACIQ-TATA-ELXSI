@@ -387,3 +387,60 @@ class TestRecoveryNeedsATarget(unittest.TestCase):
             e.observe(_sat(t, 20.0)); t += 1.0
         self.assertLess(e.current.mbps, 30.0,
                         "a seeded high-water delayed the drop detection")
+
+
+class TestAReleaseMustSignalAChange(unittest.TestCase):
+    """A moved estimate that is not reported as changed rebuilds nothing.
+
+    Measured on the host after `seed_high_water`:
+
+        estimator 68.28      policy_changes 1     goodput 19.3 Mbps
+
+    The estimator had climbed from 20 to 68 -- the release mechanism was
+    working -- while the applied policy stayed exactly where the drop had left
+    it. The cause was one word:
+
+        return self._emit(mbps=self._release_idle(...), changed=False)
+
+    `_release_idle` mutates `self._ewma` internally, so the estimate really did
+    move, but `_emit` was told `changed=False` unconditionally. The harness
+    checks `cap.changed`, returned early, and never rebuilt the plan.
+
+    An estimate the policy does not consume is not an estimate.
+    """
+
+    def test_a_release_reports_changed(self):
+        from aciq.capacity import IDLE_STREAK_RELEASE
+        e = CapacityEstimator()
+        e.seed_high_water(100.0)
+        t = 0.0
+        for _ in range(8):
+            e.observe(_sat(t, 100.0)); t += 1.0
+        for _ in range(4):
+            e.observe(_sat(t, 20.0)); t += 1.0
+        low = e.current.mbps
+        released = False
+        for _ in range(IDLE_STREAK_RELEASE * 3):
+            cap = e.observe(Measurement(t=t, goodput_mbps=20.0,
+                                        bottleneck_backlog_bytes=0))
+            t += 1.0
+            if cap.changed and cap.mbps > low:
+                released = True
+                break
+        self.assertTrue(released,
+                        "the release moved the estimate but reported "
+                        "changed=False, so no policy would be rebuilt")
+
+    def test_idle_ticks_without_a_release_report_no_change(self):
+        """The signal must mean something: no movement, no changed flag."""
+        e = CapacityEstimator()
+        e.seed_high_water(100.0)
+        t = 0.0
+        for _ in range(8):
+            e.observe(_sat(t, 100.0)); t += 1.0
+        for _ in range(4):
+            e.observe(_sat(t, 20.0)); t += 1.0
+        cap = e.observe(Measurement(t=t, goodput_mbps=20.0,
+                                    bottleneck_backlog_bytes=0))
+        self.assertFalse(cap.changed,
+                         "a single idle tick claimed a change")

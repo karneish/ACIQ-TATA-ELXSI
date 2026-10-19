@@ -295,8 +295,9 @@ class CapacityEstimator:
             # a stale estimate is visibly less trusted rather than looking solid.
             self._sat_streak = 0
             self._confidence = max(0.0, self._confidence - IDLE_DECAY)
-            return self._emit(mbps=self._release_idle(m, dt=m.t),
-                              saturated=False, changed=False, m=m)
+            released, released_changed = self._release_idle(m)
+            return self._emit(mbps=released, saturated=False,
+                              changed=released_changed, m=m)
 
         self._sat_streak += 1
         if self._sat_streak < SAT_STREAK_REQUIRED:
@@ -393,7 +394,7 @@ class CapacityEstimator:
         if mbps > 0.0:
             self._high_water = max(self._high_water, float(mbps))
 
-    def _release_idle(self, m: Measurement, dt: float) -> float:
+    def _release_idle(self, m: Measurement) -> tuple[float, bool]:
         """Recover capacity after the link frees up, without probing.
 
         THE GAP THIS CLOSES
@@ -427,10 +428,10 @@ class CapacityEstimator:
         """
         self._idle_streak += 1
         if self._idle_streak < IDLE_STREAK_RELEASE or self._high_water <= 0.0:
-            return self._ewma
+            return self._ewma, False
         if self._ewma >= self._high_water:
             self._high_water = self._ewma
-            return self._ewma
+            return self._ewma, False
         # WHY THERE IS NO THROUGHPUT TEST HERE
         #
         # An earlier version required delivered goodput to exceed the estimate
@@ -459,18 +460,22 @@ class CapacityEstimator:
         target = min(self._high_water,
                      self._ewma + RELEASE_ALPHA * (self._high_water - self._ewma))
         if target <= self._ewma:
-            return self._ewma
+            return self._ewma, False
         # Respect the same dwell and hysteresis any other change obeys, so a
         # link that is genuinely still slow does not oscillate.
         if (self._last_change_t is not None
                 and (m.t - self._last_change_t) < MIN_DWELL_S):
-            return self._ewma
+            return self._ewma, False
         if abs(target - self._ewma) < HYSTERESIS * self._ewma:
-            return self._ewma
+            return self._ewma, False
         self._ewma = target
         self._last_change_t = m.t
         self._confidence = min(1.0, self._confidence + 0.2)
-        return self._ewma
+        # `changed=True` is the whole point of the return type. The release
+        # moved the estimate, and the caller must rebuild the policy from it --
+        # otherwise the estimate climbs to the high-water mark while the applied
+        # policy stays pinned at the degraded rate forever.
+        return self._ewma, True
 
     def _emit(self, mbps: float, saturated: bool, changed: bool, m: Measurement) -> Capacity:
         cap = Capacity(
