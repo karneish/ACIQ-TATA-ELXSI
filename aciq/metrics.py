@@ -99,15 +99,10 @@ class BottleneckDropSource:
         None when the device or qdisc cannot be read, which the saturation test
         treats as "no signal" rather than as "no drops".
         """
-        cmd = ["ip", "netns", "exec", self.ns, "tc", "-s", "qdisc", "show",
-               "dev", self.dev] if self.ns else [
-               "tc", "-s", "qdisc", "show", "dev", self.dev]
-        try:
-            r = self._run(cmd, capture_output=True, text=True, timeout=5)
-        except (OSError, subprocess.SubprocessError):
+        out = self._qdisc_stats()
+        if out is None:
             return None
-        if r.returncode != 0:
-            return None
+        r = type("R", (), {"stdout": out})()
         # Take the number that FOLLOWS "dropped", not the first number on the
         # line. Real output is
         #   Sent 1200 bytes 9 pkt (dropped 40, overlimits 0 requeues 0)
@@ -154,6 +149,30 @@ class BottleneckDropSource:
             return int(m.group(1))
         return None
 
+    def _qdisc_stats(self) -> str | None:
+        """`tc -s qdisc show` for the bottleneck, or None if it cannot be read.
+
+        Retried once. A single dropped read is not "no telemetry": it makes the
+        caller fall back to the controller's own parent class, which under the
+        differentiated-ceiling policy is overlimit permanently and would
+        assert congestion the link does not have. Measured on the host, that
+        produced `saturated` flipping True/False at random after recovery,
+        resetting the idle streak faster than it could ever accumulate.
+        """
+        cmd = ["ip", "netns", "exec", self.ns, "tc", "-s", "qdisc", "show",
+               "dev", self.dev] if self.ns else [
+               "tc", "-s", "qdisc", "show", "dev", self.dev]
+        for attempt in (1, 2):
+            try:
+                r = self._run(cmd, capture_output=True, text=True, timeout=5)
+            except (OSError, subprocess.SubprocessError):
+                continue
+            if r.returncode == 0 and (r.stdout or "").strip():
+                return r.stdout
+            if attempt == 2:
+                return None
+        return None
+
     def backlog(self) -> int | None:
         """Bytes queued at the bottleneck, or None if unreadable.
 
@@ -169,17 +188,11 @@ class BottleneckDropSource:
         tree. Offered load exceeding what the link carries leaves the queue
         non-empty, persistently. That is congestion.
         """
-        cmd = ["ip", "netns", "exec", self.ns, "tc", "-s", "qdisc", "show",
-               "dev", self.dev] if self.ns else [
-               "tc", "-s", "qdisc", "show", "dev", self.dev]
-        try:
-            r = self._run(cmd, capture_output=True, text=True, timeout=5)
-        except (OSError, subprocess.SubprocessError):
-            return None
-        if r.returncode != 0:
+        out = self._qdisc_stats()
+        if out is None:
             return None
         # `backlog 0b 0p requeues 0`
-        for m in re.finditer(r"\bbacklog\s+(\d+)b\s+(\d+)p", r.stdout or ""):
+        for m in re.finditer(r"\bbacklog\s+(\d+)b\s+(\d+)p", out):
             return int(m.group(1))
         return None
 

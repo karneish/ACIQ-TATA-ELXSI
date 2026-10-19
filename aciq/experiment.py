@@ -585,8 +585,22 @@ class ExperimentRunner:
                 self._est_t = elapsed
 
             lk = collector.last_link_counters()
+            # Read the external telemetry ONCE per tick, and record the raw
+            # values alongside the verdict.
+            #
+            # Without these, a failure of the external path was indistinguishable
+            # from a link that genuinely had congestion: both show only
+            # `estimator_saturated`. A null here means the bottleneck could not
+            # be read that tick, which is exactly what triggers the fallback to
+            # the parent's counters -- so it is the difference between "the link
+            # is busy" and "we could not look".
+            _bn_backlog = self.harness.bottleneck_backlog()
+            _bn_drop_rate = self.harness.bottleneck_drop_rate(1.0)
+
             samples.append({
                 "t": round(elapsed, 2),
+                "bottleneck_backlog_bytes": _bn_backlog,
+                "bottleneck_drop_rate_per_s": _bn_drop_rate,
                 "per_class": {k.value: vars(v) for k, v in frame.per_class.items()},
                 # The link (parent class) counters, which are the ONLY thing
                 # M2 treats as saturation. Recorded explicitly so a wrong
