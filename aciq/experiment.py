@@ -312,6 +312,7 @@ class ExperimentRunner:
         drop_at_s: float | None = None,
         recover_at_s: float | None = None,
         recover_to_mbps: float | None = None,
+        initial_link_mbps: float | None = None,
         settle_s: float | None = None,
         enforce: bool = False,
         lease_ips: Sequence[str] = (),
@@ -544,6 +545,18 @@ class ExperimentRunner:
         ticks = int(sc.duration_s / self.tick_s) + 1
         dropped = False
         recovered = False
+        # Seed the recovery TARGET from this run's configured link rate.
+        #
+        # It lives here, in run(), rather than in __init__ because the link is
+        # a per-run argument: the driver creates ONE ExperimentRunner and calls
+        # run() for each scenario and seed. Passing it to __init__ was a mistake
+        # that reached the kernel gate as
+        #     TypeError: run() got an unexpected keyword argument
+        # and the recovery run never executed at all -- the gate reported the
+        # PREVIOUS run's evidence and looked like a slow failure rather than a
+        # crash. Idempotent: seed_high_water keeps the maximum.
+        if initial_link_mbps:
+            self.harness._estimator.seed_high_water(initial_link_mbps)
         for i in range(ticks):
             now = time.monotonic()
             if self.real_time:

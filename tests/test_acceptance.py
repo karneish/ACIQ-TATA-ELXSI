@@ -1381,3 +1381,83 @@ class TestHostGateEvidenceDirectoryIsCreated(unittest.TestCase):
         src = self._code()
         i = src.index('mkdir -p "$OUT"')
         self.assertIn("evidence directory", src[i:i + 200])
+
+
+class TestDriverCallsMatchTheRealSignature(unittest.TestCase):
+    """Every keyword run_experiments.py passes to runner.run() must exist.
+
+    Found the hard way: `initial_link_mbps` was added to
+    `ExperimentRunner.__init__` while the driver passed it to `.run()`, so the
+    kernel gate died with
+
+        TypeError: ExperimentRunner.run() got an unexpected keyword argument
+
+    and the recovery run never executed. The acceptance gate then reported the
+    PREVIOUS run's evidence, so a crash presented as a slow, plausible failure.
+    Nothing in the suite could see it, because the unit tests call the runner
+    directly and never go through the driver.
+
+    This checks the driver's call site against the real signature, statically, so
+    it needs neither root nor a testbed.
+    """
+
+    def _runner_calls(self):
+        """Every `runner.run(...)` call site in the driver.
+
+        Matched on the receiver being named `runner`, not merely on the method
+        being called `run` -- the driver also calls `subprocess.run()`, and
+        matching those produced a set of names like `capture_output` and
+        `timeout` that have nothing to do with the runner.
+        """
+        import ast
+        from pathlib import Path as _P
+        src = (_P(__file__).resolve().parents[1] / "run_experiments.py").read_text()
+        tree = ast.parse(src)
+        out = []
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "run"
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "runner"):
+                out.append(node)
+        return out
+
+    def _driver_call_keywords(self):
+        found = set()
+        for call in self._runner_calls():
+            found |= {kw.arg for kw in call.keywords if kw.arg}
+        return found
+
+    def test_every_keyword_passed_to_run_exists_on_the_signature(self):
+        import inspect
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from aciq.experiment import ExperimentRunner
+        params = set(inspect.signature(ExperimentRunner.run).parameters)
+        unknown = self._driver_call_keywords() - params
+        self.assertEqual(unknown, set(),
+                         f"run_experiments.py passes {sorted(unknown)} to "
+                         f"runner.run(), which does not accept them. The gate "
+                         f"would crash and report stale evidence.")
+
+    def test_the_driver_call_is_actually_checked(self):
+        """Guards against the checker silently matching nothing."""
+        calls = self._runner_calls()
+        self.assertTrue(calls, "no runner.run(...) call site was found")
+        self.assertGreater(len(calls[0].args), 0,
+                           "the driver call should pass positional arguments")
+
+    def test_positional_arguments_fit_the_signature(self):
+        """A fourth way this broke: too many positional arguments."""
+        import inspect
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from aciq.experiment import ExperimentRunner
+        sig = inspect.signature(ExperimentRunner.run)
+        allowed = len(sig.parameters)
+        for call in self._runner_calls():
+            self.assertLessEqual(
+                len(call.args), allowed,
+                f"runner.run() got {len(call.args)} positional arguments, "
+                f"signature takes {allowed}")
