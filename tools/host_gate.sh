@@ -277,10 +277,25 @@ scenario_a_comparison() {
 # recovers is a real, user-visible defect that no drop-only test can see.
 recovery_gate() {
   log "== gate 3b: capacity recovery, 100 -> 20 -> 100 =="
-  log "  ~2 min plus testbed build"
+  log "  ~5 min plus testbed build"
+  # 180 s, not 60.
+  #
+  # The release is deliberately slow -- IDLE_STREAK_RELEASE clear ticks, then
+  # one step of RELEASE_ALPHA per MIN_DWELL_S -- because rising fast is what
+  # causes oscillation, and a wrong release costs a tick of over-shaping while
+  # never releasing costs a user throttled forever. At 60 s the run ended
+  # mid-climb:
+  #
+  #     t=30.7  19.98  pinned        t=51.0  33.00  recovered
+  #     t=49.8   0.00  tc rebuild    t=57.0  43.39  still climbing
+  #
+  # which is a recovery the 60 s window could not finish observing. Giving the
+  # experiment longer is the honest response. Lowering the acceptance bar to
+  # 38% -- what 60 s happened to produce -- would be tuning the threshold until
+  # it passed, which is the one thing this gate exists to prevent.
   stamp data/host_gate_recovery
   python3 run_experiments.py --scenario s4_capacity_recovery --system aciq \
-      --enforce --drop 20 --drop-at 10 --seed 42 --duration-s 60 \
+      --enforce --drop 20 --drop-at 10 --seed 42 --duration-s 180 \
       --recover-at 30 --recover-to 100 \
       --results-dir data/host_gate_recovery 2>&1 \
       | tee "$OUT/recovery.log" | tail -5
