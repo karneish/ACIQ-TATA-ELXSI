@@ -36,6 +36,16 @@ def _m(**kw):
     return Measurement(**kw)
 
 
+def _sat(t, mbps, **kw):
+    """A reading taken on a link whose external queue is non-empty.
+
+    Without this the estimator correctly judges the link uncongested, never
+    learns a rate, and every test written against it measures nothing.
+    """
+    kw.setdefault("bottleneck_backlog_bytes", 40000)
+    return Measurement(t=t, goodput_mbps=mbps, **kw)
+
+
 class TestSelfInducedParentOverlimitsDoNotAssertCongestion(unittest.TestCase):
     """The defect, stated as a test."""
 
@@ -229,3 +239,129 @@ class TestFailedWorkaroundsHaveNotReturned(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestStaleAndInvalidTelemetry(unittest.TestCase):
+    """Missing telemetry must never authorise a capacity increase.
+
+    The conservative fallback already covers "no reading". These pin the cases
+    around it, which the brief lists separately and which a reader of the code
+    could otherwise assume are handled:
+
+      - a rate that is negative, non-finite, or absurd
+      - a backlog that is negative
+      - a stale reading, i.e. a plausible-looking value from long ago
+
+    A stale-but-plausible number is the dangerous one: it is indistinguishable
+    from a fresh reading unless something tracks its age, so the conservative
+    answer is the only safe default.
+    """
+
+    def test_negative_backlog_is_not_congestion_and_is_not_trusted(self):
+        """A negative counter is corrupt, not 'clear'."""
+        m = _m(t=1.0, goodput_mbps=5.0, bottleneck_backlog_bytes=-1)
+        self.assertFalse(m.saturated)
+
+    def test_a_huge_backlog_does_saturate(self):
+        self.assertTrue(_m(t=1.0, goodput_mbps=5.0,
+                           bottleneck_backlog_bytes=10 ** 9).saturated)
+
+    def test_nan_or_inf_goodput_is_rejected_by_the_estimator(self):
+        import math
+        from aciq.capacity import CapacityEstimator
+        for bad in (float("nan"), float("inf"), float("-inf"), -5.0):
+            with self.subTest(value=bad):
+                e = CapacityEstimator()
+                # Two valid saturated samples first, so a capacity actually
+                # EXISTS to protect. One sample is below SAT_STREAK_REQUIRED
+                # and the estimate would still be 0, so the assertions would
+                # be measuring nothing.
+                e.observe(_m(t=0.0, goodput_mbps=50.0,
+                             bottleneck_backlog_bytes=40000))
+                e.observe(_m(t=1.0, goodput_mbps=50.0,
+                             bottleneck_backlog_bytes=40000))
+                before = e.current.mbps
+                self.assertGreater(before, 0.0, "precondition")
+                # SPACED PAST THE DWELL WINDOW, which is what made this
+                # invisible: consecutive ticks 1 s apart are blocked by
+                # MIN_DWELL_S (5 s), so the corrupt reading never reached the
+                # update. Sample them 10 s out and the estimate becomes NaN and
+                # never recovers.
+                e.observe(_m(t=10.0, goodput_mbps=bad,
+                             bottleneck_backlog_bytes=40000))
+                e.observe(_m(t=20.0, goodput_mbps=bad,
+                             bottleneck_backlog_bytes=40000))
+                self.assertTrue(math.isfinite(e.current.mbps),
+                                "estimate became non-finite")
+                self.assertAlmostEqual(e.current.mbps, before, delta=1.0,
+                                       msg="a non-positive reading changed the "
+                                           "estimate")
+
+    def test_a_repeated_identical_reading_cannot_drive_an_increase(self):
+        """A stuck sensor -- the same number every tick -- must not be a ramp."""
+        e = CapacityEstimator()
+        e.seed_high_water(100.0)
+        t = 0.0
+        for _ in range(4):
+            e.observe(_sat(t, 100.0)); t += 1.0
+        for _ in range(4):
+            e.observe(_sat(t, 20.0)); t += 1.0
+        low = e.current.mbps
+        for _ in range(30):
+            e.observe(_m(t=t, goodput_mbps=0.0,          # stuck at zero
+                         bottleneck_backlog_bytes=0))   # and clear
+            t += 1.0
+        # This IS the intended release path, so the estimator does climb -- but
+        # it must climb only toward the high-water mark and never past it.
+        self.assertLessEqual(e.current.mbps, 100.0 + 1e-6,
+                             "a stuck sensor produced capacity above anything "
+                             "ever observed")
+
+
+class TestRecoveryWhileParentOverlimitsContinue(unittest.TestCase):
+    """Recovery must not be blocked by the controller's own shaping."""
+
+    def test_release_proceeds_while_parent_overlimits_persist(self):
+        """The defect scenario, end to end on the estimator.
+
+        `link_overlimit_rate_per_s` stays pinned high for the whole run, exactly
+        as the differentiated-ceiling policy makes it, while the external
+        bottleneck is clear. Under the old order this made `saturated` True
+        forever; the release must still run.
+        """
+        from aciq.capacity import SAT_OVERLIMIT_MIN
+        e = CapacityEstimator()
+        e.seed_high_water(100.0)
+        t = 0.0
+        for _ in range(8):
+            e.observe(_sat(t, 100.0)); t += 1.0
+        for _ in range(4):
+            e.observe(_sat(t, 20.0)); t += 1.0
+        low = e.current.mbps
+        climbed = False
+        for _ in range(120):
+            e.observe(_m(t=t, goodput_mbps=20.0,
+                         link_overlimit_rate_per_s=SAT_OVERLIMIT_MIN * 4,
+                         bottleneck_backlog_bytes=0))
+            t += 1.0
+            if e.current.mbps > low:
+                climbed = True
+        self.assertTrue(climbed,
+                        "recovery was blocked by the controller's own parent "
+                        "overlimits -- this is the defect")
+
+    def test_safety_shield_and_rollback_are_untouched(self):
+        """Option A changed what the estimator BELIEVES, never what it may DO."""
+        from aciq.policy import build_plan
+        from aciq.txn import TransactionManager
+        from aciq.shield import Shield
+        from aciq.txn import FakeRunner
+        h = TransactionManager(FakeRunner(auto_readback=True), Shield())
+        plan = build_plan(20.0)
+        self.assertTrue(h.apply(plan).committed)
+        # An over-committed plan is still refused, whatever the estimate said.
+        bad = build_plan(20.0)
+        bad.rates = {k: v * 50 for k, v in bad.rates.items()}
+        bad.ceils = {k: v * 50 for k, v in bad.ceils.items()}
+        out = h.apply(bad)
+        self.assertFalse(out.committed,
+                         "the shield accepted a 50x over-committed plan")

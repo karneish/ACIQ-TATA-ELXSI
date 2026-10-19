@@ -117,6 +117,36 @@ BACKLOG_MIN_BYTES = 1024
 #: mean "the link is full", and only the rate tells them apart.
 SAT_OVERLIMIT_MIN = 3000.0
 
+#: Above this, a throughput reading is a unit or counter error rather than a
+#: link: 100 Tbit/s is not a cable, and the estimator would plan against a
+#: capacity no hardware has.
+MAX_PLAUSIBLE_CAPACITY_MBPS = 100_000.0
+
+
+def _is_usable_capacity(mbps) -> bool:
+    """A throughput reading the estimator is allowed to adopt as capacity.
+
+    The brief lists "rejection of invalid, non-finite or invalid measurements"
+    among the estimator's required behaviour. It was missing, and the failure
+    is permanent rather than transient:
+
+        NaN > self._ewma   -> False, so alpha silently becomes ALPHA_DOWN
+        0 + 0.6 * (NaN - 0) -> NaN, so the estimate is poisoned
+
+    and once `_ewma` is NaN every later comparison against it is False, the
+    hysteresis test can never fire again, and the controller stops adapting
+    while still reporting a plausible-looking number. Nothing would raise.
+    """
+    if isinstance(mbps, bool) or not isinstance(mbps, (int, float)):
+        return False
+    if mbps != mbps:                       # NaN: the only value unequal to itself
+        return False
+    if mbps in (float("inf"), float("-inf")):
+        return False
+    if mbps <= 0.0:
+        return False
+    return mbps <= MAX_PLAUSIBLE_CAPACITY_MBPS
+
 #: Confidence decay per unsaturated sample.
 IDLE_DECAY = 0.15
 
@@ -320,7 +350,22 @@ class CapacityEstimator:
 
         # Saturated: observed goodput is the capacity.
         target = m.goodput_mbps
-        if target <= 0.0:
+        if not _is_usable_capacity(target):
+            # The brief lists "rejection of invalid, non-finite or invalid
+            # measurements" among the estimator's required behaviour, and it was
+            # missing: this used to read `if target <= 0.0`, which NaN passes --
+            # `NaN <= 0.0` is False.
+            #
+            # The failure is permanent rather than transient. `NaN > self._ewma`
+            # is False so alpha silently becomes ALPHA_DOWN, `0.6 * (NaN - x)`
+            # is NaN, and once `_ewma` is NaN every later comparison is False,
+            # the hysteresis test can never fire again, and the controller stops
+            # adapting while still reporting a plausible-looking number.
+            # Nothing raises and nothing warns.
+            #
+            # The sample is not trusted for capacity. It is still observed as
+            # saturated, and `_idle_streak` has already been cleared above, so a
+            # corrupt reading cannot look like an idle link either.
             return self._emit(mbps=self._ewma, saturated=True, changed=False, m=m)
 
         if self._ewma <= 0.0:

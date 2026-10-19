@@ -769,6 +769,7 @@ class ExperimentRunner:
             seed=seed, link_start_mbps=link_mbps,
             link_end_mbps=drop_mbps if dropped else link_mbps,
             capacity_recovered=recovered,
+            policy_change_log=list(getattr(self.harness, "policy_change_log", [])),
             capacity_recover_to_mbps=recover_to_mbps if recovered else None,
             capacity_change_applied=not self._capacity_change_failed,
             capacity_change_error=self.harness._capacity_change_error,

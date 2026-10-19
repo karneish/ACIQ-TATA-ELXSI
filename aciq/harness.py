@@ -189,6 +189,10 @@ class RunResult:
     #: degraded rate, is a defect that a drop-only test can never see.
     capacity_recovered: bool = False
     capacity_recover_to_mbps: float | None = None
+    #: Every policy application attempted: the rate the kernel was asked for,
+    #: whether it committed, any shield violations or read-back mismatches, and
+    #: the rates the kernel then reported as installed.
+    policy_change_log: list[dict] = field(default_factory=list)
     estimator_mbps: float | None = None
     samples: list[dict] = field(default_factory=list)
     policy_changes: int = 0
@@ -396,6 +400,9 @@ class Harness:
         #: The last Measurement handed to the estimator, kept so per-sample
         #: evidence can record what the estimator actually saw.
         self.last_measurement = None
+        #: Every policy application this run attempted, with the rate the
+        #: kernel was asked for, whether it committed, and what was read back.
+        self.policy_change_log: list[dict] = []
         #: The link's provisioned rate, when the caller knows it. Seeds the
         #: estimator's recovery target only -- see `seed_high_water`.
         if link_mbps and link_mbps > 0.0:
@@ -861,7 +868,31 @@ class Harness:
         self._current_plan = plan
         self.txn.remember_capacity(cap.mbps)
         # same timeline as the estimator, or the dwell window is measured wrong
-        if self.txn.apply(plan, now=now).committed:
+        txr = self.txn.apply(plan, now=now)
+        # Record what the KERNEL actually has, not just what was asked for.
+        #
+        # The Option A acceptance criteria require the recovery evidence to show
+        # that the applied parent rate matches the intended policy and was read
+        # back. `policy_changes` counts commits but nothing recorded WHICH rate
+        # was committed or whether the readback agreed, so a reader could see
+        # "5 policy changes" and "estimator 68.3" and still not know whether the
+        # kernel was ever actually reconfigured.
+        self.policy_change_log.append({
+            "t": round(now, 2),
+            "intended_capacity_mbps": round(cap.mbps, 3),
+            "intended_parent_rate_mbps": round(plan.capacity_mbps, 3),
+            "committed": bool(txr.committed),
+            "ok": bool(txr.ok),
+            "rolled_back": bool(txr.rolled_back),
+            "reason": txr.reason,
+            "violations": [{"code": v.code, "detail": v.detail,
+                            "severity": v.severity} for v in txr.violations],
+            "mismatches": [{"classid": m.classid, "field": m.field,
+                            "expected": m.expected, "actual": m.actual}
+                           for m in txr.mismatches],
+            "applied_state": self._read_applied_rates(),
+        })
+        if txr.committed:
             self.policy_changes += 1
             # Same as above: a committed apply rebuilt the qdisc, so the
             # bridge's filters are gone even though its state says otherwise.
@@ -871,6 +902,32 @@ class Harness:
 
     _prev_counters = None
     _prev_link = None
+
+    def _read_applied_rates(self) -> dict:
+        """What the kernel reports as installed, read back after an apply.
+
+        Recorded per policy change so the evidence shows the applied parent rate
+        rather than only the requested one. A failure to read is reported as such
+        instead of being reported as an empty dict, which would be
+        indistinguishable from "the kernel has nothing installed".
+        """
+        rc, out, _err = self.runner.run(
+            self.txn._prefix + ("tc", "-j", "class", "show", "dev", self.dev))
+        if rc != 0:
+            return {"readable": False, "error": f"tc exited {rc}"}
+        import json as _j
+        try:
+            data = _j.loads(out or "[]")
+        except ValueError:
+            return {"readable": False, "error": "tc -j returned unparseable output"}
+        rates = {}
+        for entry in data if isinstance(data, list) else []:
+            cls = entry.get("class") or {}
+            cid = cls.get("classid") or entry.get("handle")
+            if cid:
+                rates[cid] = {"rate": cls.get("rate"),
+                              "ceil": cls.get("ceil")}
+        return {"readable": bool(rates), "classes": rates}
 
     def reset_loop(self) -> None:
         """Reset the estimator and loop state, but NOT the shield.
