@@ -237,3 +237,61 @@ class TestCapacityCanRecover(unittest.TestCase):
         self.assertGreater(FAST_DROP_RATIO, RELEASE_ALPHA,
                            "rising must be slower than falling, or a bad "
                            "release would persist instead of self-correcting")
+
+
+class TestASingleBlipDoesNotCancelRecovery(unittest.TestCase):
+    """A rate limiter's queue is briefly non-empty all the time.
+
+    Measured on the host after a real recovery: 3028 bytes -- about two packets
+    -- on ticks scattered through an otherwise completely clear link, while the
+    netem state read `limit 416 rate 100Mbit dropped 0 backlog 0b 0p` on the
+    ticks around it.
+
+    Each blip cleared `_idle_streak`, so ten consecutive clear ticks never
+    accumulated and capacity stayed pinned at the degraded rate for the 30 s
+    after the link came back.
+
+    This is the same "one burst is not a reading" principle the saturation
+    streak already encodes, applied consistently: a single sample must not
+    cancel a recovery any more than it may trigger an adaptation.
+    """
+
+    @staticmethod
+    def _dropped_then_clear(e, t):
+        for _ in range(4):
+            e.observe(_sat(t, 100.0)); t += 1.0
+        for _ in range(4):
+            e.observe(_sat(t, 20.0)); t += 1.0
+        return t
+
+    def test_one_isolated_backlog_sample_does_not_cancel_the_streak(self):
+        from aciq.capacity import IDLE_STREAK_RELEASE
+        e = CapacityEstimator()
+        t = self._dropped_then_clear(e, 0.0)
+        low = e.current.mbps
+        # Alternate clear/blip for enough ticks that IDLE_STREAK_RELEASE clear
+        # samples DO accumulate. Half the ticks are clear, so twice the
+        # threshold in iterations is the minimum that can possibly qualify.
+        for _ in range(IDLE_STREAK_RELEASE * 2):
+            e.observe(Measurement(t=t, goodput_mbps=20.0,
+                                  bottleneck_backlog_bytes=0))
+            t += 1.0
+            e.observe(Measurement(t=t, goodput_mbps=20.0,
+                                  bottleneck_backlog_bytes=3028))
+            t += 1.0
+        self.assertGreater(e.current.mbps, low,
+                           "isolated backlog blips cancelled the release; a "
+                           "two-packet residual queue is not congestion")
+
+    def test_sustained_backlog_still_cancels_the_streak(self):
+        """The fix must not weaken genuine congestion detection."""
+        e = CapacityEstimator()
+        t = self._dropped_then_clear(e, 0.0)
+        low = e.current.mbps
+        for _ in range(20):
+            e.observe(Measurement(t=t, goodput_mbps=20.0,
+                                  bottleneck_backlog_bytes=40000))
+            t += 1.0
+        self.assertAlmostEqual(e.current.mbps, low, places=6,
+                               msg="a genuinely congested link still allowed "
+                                   "the estimate to rise")

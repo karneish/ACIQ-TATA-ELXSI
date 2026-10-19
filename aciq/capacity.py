@@ -299,14 +299,23 @@ class CapacityEstimator:
                               saturated=False, changed=False, m=m)
 
         self._sat_streak += 1
-        # Reset here. It measures SUSTAINED non-congestion, so a single
-        # congested sample has to clear it -- otherwise it just accumulates
-        # across a whole run and means nothing. This was missed when the
-        # mechanism was first written.
-        self._idle_streak = 0
         if self._sat_streak < SAT_STREAK_REQUIRED:
             # One burst is not a reading.
+            #
+            # `_idle_streak` is deliberately NOT cleared here. It measures
+            # SUSTAINED non-congestion, and a rate limiter's queue is briefly
+            # non-empty all the time -- the host showed 3028 bytes, about two
+            # packets, on ticks scattered through an otherwise completely
+            # clear link. Each of those cancelled the release streak, so ten
+            # consecutive clear ticks never accumulated and capacity was pinned
+            # at the degraded rate for 30 s after the link came back.
+            #
+            # This is the same "one burst is not a reading" principle the
+            # streak itself encodes, applied consistently: a single sample must
+            # not cancel a recovery any more than it may trigger an adaptation.
             return self._emit(mbps=self._ewma, saturated=True, changed=False, m=m)
+        # Confirmed congestion: now it is fair to reset the recovery streak.
+        self._idle_streak = 0
 
         # Saturated: observed goodput is the capacity.
         target = m.goodput_mbps

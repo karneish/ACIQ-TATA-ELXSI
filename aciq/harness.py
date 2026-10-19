@@ -392,6 +392,9 @@ class Harness:
         self._estimator = CapacityEstimator()
         self._collector: MetricsCollector | None = None
         self.policy_changes = 0
+        #: The last Measurement handed to the estimator, kept so per-sample
+        #: evidence can record what the estimator actually saw.
+        self.last_measurement = None
         #: None until enable_enforcement() is called. See aciq/enforce.py for why
         #: this is opt-in rather than always-on.
         self._enforcer: ClosedLoop | None = None
@@ -834,13 +837,18 @@ class Harness:
         # 0 throughout a congested run. Summed here rather than in the reader so
         # the saturation test sees one number and the raw counters stay raw.
         backlog = sum(counters[k].backlog_bytes for k in counters if k in prev)
-        cap = self._estimator.observe(Measurement(
+        measurement = Measurement(
             t=now, goodput_mbps=gbps, drop_rate_per_s=drate,
             overlimit_rate_per_s=orate,
             link_drop_rate_per_s=ldr, link_overlimit_rate_per_s=lor,
             child_backlog_bytes=backlog,
             bottleneck_drop_rate_per_s=self.bottleneck_drop_rate(dt),
-            bottleneck_backlog_bytes=self.bottleneck_backlog()))
+            bottleneck_backlog_bytes=self.bottleneck_backlog())
+        #: The observation the estimator actually consumed this tick. Recorded
+        #: so the per-sample evidence explains the verdict instead of being
+        #: gathered separately and occasionally disagreeing with it.
+        self.last_measurement = measurement
+        cap = self._estimator.observe(measurement)
         if not cap.changed:
             return None, False
 

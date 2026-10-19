@@ -585,17 +585,20 @@ class ExperimentRunner:
                 self._est_t = elapsed
 
             lk = collector.last_link_counters()
-            # Read the external telemetry ONCE per tick, and record the raw
-            # values alongside the verdict.
+            # The external telemetry the ESTIMATOR ACTUALLY SAW this tick.
             #
-            # Without these, a failure of the external path was indistinguishable
-            # from a link that genuinely had congestion: both show only
-            # `estimator_saturated`. A null here means the bottleneck could not
-            # be read that tick, which is exactly what triggers the fallback to
-            # the parent's counters -- so it is the difference between "the link
-            # is busy" and "we could not look".
-            _bn_backlog = self.harness.bottleneck_backlog()
-            _bn_drop_rate = self.harness.bottleneck_drop_rate(1.0)
+            # Taken from the Measurement the harness built, not re-read here.
+            # The first version of this re-read `tc` independently, so the
+            # recorded values could disagree with the verdict they were meant to
+            # explain -- and the run produced `sat=True backlog=0 drops=0.0`,
+            # which is not a state the code can produce. An instrument that
+            # reports a contradiction is worse than none.
+            _bn_backlog = None
+            _bn_drop_rate = None
+            _last_m = getattr(self.harness, "last_measurement", None)
+            if _last_m is not None:
+                _bn_backlog = _last_m.bottleneck_backlog_bytes
+                _bn_drop_rate = _last_m.bottleneck_drop_rate_per_s
 
             samples.append({
                 "t": round(elapsed, 2),
