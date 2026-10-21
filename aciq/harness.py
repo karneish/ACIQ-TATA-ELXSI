@@ -504,8 +504,11 @@ class Harness:
         measured = self._estimator.current.mbps
         cap = measured if measured else self._configured_capacity
         if self._enforcer.capacity_mbps != cap:
-            self._enforcer.set_capacity(cap)
-            self._enforcer.capacity_is_measured = bool(measured)
+            # measured is truthy exactly when M2 has a reading; passing it
+            # through the parameter is the whole point of set_capacity's
+            # flag -- an earlier version wrote the attribute directly because
+            # set_capacity used to clobber it right after assigning it.
+            self._enforcer.set_capacity(cap, measured=bool(measured))
         return self._enforcer.apply(features, now=now)
 
     #: What was last written to class 1:1. A fallback for the window before M2
@@ -706,10 +709,18 @@ class Harness:
             # ceil. The plan is the harness's own record of what it configured.
             self._current_plan = plan
             self.txn.remember_capacity(capacity_mbps)
-            return self.txn.apply(plan).ok
+            ok = self.txn.apply(plan).ok
+            # Any apply that reaches the kernel rebuilds the qdisc and destroys
+            # every per-flow filter; the bridge must be told whether or not the
+            # commit succeeded (a rollback replays last-good, which has none).
+            if self.txn.last_outcome is None or self.txn.last_outcome.kernel_touched:
+                self._invalidate_enforcer_filters()
+            return ok
         tree = baseline_tree(system, capacity_mbps)
         self.txn.remember_capacity(capacity_mbps)
         self.runner.run(self.txn._prefix + ("tc", "qdisc", "del", "dev", self.dev, "root"))
+        # The del alone destroyed every filter on the old root, success or not.
+        self._invalidate_enforcer_filters()
         for argv in render(tree, dev=self.dev, ns=self.ns):
             rc, _, err = self.runner.run(argv)
             if rc != 0:
@@ -790,10 +801,15 @@ class Harness:
             self._lease_in_effect = False
             return False
         ok = bool(self.txn.apply(self._current_plan, now=self.clock()).ok)
-        if ok:
-            # The tree was rebuilt, so every per-flow filter went with it. Tell
-            # the bridge, or it keeps believing filters are installed and
-            # `mark()` returns a no-op for a flow that has none.
+        # The tree was rebuilt (or attempted and rolled back — a rollback
+        # replays last-good, which also has no flower filters), so every
+        # per-flow filter is gone whether or not the apply committed. Telling
+        # the bridge only on success left it believing filters were installed
+        # after a failed apply, and `mark()` then no-op'd for flows that had
+        # nothing on the device — the exact silent-staleness bug
+        # `invalidate()` exists to prevent, on the failure path.
+        out = self.txn.last_outcome
+        if ok or (out is not None and out.kernel_touched):
             self._invalidate_enforcer_filters()
             # Attributed separately from a capacity change. A plan applied here
             # still rebuilds the qdisc, so it is a policy change in every sense
@@ -894,9 +910,14 @@ class Harness:
         })
         if txr.committed:
             self.policy_changes += 1
-            # Same as above: a committed apply rebuilt the qdisc, so the
-            # bridge's filters are gone even though its state says otherwise.
+        # Same rule as sync_lease: a rebuild attempt destroys every per-flow
+        # flower filter whether or not the commit succeeded — a rolled-back
+        # apply replays last-good, which has no filters either. Invalidating
+        # only on success left the bridge's slot map stale after a failed
+        # apply, so `mark()` no-op'd for flows with nothing on the device.
+        if txr.committed or txr.kernel_touched:
             self._invalidate_enforcer_filters()
+        if txr.committed:
             return cap.mbps, True
         return cap.mbps, False
 
@@ -907,27 +928,38 @@ class Harness:
         """What the kernel reports as installed, read back after an apply.
 
         Recorded per policy change so the evidence shows the applied parent rate
-        rather than only the requested one. A failure to read is reported as such
-        instead of being reported as an empty dict, which would be
-        indistinguishable from "the kernel has nothing installed".
+        rather than only the requested one.
+
+        It uses the transaction manager's OWN read-back path, not a second
+        parser. An earlier version of this called `tc -j class show` and parsed
+        the result itself, which is wrong in a way only this host could reveal:
+        txn.py already documents that
+
+            `tc -s -j class show` was never validated on this machine and
+            returned empty, which made every class look absent and every apply
+            look like a read-back mismatch
+
+        so the JSON path answers nothing here, and a private parser would have
+        reported `readable: false` on every single apply -- evidence that looks
+        diligent and is empty. Text output is primary on this machine, JSON is
+        the fallback, and `parse_class_state` is the function that already knows
+        both shapes.
+
+        An unreadable device is reported as unreadable, never as an empty dict
+        with no classes: "we could not look" and "the kernel has nothing
+        installed" must stay distinguishable.
         """
-        rc, out, _err = self.runner.run(
-            self.txn._prefix + ("tc", "-j", "class", "show", "dev", self.dev))
-        if rc != 0:
-            return {"readable": False, "error": f"tc exited {rc}"}
-        import json as _j
-        try:
-            data = _j.loads(out or "[]")
-        except ValueError:
-            return {"readable": False, "error": "tc -j returned unparseable output"}
-        rates = {}
-        for entry in data if isinstance(data, list) else []:
-            cls = entry.get("class") or {}
-            cid = cls.get("classid") or entry.get("handle")
-            if cid:
-                rates[cid] = {"rate": cls.get("rate"),
-                              "ceil": cls.get("ceil")}
-        return {"readable": bool(rates), "classes": rates}
+        from .tc import parse_class_state
+        state, source = self.txn._read_class_state()
+        if not state:
+            return {"readable": False,
+                    "error": "neither tc class show nor tc -s -j class show "
+                             "answered"}
+        classes = parse_class_state(state)
+        if not classes:
+            return {"readable": False, "source": source,
+                    "error": "read-back produced no class state"}
+        return {"readable": True, "source": source, "classes": classes}
 
     def reset_loop(self) -> None:
         """Reset the estimator and loop state, but NOT the shield.
@@ -938,6 +970,15 @@ class Harness:
         self._estimator = CapacityEstimator()
         self._prev_counters = None
         self._prev_link = None
+        # Leaked across runs before: `_prev_delivered_bytes` kept run 1's
+        # counter, so run 2's first bottleneck reading was a delta measured
+        # against a number from a different experiment (or silently became
+        # None when the counter reset backwards). The change log leaked too --
+        # run 2's report carried run 1's policy applications, making a fresh
+        # run look like it had been changing policy all along.
+        if hasattr(self, "_prev_delivered_bytes"):
+            del self._prev_delivered_bytes
+        self.policy_change_log = []
         self.policy_changes = 0
 
     def reset_for_run(self) -> None:
@@ -952,4 +993,9 @@ class Harness:
         self.shield.reset()
         self._current_plan = None
         self._lease = None
+        self._lease_in_effect = False
+        self.last_measurement = None
         self.txn.audit.clear()
+        self.txn.last_outcome = None
+        self.txn.last_rollback = None
+        self.txn.last_reason = ""
