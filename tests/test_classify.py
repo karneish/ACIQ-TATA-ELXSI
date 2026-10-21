@@ -556,3 +556,48 @@ class TestBulkStaysCapacityRelative(unittest.TestCase):
                    flow=Flow("10.0.1.2", 1, "203.0.113.2", 443, "tcp"))
         self.assertEqual(classify(f, capacity_mbps=30.0).cls,
                          TrafficClass.BULK)
+
+
+class TestTrustStoreIsBounded(unittest.TestCase):
+    """A long run with source churn must not grow the trust store forever.
+
+    "Bounded and in-memory" was the docstring's claim and it was false: the
+    three dicts were never evicted. NAT, DHCP and spoofing all produce more
+    distinct sources than any instant has active.
+    """
+
+    def test_the_store_never_exceeds_its_cap(self):
+        t = TrustStore(max_sources=64)
+        for i in range(5000):
+            t.record_miss(f"10.0.{i // 256}.{i % 256}")
+        self.assertLessEqual(len(t), 64)
+
+    def test_an_active_mislabeller_is_not_evicted_by_stale_churn(self):
+        """Eviction is by recency, not by trust, precisely so that a
+        persistently-bad source is never the one forgotten while it is still
+        claiming. If it were by trust this source would be the first out."""
+        t = TrustStore(max_sources=8)
+        # The mislabeller claims and misses repeatedly, staying active.
+        for i in range(100):
+            t.record_miss("bad")
+            # A stream of one-shot sources churns around it.
+            t.record_claim(f"transient-{i}")
+        self.assertLess(t.trust("bad"), 1.0,
+                        "the active mislabeller lost its (lowered) trust")
+
+    def test_forgetting_a_stale_source_is_safe(self):
+        """Default trust is 1.0, so an evicted source is treated as new. That
+        is safe only because eviction is by staleness: a source that stopped
+        mis-labelling long ago is indistinguishable from a fresh one."""
+        t = TrustStore(max_sources=4)
+        t.record_miss("old")
+        self.assertLess(t.trust("old"), 1.0)
+        for i in range(20):
+            t.record_claim(f"new-{i}")
+        self.assertEqual(t.trust("old"), 1.0)
+
+    def test_a_single_source_store_does_not_crash(self):
+        t = TrustStore(max_sources=1)
+        for i in range(100):
+            t.record_miss(f"s{i}")
+        self.assertLessEqual(len(t), 1)
