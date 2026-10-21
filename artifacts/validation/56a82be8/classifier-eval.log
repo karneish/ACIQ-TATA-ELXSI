@@ -1,0 +1,69 @@
+Classifier evaluation (ground truth from the constructed workload)
+
+=== link capacity 100 Mbps (the shipped default) ===
+  cases 16   labelled 13
+  accuracy on labelled cases : 0.6923
+  macro F1                    : 0.7879
+  abstention rate             : 0.1875
+  required to abstain, did so : 3/3
+  high-confidence errors      : 1
+      ADVERSARIAL video claiming EF on a small pipe
+
+  per class:
+    realtime_interactive support  5  P 0.8333  R 1.0  F1 0.9091
+    adaptive_video       support  5  P 0.5714  R 0.8  F1 0.6667
+    bulk_transfer        support  3  P None  R 0.0  F1 None
+    leased_flow          support  0  P None  R None  F1 None
+
+  every case:
+    ok  call: EF, small, frequent, bidirectional             truth=realtime_interactive got=realtime_interactive conf=0.95 tier=A
+    ok  call: EF, steady, one-way-heavy                      truth=realtime_interactive got=realtime_interactive conf=0.95 tier=A
+    ok  interactive: RTP ports, no EF claim                  truth=realtime_interactive got=realtime_interactive conf=0.55 tier=B
+    ok  interactive: STUN 3478, unidirectional               truth=realtime_interactive got=realtime_interactive conf=0.55 tier=B
+    ok  video: sustained, large, few bytes per packet        truth=adaptive_video       got=adaptive_video       conf=0.60 tier=B
+    ok  video: over TLS port, no marks                       truth=adaptive_video       got=adaptive_video       conf=0.60 tier=B
+    ok  video: ramping (ABR ladder)                          truth=adaptive_video       got=adaptive_video       conf=0.60 tier=B
+    ERR bulk: sustained one-way, very large packets          truth=bulk_transfer        got=adaptive_video       conf=0.60 tier=B
+    ERR bulk: large on an encrypted port, no marks           truth=bulk_transfer        got=adaptive_video       conf=0.60 tier=B
+    ERR ADVERSARIAL bulk claiming EF                         truth=bulk_transfer        got=adaptive_video       conf=0.60 tier=B
+    ERR ADVERSARIAL video claiming EF on a small pipe        truth=adaptive_video       got=realtime_interactive conf=0.95 tier=A
+    ok  ADVERSARIAL interactive on a bulk port               truth=realtime_interactive got=realtime_interactive conf=0.55 tier=B
+    ok  insufficient: 3 packets                              truth=None                 got=None                 conf=0.35 tier=C
+    ok  insufficient: too young                              truth=None                 got=None                 conf=0.35 tier=C
+    ok  insufficient: idle, tiny, no ports, no marks         truth=None                 got=None                 conf=0.35 tier=C
+    ok  correction overrides what the rate would say         truth=adaptive_video       got=adaptive_video       conf=1.00 tier=X
+
+=== link capacity 10 Mbps (what --drop 10 produces) ===
+  cases 16   labelled 13
+  accuracy on labelled cases : 0.9231
+  macro F1                    : 0.9327
+  abstention rate             : 0.1875
+  required to abstain, did so : 3/3
+  high-confidence errors      : 1
+      ADVERSARIAL video claiming EF on a small pipe
+
+  per class:
+    realtime_interactive support  5  P 0.8333  R 1.0  F1 0.9091
+    adaptive_video       support  5  P 1.0  R 0.8  F1 0.8889
+    bulk_transfer        support  3  P 1.0  R 1.0  F1 1.0
+    leased_flow          support  0  P None  R None  F1 None
+
+  every case:
+    ok  call: EF, small, frequent, bidirectional             truth=realtime_interactive got=realtime_interactive conf=0.95 tier=A
+    ok  call: EF, steady, one-way-heavy                      truth=realtime_interactive got=realtime_interactive conf=0.95 tier=A
+    ok  interactive: RTP ports, no EF claim                  truth=realtime_interactive got=realtime_interactive conf=0.55 tier=B
+    ok  interactive: STUN 3478, unidirectional               truth=realtime_interactive got=realtime_interactive conf=0.55 tier=B
+    ok  video: sustained, large, few bytes per packet        truth=adaptive_video       got=adaptive_video       conf=0.60 tier=B
+    ok  video: over TLS port, no marks                       truth=adaptive_video       got=adaptive_video       conf=0.60 tier=B
+    ok  video: ramping (ABR ladder)                          truth=adaptive_video       got=adaptive_video       conf=0.60 tier=B
+    ok  bulk: sustained one-way, very large packets          truth=bulk_transfer        got=bulk_transfer        conf=0.75 tier=B
+    ok  bulk: large on an encrypted port, no marks           truth=bulk_transfer        got=bulk_transfer        conf=0.75 tier=B
+    ok  ADVERSARIAL bulk claiming EF                         truth=bulk_transfer        got=bulk_transfer        conf=0.75 tier=B
+    ERR ADVERSARIAL video claiming EF on a small pipe        truth=adaptive_video       got=realtime_interactive conf=0.95 tier=A
+    ok  ADVERSARIAL interactive on a bulk port               truth=realtime_interactive got=realtime_interactive conf=0.55 tier=B
+    ok  insufficient: 3 packets                              truth=None                 got=None                 conf=0.35 tier=C
+    ok  insufficient: too young                              truth=None                 got=None                 conf=0.35 tier=C
+    ok  insufficient: idle, tiny, no ports, no marks         truth=None                 got=None                 conf=0.35 tier=C
+    ok  correction overrides what the rate would say         truth=adaptive_video       got=adaptive_video       conf=1.00 tier=X
+
+  wrote /home/mekarz/Desktop/Full-projects/TATA-ELXSI/artifacts/validation/56a82be8/classifier-evaluation.json
