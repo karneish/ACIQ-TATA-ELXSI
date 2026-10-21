@@ -125,16 +125,31 @@ enforcement — commanded, not measured by M2.
 
 ## G. Classification results
 
-`tools/eval_classifier.py`, 16 constructed cases, ground truth from the workload
-profile:
+`tools/eval_classifier.py` now scores **two** corpora at **two** capacities and
+reports per-protocol / per-IP-version breakdowns. Ground truth comes from the
+case constructor, never from a `Classification`.
 
-| capacity | accuracy | macro F1 | abstention | required-to-abstain, did |
-|---|---|---|---|---|
-| 100 Mbps | 0.6154 | 0.7273 | 0.1875 | **3 / 3** |
-| 10 Mbps | 0.8462 | 0.8487 | 0.1875 | **3 / 3** |
+| corpus | cases | labelled | accuracy on labelled | macro F1 | high-confidence errors | abstentions honoured |
+|---|---|---|---|---|---|---|
+| constructed @ 100 Mbps | 17 | 14 | **1.00** | **1.00** | **0** | 3 / 3 |
+| constructed @ 10 Mbps | 17 | 14 | **1.00** | **1.00** | **0** | 3 / 3 |
+| independent @ 100 Mbps | 9 | 7 | **1.00** | **1.00** | **0** | 2 / 2 |
+| independent @ 10 Mbps | 9 | 7 | **1.00** | **1.00** | **0** | 2 / 2 |
 
-Per class at 10 Mbps: interactive P 0.80 R 0.80 F1 0.800 · video P 1.00 R 0.80
-F1 0.889 · bulk P 0.75 R 1.00 F1 0.857.
+Per-protocol (constructed @ 100): tcp 1.00 · udp 1.00.
+Per-IP-version (independent @ 100): v4 1.00 · v6 1.00.
+
+**Superseded earlier result.** This section previously reported 0.6154 / 0.8462
+on 16 cases. Those figures were produced on a fixture with two defects: the
+service port sat in `sport` instead of `dport` (so the port path was never
+exercised), and the "bulk" cases carried only 21–32 Mbps while labelled bulk
+*at 100 Mbps*, which is below the capacity-relative `BULK_MIN_CAPACITY_FRAC` of
+0.5 and so was correctly classified adaptive. Both defects are fixed; see
+`docs/PROJECT_REPORT.md` §4.4 and `docs/ACIQ_COMPLETE.md` §4.4.
+
+The residual limitation is honest and unchanged: a UDP/443 call cannot be
+reliably separated from a UDP/443 download using counters alone, so the
+classifier abstains or reports low confidence there rather than guessing.
 
 **Abstention is correct in every case that requires it** — the behaviour that
 matters most, since forcing a class from no evidence is worse than declining.
