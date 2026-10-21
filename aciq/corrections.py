@@ -52,8 +52,10 @@ Two guards, both cheap:
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
+import re
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -76,6 +78,18 @@ _UNSET = object()
 #: clear reason instead of being misread.
 SCHEMA_VERSION = 1
 
+#: Minimum seconds between live-reload stat() calls. `lookup` runs per flow per
+#: tick, so the check is throttled; the CLI writes corrections while the
+#: process runs, and a store that only reads its file at construction silently
+#: ignores every correction made after startup.
+RELOAD_CHECK_S = 1.0
+
+#: A protocol token: what conntrack can print (`\w+`) after lowercasing.
+#: Shape-checked rather than from a fixed list — an allow-list would silently
+#: skip corrections for any protocol the testbed has not seen (gre, esp. ...),
+#: which looks exactly like "the user's correction did nothing".
+_PROTO_RE = re.compile(r"[a-z0-9]{1,16}")
+
 
 #: Friendly aliases for the enum values. `TrafficClass` values are verbose
 #: (`realtime_interactive`, `adaptive_video`); an operator reaching for
@@ -88,9 +102,54 @@ CLASS_ALIASES: dict[str, str] = {
     "video": "adaptive_video",
     "bulk": "bulk_transfer",
     "transfer": "bulk_transfer",
-    "leased": "leased_flow",
-    "lease": "leased_flow",
+    # deliberately no "leased"/"lease" alias: see _reject_leased.
 }
+
+
+def canonical_ip(value: object, what: str = "address") -> str:
+    """The canonical textual form of an IP address.
+
+    Matching compares strings, so `2001:DB8::1` on disk and `2001:db8:0:0:0:0:0:1`
+    from conntrack are two keys that never meet — a correction that silently
+    never fires, indistinguishable from a misclassification. Canonicalising
+    both sides at the boundary removes the whole family.
+    """
+    try:
+        return str(ipaddress.ip_address(value))  # type: ignore[arg-type]
+    except ValueError as e:
+        raise CorrectionError(
+            f"{what} {value!r} is not a valid IPv4 or IPv6 address") from e
+
+
+def _ips_equal(a: str, b: str) -> bool:
+    if a == b:
+        return True
+    try:
+        return ipaddress.ip_address(a) == ipaddress.ip_address(b)
+    except ValueError:
+        return False
+
+
+def _reject_leased(cls: TrafficClass) -> TrafficClass:
+    """A correction may not mint lease capacity.
+
+    LEASED is not a traffic class a user can observe and opine about; it is
+    the marker the *lease book* attaches, with an id, a weight and an expiry
+    that the shield and the plan both reason about. Accepting it on this path
+    would let a JSONL line put flows into the leased class with no lease
+    behind it: reserved bandwidth with nobody responsible for releasing it.
+    """
+    if cls is TrafficClass.LEASED:
+        raise CorrectionError(
+            "leased_flow cannot be set by a correction; leases are created "
+            "through the lease book (intent API) with an id, weight and "
+            "expiry")
+    return cls
+
+
+def _reject_leased_value(value: object) -> None:
+    if str(value).strip().lower() in ("leased_flow", "leased", "lease"):
+        _reject_leased(TrafficClass.LEASED)
 
 
 def parse_class(value: str) -> TrafficClass:
@@ -101,11 +160,14 @@ def parse_class(value: str) -> TrafficClass:
     """
     if not isinstance(value, str):
         raise CorrectionError(f"class must be a string, got {type(value).__name__}")
+    _reject_leased_value(value)
     candidate = CLASS_ALIASES.get(value.strip().lower(), value.strip().lower())
     try:
-        return TrafficClass(candidate)
+        return _reject_leased(TrafficClass(candidate))
     except ValueError as e:
-        allowed = ", ".join(sorted({*CLASS_ALIASES, *(c.value for c in TrafficClass)}))
+        allowed = ", ".join(sorted(
+            {*(c.value for c in TrafficClass if c is not TrafficClass.LEASED),
+             *CLASS_ALIASES}))
         raise CorrectionError(f"unknown class {value!r}; must be one of: {allowed}") from e
 
 
@@ -144,8 +206,13 @@ class Correction:
         Port-scoped corrections must match the port. Host-scoped ones ignore it
         entirely -- never compare, because a reconnect changes the source port
         and a port-insensitive correction would stop applying.
+
+        Addresses compare as addresses, not as strings: `2001:DB8::1` and
+        `2001:db8:0:0:0:0:0:1` are the same host.
         """
-        if self.src != flow.src or self.dst != flow.dst or self.proto != flow.proto:
+        if not _ips_equal(self.src, flow.src) or not _ips_equal(self.dst, flow.dst):
+            return False
+        if self.proto != flow.proto:
             return False
         if self.dport is not None and self.dport != flow.dport:
             return False
@@ -185,15 +252,28 @@ class CorrectionStore:
         self._now = now
         self.stats = CorrectionStats()
         self._by_key: dict[tuple[str, str, str, int | None], Correction] = {}
+        #: mtime the in-memory copy was loaded at; a change means the CLI wrote
+        self._mtime: int | None = None
+        #: last time maybe_reload() stat() the file (throttled, see RELOAD_CHECK_S)
+        self._last_reload_check: float = float("-inf")
         self.reload()
 
     # -- reading -----------------------------------------------------------
     def reload(self) -> CorrectionStore:
-        """Re-read the file. Called once at construction; call it again if
-        corrections are added while the process runs."""
+        """Re-read the file. Called at construction and by the live-reload
+        check whenever the file's mtime changes.
+
+        Hit/miss/expired counters survive a reload: they describe what the
+        *process* has seen, not what the file contains, and losing them on
+        every external write would make the staleness counters useless exactly
+        when someone is editing corrections.
+        """
+        prev = self.stats
+        self.stats = CorrectionStats(hits=prev.hits, misses=prev.misses,
+                                     expired=prev.expired)
         self._by_key.clear()
-        self.stats = CorrectionStats()
         if not self.path.exists():
+            self._mtime = None
             return self
         with self.path.open(encoding="utf-8") as fh:
             for lineno, line in enumerate(fh, 1):
@@ -212,7 +292,36 @@ class CorrectionStore:
                 # flow means the newer statement
                 self._by_key[c.key] = c
                 self.stats.loaded += 1
+        self._note_file_mtime()
         return self
+
+    def _note_file_mtime(self) -> None:
+        try:
+            self._mtime = self.path.stat().st_mtime_ns
+        except OSError:
+            self._mtime = None
+
+    def maybe_reload(self, now: float | None = None) -> bool:
+        """Reload if the file changed on disk. Throttled to RELOAD_CHECK_S.
+
+        Without this, the store reads its file once at construction and every
+        correction the CLI records afterwards is invisible to the running
+        classifier -- the correction is in the file, counted in the CLI's
+        output, and simply never applies.
+        """
+        if now is None:
+            now = self._now if self._now is not None else time.time()
+        if now - self._last_reload_check < RELOAD_CHECK_S:
+            return False
+        self._last_reload_check = now
+        try:
+            mtime = self.path.stat().st_mtime_ns
+        except OSError:
+            mtime = None
+        if mtime == self._mtime:
+            return False
+        self.reload()
+        return True
 
     # -- writing -----------------------------------------------------------
     def record(self, flow: Flow, cls: TrafficClass, reason: str = "",
@@ -232,11 +341,19 @@ class CorrectionStore:
         """
         if cls is None:
             raise CorrectionError("a correction must name a class")
+        _reject_leased(cls)
         now = time.time() if self._now is None else self._now
         ttl = self.ttl_s if ttl_s is _UNSET else ttl_s
         expires = None if ttl is None else now + ttl
+        # Canonical at the write, so a later lookup (which canonicalises the
+        # flow side) meets it as the same string.
+        src = canonical_ip(flow.src, "flow source")
+        dst = canonical_ip(flow.dst, "flow destination")
+        if not _PROTO_RE.fullmatch(str(flow.proto).strip().lower()):
+            raise CorrectionError(
+                f"flow protocol {flow.proto!r} is not a valid protocol name")
         c = Correction(
-            src=flow.src, dst=flow.dst, proto=flow.proto,
+            src=src, dst=dst, proto=str(flow.proto).strip().lower(),
             dport=flow.dport if dport is _UNSET else dport,  # type: ignore[arg-type]
             cls=cls, reason=reason, recorded_at=now,
             recorded_by=by, expires_at=expires,
@@ -261,6 +378,10 @@ class CorrectionStore:
             fh.write(line)
             fh.flush()
             os.fsync(fh.fileno())
+        # Our own write must not trigger a reload on the next lookup: the
+        # in-memory copy already has it, and a reload would reset the file
+        # counters for nothing.
+        self._note_file_mtime()
 
     # -- lookup ------------------------------------------------------------
     def lookup(self, flow: Flow, now: float | None = None) -> Correction | None:
@@ -274,8 +395,21 @@ class CorrectionStore:
         if now is None:
             now = self._now if self._now is not None else time.time()
 
-        exact = self._by_key.get((flow.src, flow.dst, flow.proto, flow.dport))
-        host = self._by_key.get((flow.src, flow.dst, flow.proto, None))
+        # Live reload: the CLI records while this process runs. Throttled
+        # inside maybe_reload, so the per-flow cost is a comparison.
+        self.maybe_reload(now)
+
+        try:
+            fsrc = canonical_ip(flow.src, "flow source")
+            fdst = canonical_ip(flow.dst, "flow destination")
+        except CorrectionError:
+            # A live flow whose address does not parse matches nothing. Never
+            # raise into the classification loop over a comparison.
+            self.stats.misses += 1
+            return None
+
+        exact = self._by_key.get((fsrc, fdst, flow.proto, flow.dport))
+        host = self._by_key.get((fsrc, fdst, flow.proto, None))
 
         best: Correction | None = None
         for cand in (exact, host):
@@ -323,12 +457,23 @@ def parse_correction(line: str) -> Correction:
     if missing:
         raise CorrectionError(f"missing field(s): {', '.join(missing)}")
 
+    _reject_leased_value(d["cls"])
     try:
-        cls = TrafficClass(d["cls"])
+        cls = _reject_leased(TrafficClass(d["cls"]))
     except ValueError as e:
-        allowed = ", ".join(c.value for c in TrafficClass)
+        allowed = ", ".join(c.value for c in TrafficClass
+                            if c is not TrafficClass.LEASED)
         raise CorrectionError(
             f"unknown class {d['cls']!r}; must be one of: {allowed}") from e
+
+    src = canonical_ip(d["src"], "src")
+    dst = canonical_ip(d["dst"], "dst")
+
+    proto = str(d["proto"]).strip().lower()
+    if not _PROTO_RE.fullmatch(proto):
+        raise CorrectionError(
+            f"proto {d['proto']!r} is not a valid protocol name "
+            "(expected letters/digits, e.g. tcp or udp)")
 
     dport = d.get("dport")
     if dport is not None:
@@ -351,7 +496,7 @@ def parse_correction(line: str) -> Correction:
             raise CorrectionError("expires_at must be a number or null")
 
     return Correction(
-        src=str(d["src"]), dst=str(d["dst"]), proto=str(d["proto"]).lower(),
+        src=src, dst=dst, proto=proto,
         dport=dport, cls=cls, reason=str(d.get("reason", "")),
         recorded_at=float(d.get("recorded_at", 0.0)),
         recorded_by=str(d.get("recorded_by", "")),
