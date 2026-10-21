@@ -46,7 +46,7 @@ Two facts shaped the algorithm, both measured:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 #: Asymmetric smoothing. Capacity falling is urgent (users are already hurting),
 #: capacity rising is taken on trust more slowly.
@@ -83,6 +83,19 @@ RELEASE_ALPHA = 0.2
 #: exists to prevent. Half is the line between "the link changed" and "this
 #: sample is low", which is the distinction that matters.
 FAST_DROP_RATIO = 0.5
+
+#: Minimum external-queue depth for `_emergency_drop` to believe congestion
+#: without a two-sample streak, when there are no bottleneck drops.
+#:
+#: Measured, not assumed: the host's residual blips were 3028 bytes -- about
+#: two packets -- scattered through an otherwise clear link while netem read
+#: `dropped 0 backlog 0b` on the surrounding ticks. Two packets behind a
+#: released queue are not evidence the estimate is wrong by 2x; a filled
+#: bottleneck queue is. 8192 bytes is five packets: well above any residue,
+#: well below the ~40 KB the tests (and the host's real netem limit) show a
+#: genuinely congested queue. A bottleneck DROP with any depth clears this bar
+#: on its own -- drops cannot be produced by the controller's own counters.
+EMERGENCY_MIN_BACKLOG_BYTES = 8192
 
 #: Ignore changes smaller than this fraction. Stops the estimator chasing noise.
 HYSTERESIS = 0.10
@@ -149,6 +162,18 @@ def _is_usable_capacity(mbps) -> bool:
 
 #: Confidence decay per unsaturated sample.
 IDLE_DECAY = 0.15
+
+#: A measurement whose timestamp is further than this *behind* the previous
+#: accepted observation is treated as stale and never moves the estimate.
+#:
+#: The estimator's `t` is monotonic on the normal path, but nothing enforced
+#: it. A buffered, replayed or clock-skewed sample could arrive with an earlier
+#: `t` than one already applied, and every time-based rule here (dwell,
+#: `_last_change_t`) would then compare against a future stamp and silently
+#: refuse to adapt -- a frozen estimate that looks like stability. Rejecting a
+#: backwards or too-large backwards step is the explicit handling the brief
+#: asks for; a forward jump is normal (the loop simply idled) and is allowed.
+STALE_GAP_S = 30.0
 
 
 @dataclass(frozen=True)
@@ -307,6 +332,10 @@ class CapacityEstimator:
         self._idle_streak = 0
         self._last_change_t: float | None = None
         self._last_m: Capacity | None = None
+        #: Timestamp of the last *accepted* observation, so a stale or
+        #: out-of-order sample can be rejected before it reaches the time-based
+        #: rules (dwell, last-change) and confuses them.
+        self._last_t: float | None = None
         #: The best capacity this estimator has ever seen, kept so a recovery
         #: can be detected -- see `observe`.
         self._high_water = float(initial_mbps)
@@ -320,6 +349,23 @@ class CapacityEstimator:
     def observe(self, m: Measurement) -> Capacity:
         changed = False
 
+        # Reject a stale or out-of-order sample before it touches any
+        # time-based rule. `t` is nominally monotonic, but a buffered, replayed
+        # or clock-skewed reading is not impossible, and applying one silently
+        # freezes adaptation: dwell would compare against a `_last_change_t`
+        # that is now in the future and refuse every change, so the estimate
+        # looks stable while it is actually wedged. A backwards step, or one
+        # larger than STALE_GAP_S backwards, is dropped with the estimate left
+        # exactly as it was -- no confidence reward, no streak change.
+        if self._last_t is not None and m.t < self._last_t - STALE_GAP_S:
+            return self._emit(mbps=self._ewma, saturated=m.saturated,
+                              changed=False, m=m)
+        # A small backwards step (clock jitter, not replay) is clamped forward
+        # so the dwell arithmetic below can never see a negative interval.
+        if self._last_t is not None and m.t < self._last_t:
+            m = replace(m, t=self._last_t)
+        self._last_t = m.t
+
         if not m.saturated:
             # Idle or unsaturated: no capacity information. Decay confidence so
             # a stale estimate is visibly less trusted rather than looking solid.
@@ -330,7 +376,7 @@ class CapacityEstimator:
                               changed=released_changed, m=m)
 
         self._sat_streak += 1
-        if self._sat_streak < SAT_STREAK_REQUIRED:
+        if self._sat_streak < SAT_STREAK_REQUIRED and not self._emergency_drop(m):
             # One burst is not a reading.
             #
             # `_idle_streak` is deliberately NOT cleared here. It measures
@@ -399,6 +445,59 @@ class CapacityEstimator:
         changed = True
 
         return self._emit(mbps=new, saturated=True, changed=changed, m=m)
+
+    def _emergency_drop(self, m: Measurement) -> bool:
+        """First-sample adoption of a large capacity drop, under strong evidence.
+
+        THE TRANSITION-TAIL PROBLEM THIS ADDRESSES
+
+        `SAT_STREAK_REQUIRED = 2` costs a full tick (~1 s) before any drop is
+        adopted. During that tick the policy still shapes bulk against the old,
+        too-large estimate, so on a 100 -> 20 Mbps step the bottleneck queue
+        fills and interactive packets queue behind it. That is the documented
+        "3-second window at the start of each run" where p95 latency spikes
+        while p50 in steady state is fine.
+
+        WHY THE STREAK EXISTS, AND WHY THIS IS NOT A VIOLATION OF IT
+
+        The streak guards against acting on a single burst of the
+        *controller's own* counters — child overlimits rise routinely and say
+        nothing about the link. This path requires something the streak was
+        never guarding against: the EXTERNAL bottleneck is measurably
+        congested (its own drop counter or queue is non-empty — two signals
+        the controller cannot influence) AND the bytes it actually delivered
+        are less than half the current estimate. Congestion plus a delivered
+        rate that low is not a burst; it is the link telling us, in its own
+        units, that the estimate is wrong by more than 2x.
+
+        The asymmetry makes an incorrect snap cheap: the estimator already
+        falls in one step and recovers only via the slow, idle-gated release,
+        so a false emergency converges back rather than oscillating. And the
+        downstream smoothing (FAST_DROP_RATIO adoption, hysteresis, dwell)
+        still applies — this only lifts the streak gate, it does not bypass
+        any of the anti-oscillation rules below.
+        """
+        if self._ewma <= 0.0:
+            return False
+        if not _is_usable_capacity(m.goodput_mbps):
+            return False
+        if m.goodput_mbps > self._ewma * FAST_DROP_RATIO:
+            return False
+        # Congestion must be *real* congestion. Without this bar a recovery in
+        # progress -- estimate releasing toward high water, delivered rate
+        # momentarily still at the old degraded value, a two-packet residual
+        # queue (3028 bytes, dropped 0) -- satisfied the original condition and
+        # snapped the estimate straight back down, which is the oscillation the
+        # single-blip tests exist to prevent. Depth or drops: never residue.
+        congested = ((m.bottleneck_drop_rate_per_s or 0.0) > 0.0
+                     or (m.bottleneck_backlog_bytes or 0)
+                     >= EMERGENCY_MIN_BACKLOG_BYTES)
+        if not congested:
+            return False
+        # Promote the streak so the caller's "two consecutive readings" gate is
+        # satisfied by this sample alone; the rest of observe() is unchanged.
+        self._sat_streak = SAT_STREAK_REQUIRED
+        return True
 
     def seed_high_water(self, mbps: float) -> None:
         """Give the recovery path a target: the capacity this link was
@@ -539,6 +638,9 @@ class CapacityEstimator:
         self._confidence = 0.0
         self._sat_streak = 0
         self._last_change_t = None
+        # A forced reset is a new epoch: the next observation must not be
+        # compared against a timestamp from before the fault.
+        self._last_t = None
         return self._emit(mbps=mbps, saturated=False, changed=True, m=None)  # type: ignore[arg-type]
 
 
