@@ -213,15 +213,18 @@ class TestCorrectionsReachTheKernel(unittest.TestCase):
             p = os.path.join(d, "c.jsonl")
             store = CorrectionStore(path=p)
             target = Flow("10.0.1.2", 1, "1.1.1.1", 443, "tcp")
-            store.record(target, TrafficClass.LEASED, reason="user asked")
+            # BULK, not LEASED: a correction may not mint lease capacity,
+            # so the class a user can actually correct with is the honest
+            # way to prove a correction reaches the kernel.
+            store.record(target, TrafficClass.BULK, reason="user asked")
             store.reload()
             e, exec_ = enforcer()
             e.corrections = CorrectionStore(path=p)
             e.corrections.reload()
             v = e.apply(mature(flow=target))
-            self.assertEqual(v.cls, TrafficClass.LEASED)
+            self.assertEqual(v.cls, TrafficClass.BULK)
             self.assertTrue(v.corrected)
-            self.assertEqual(arg(adds(exec_)[0], "flowid"), tc.CLASS_IDS[TrafficClass.LEASED])
+            self.assertEqual(arg(adds(exec_)[0], "flowid"), tc.CLASS_IDS[TrafficClass.BULK])
 
     def test_an_expired_correction_stops_applying(self):
         import tempfile
@@ -230,7 +233,7 @@ class TestCorrectionsReachTheKernel(unittest.TestCase):
             p = os.path.join(d, "c.jsonl")
             store = CorrectionStore(path=p, ttl_s=60)
             store.record(Flow("10.0.1.2", 1, "1.1.1.1", 443, "tcp"),
-                         TrafficClass.LEASED, reason="user asked")
+                         TrafficClass.BULK, reason="user asked")
             e, exec_ = enforcer()
             e.corrections = CorrectionStore(path=p, ttl_s=60)
             e.corrections.reload()
@@ -238,7 +241,7 @@ class TestCorrectionsReachTheKernel(unittest.TestCase):
             # past leaves now - created_at negative, which is not "expired".
             v = e.apply(mature(), now=time.time() + 3600)
             self.assertFalse(v.corrected, "a correction past its TTL still applied")
-            self.assertNotEqual(v.cls, TrafficClass.LEASED)
+            self.assertNotEqual(v.cls, TrafficClass.BULK)
 
 
 class TestCapacityIsMeasured(unittest.TestCase):
