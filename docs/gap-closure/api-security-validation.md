@@ -4,7 +4,7 @@ Status: **PASS** — revalidated this run, not carried forward from the report.
 
 ## Environment
 
-Loopback only, which *is* the documented deployment model. 27 tests, over the
+Loopback only, which *is* the documented deployment model. 38 tests, over the
 wire on port 0.
 
 ## The reported defects, re-checked against the current code
