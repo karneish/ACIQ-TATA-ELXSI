@@ -13,7 +13,7 @@ mechanically rather than by memory.
 | constants in code vs documentation | **ok** — 4/4 match |
 | evidence cited by claims is present on disk | **present** — 6/6 |
 | red-flag phrases | **none found** |
-| full test suite | **757 tests, ok=True, exit 0** |
+| full test suite | **1174 tests, ok=True, exit 0** |
 
 ### Constants
 
