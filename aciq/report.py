@@ -219,7 +219,21 @@ def latency_sections(table: dict[str, dict]) -> list[str]:
                                         ("p50", "p95", "p99", "jitter_ms"))
                            + f" | {_cell(w.get('loss_ratio'))} |")
             out.append("")
-            out.extend(_verdict(present))
+            vlines = _verdict(present)
+            if vlines:
+                # The verdict below compares *means*. A mean improvement is not
+                # evidence of a significant improvement, so the block says so in
+                # place rather than letting a reader infer significance from the
+                # word "beats". The paired exact test is rendered separately.
+                out.append("**Where ACIQ wins or loses on the mean (not yet a "
+                           "significance claim):**")
+                out.append("")
+                out.extend(vlines)
+                out.append("")
+                out.append("These lines compare means. Whether a difference is "
+                           "statistically distinguishable is tested separately, "
+                           "below, by paired exact Wilcoxon per metric; read the "
+                           "two together.")
     return out
 
 
@@ -357,7 +371,16 @@ def exact_wilcoxon(pairs: list[tuple[float, float]]) -> dict | None:
                 w += ranks[k]
         if abs(w - total / 2.0) >= abs(obs - total / 2.0) - 1e-12:
             extreme += 1
-    return {"statistic": obs, "p": extreme / float(1 << n), "n": n, "zeros": zeros}
+    # Matched-pairs rank-biserial correlation: an effect size on the same scale
+    # as the test, so a p-value is not the only thing a reader gets. r = (W+ -
+    # W-) / (W+ + W-) is +1 when every pair favours one side and -1 when every
+    # pair favours the other; with n as small as 7 a p-value alone hides how
+    # uniform the effect is.
+    w_plus = obs
+    w_minus = total - obs
+    rbc = (w_plus - w_minus) / total if total else 0.0
+    return {"statistic": obs, "p": extreme / float(1 << n), "n": n,
+            "zeros": zeros, "effect_r": rbc}
 
 
 def paired_pvalues(table: dict) -> list[dict]:
@@ -439,17 +462,26 @@ def build_report(results_dir: Path, title: str = "ACIQ+ experiment report") -> s
                   "ACIQ against each rival, paired by seed. Exact, by enumerating "
                   f"sign flips -- 2^n, which is why n >= {MIN_PAIRS_FOR_PVALUE} is "
                   "required before anything is claimed.", ""]
-        lines += ["| scenario | workload | vs | metric | n | W+ | p |", "|---|---|---|---|---|---|---|"]
+        lines += ["| scenario | workload | vs | metric | n | dropped ties | W+ | p | effect r (+ = ACIQ higher) |",
+                  "|---|---|---|---|---|---|---|---|---|"]
         for t in tests:
             lines.append(f"| {t['scenario']} | {t['workload']} | {t['system']} "
-                         f"| {t['metric']} | {t['n']} | {t['statistic']:.1f} "
-                         f"| {t['p']:.4f} |")
+                         f"| {t['metric']} | {t['n']} | {t.get('zeros', 0)} "
+                         f"| {t['statistic']:.1f} "
+                         f"| {t['p']:.4f} | {t['effect_r']:+.2f} |")
         sig = [t for t in tests if t["p"] < 0.05]
+        dropped = sum(t.get("zeros", 0) for t in tests)
         lines.append("")
         lines.append(f"**{len(sig)} of {len(tests)} comparisons reach p < 0.05.** "
                      "Each is one metric against one rival in one scenario; they are "
                      "not independent of each other, so this is a count of results, "
                      "not a family-wise error rate.")
+        if dropped:
+            lines.append("")
+            lines.append(f"{dropped} pair(s) had zero difference and were dropped "
+                         "from the signed-rank test; each dropped pair lowers n and "
+                         "raises the smallest attainable p, which is stated per row "
+                         "rather than hidden.")
 
     # honest reporting block
     lines += ["", "## Reporting caveats", ""]
