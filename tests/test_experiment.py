@@ -954,6 +954,16 @@ class TestSignificanceIsActuallyComputed(unittest.TestCase):
         self.assertIsNotNone(a)
         self.assertIsNotNone(b)
 
+    def test_exact_wilcoxon_reports_effect_size(self):
+        """A p-value alone hides how uniform the effect is at n=7. Every pair
+        favouring the same side must give r = -1 (ACIQ lower on every seed);
+        a perfectly split set of pairs must give r = 0."""
+        from aciq.report import exact_wilcoxon
+        all_lower = exact_wilcoxon([(0.2, 120.0)] * 6)
+        self.assertAlmostEqual(all_lower["effect_r"], -1.0)
+        split = exact_wilcoxon([(1.0, 2.0), (2.0, 1.0)])
+        self.assertAlmostEqual(split["effect_r"], 0.0)
+
 
 class TestEnforcementCountersArePerRun(unittest.TestCase):
     """Counters accumulated across runs, which disabled the safety net.
