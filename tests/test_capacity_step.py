@@ -297,6 +297,101 @@ class TestASingleBlipDoesNotCancelRecovery(unittest.TestCase):
                                    "the estimate to rise")
 
 
+class TestEmergencyFirstSampleAdoption(unittest.TestCase):
+    """The transition-tail fix: a 5x step need not wait for the streak.
+
+    SAT_STREAK_REQUIRED costs a full tick before a drop is adopted; during
+    that tick policy still shapes bulk against the old estimate, the
+    bottleneck queue fills, and interactive packets queue behind it -- the
+    documented p95 spike at the start of each run.
+    """
+
+    def test_external_congestion_adopts_the_step_on_the_first_sample(self):
+        from aciq.capacity import SAT_STREAK_REQUIRED
+        e = CapacityEstimator()
+        t = 0.0
+        for _ in range(2):
+            e.observe(_sat(t, 100.0)); t += 1.0
+        self.assertAlmostEqual(e.current.mbps, 100.0)
+        # the link goes idle: the streak resets, so the NEXT congested sample
+        # is sample #1 of a new streak
+        # long enough that the dwell window (MIN_DWELL_S) has also passed --
+        # the emergency lifts the streak gate, it does not bypass dwell
+        for _ in range(6):
+            e.observe(_idle(t, 100.0)); t += 1.0
+        self.assertEqual(e._sat_streak, 0)
+        # ...and the step lands: full bottleneck queue, delivered rate a fifth
+        # of the estimate. Without the emergency this would wait a tick at the
+        # old 100 Mbps policy.
+        c = e.observe(_sat(t, 20.0))
+        self.assertTrue(c.changed,
+                        "a 5x drop behind a full external queue must not wait "
+                        f"for {SAT_STREAK_REQUIRED} samples")
+        self.assertAlmostEqual(e.current.mbps, 20.0)
+
+    def test_without_bottleneck_evidence_the_streak_still_gates(self):
+        """The streak still guards the controller's own signals."""
+        from aciq.capacity import SAT_STREAK_REQUIRED
+        e = CapacityEstimator()
+        t = 0.0
+        for _ in range(2):
+            e.observe(_sat(t, 100.0)); t += 1.0
+        for _ in range(6):
+            e.observe(_idle(t, 100.0)); t += 1.0
+        # No bottleneck telemetry (both None = unreadable), so saturation comes
+        # from the parent fallback alone; goodput is a fifth of the estimate.
+        # Low throughput alone is a reason to wait, not to snap: the emergency
+        # requires evidence the CONTROLLER cannot produce.
+        c = e.observe(Measurement(t=t, goodput_mbps=20.0,
+                                  link_overlimit_rate_per_s=5000.0,
+                                  link_drop_rate_per_s=0.0))
+        self.assertTrue(c.saturated, "the sample must actually be saturated "
+                                     "or this tests the wrong path")
+        self.assertFalse(c.changed)
+        self.assertLess(e._sat_streak, SAT_STREAK_REQUIRED + 1)
+        self.assertAlmostEqual(e.current.mbps, 100.0)
+
+    def test_two_packet_blip_never_triggers_the_emergency(self):
+        """The residue the host measured: 3028 bytes, dropped 0.
+
+        During a release in progress (estimate climbing toward high water,
+        delivered rate momentarily still at the old degraded value) a blip
+        this size satisfied the original emergency condition and snapped the
+        estimate straight back down -- the oscillation the single-blip tests
+        exist to prevent. Depth or drops: never residue.
+        """
+        from aciq.capacity import IDLE_STREAK_RELEASE
+        e = CapacityEstimator()
+        t = 0.0
+        for _ in range(4):
+            e.observe(_sat(t, 100.0)); t += 1.0
+        for _ in range(4):
+            e.observe(_sat(t, 20.0)); t += 1.0
+        low = e.current.mbps
+        for _ in range(IDLE_STREAK_RELEASE * 2):
+            e.observe(Measurement(t=t, goodput_mbps=20.0,
+                                  bottleneck_backlog_bytes=0)); t += 1.0
+            e.observe(Measurement(t=t, goodput_mbps=20.0,
+                                  bottleneck_backlog_bytes=3028)); t += 1.0
+        self.assertGreater(e.current.mbps, low,
+                           "a two-packet residual queue during recovery must "
+                           "not snap the estimate back down")
+
+    def test_bottleneck_drops_alone_are_enough(self):
+        """Drops cannot be produced by the controller's own counters."""
+        e = CapacityEstimator()
+        t = 0.0
+        for _ in range(2):
+            e.observe(_sat(t, 100.0)); t += 1.0
+        for _ in range(6):
+            e.observe(_idle(t, 100.0)); t += 1.0
+        c = e.observe(Measurement(
+            t=t, goodput_mbps=20.0, bottleneck_drop_rate_per_s=5.0,
+            bottleneck_backlog_bytes=0))
+        self.assertTrue(c.changed)
+        self.assertAlmostEqual(e.current.mbps, 20.0)
+
+
 class TestRecoveryNeedsATarget(unittest.TestCase):
     """Option A means capacity is learned ONLY from congestion -- so without a
     seeded target the release has nothing to climb toward.
