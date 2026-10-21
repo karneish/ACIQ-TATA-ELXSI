@@ -292,6 +292,84 @@ class TestShieldStateMachine(unittest.TestCase):
             s.breach(float(i), [])
         self.assertTrue(s.state.in_fault)
 
+    # --- recovery: the transition that was missing (txn D1) ---
+
+    def test_recovered_fault_returns_to_monitor(self):
+        """A successful apply after a fault must clear the fault state.
+
+        `observe_ok` used to early-return for every non-MONITOR mode, so a
+        resolved fault left the shield in FAULT_PENDING forever: `may_retry`
+        kept gating legitimate applies on backoff, and nothing ever healed.
+        """
+        s = Shield()
+        s.breach(0.0, [])
+        self.assertEqual(s.state.mode, Mode.FAULT_PENDING)
+        s.observe_ok(10.0)
+        self.assertEqual(s.state.mode, Mode.MONITOR)
+        self.assertIsNone(s.state.alarm)
+        self.assertIsNone(s.state.last_fault_t)
+        self.assertFalse(s.state.in_fault)
+
+    def test_repeated_fault_and_recovery_never_latches_safe_held(self):
+        """Five lifetime faults, each fully recovered, used to latch SAFE_HELD.
+
+        The budget is about *consecutive unproductive* faults, not a lifetime
+        count: a fault that is recovered and then followed by clean operation
+        never escalates, no matter how many times it happens, because the
+        sustained-ok period forgives the retries consumed on the way in.
+        """
+        from aciq.shield import BREACH_WINDOW_S, SUSTAINED_OK_S
+        s = Shield()
+        for i in range(MAX_RETRIES + 3):
+            t = float(i * 5000.0)
+            s.breach(t, [])
+            self.assertEqual(s.state.mode, Mode.FAULT_PENDING)
+            s.observe_ok(t + 50.0)
+            self.assertEqual(s.state.mode, Mode.MONITOR,
+                             f"fault {i} was recovered but the shield stayed "
+                             "in fault")
+            # sustained clean operation: the budget is forgiven before the
+            # next fault, so a recovered fault is never charged for life
+            s.observe_ok(t + 50.0 + BREACH_WINDOW_S + 1.0 + SUSTAINED_OK_S)
+            self.assertEqual(s.state.retries, 0,
+                             f"cycle {i}: budget not forgiven after "
+                             "sustained clean operation")
+        self.assertNotEqual(s.state.mode, Mode.SAFE_HELD)
+
+    def test_retry_budget_survives_recovery_until_sustained_ok(self):
+        """Recovery must not silently grant a fresh budget.
+
+        A system that faults and recovers in a loop must still exhaust its
+        retries; only SUSTAINED_OK_S of clean MONITOR operation forgives them.
+        """
+        s = Shield()
+        s.breach(0.0, [])
+        s.observe_ok(10.0)
+        self.assertEqual(s.state.retries, 1, "recovery must not clear the "
+                                             "budget outright")
+        # five more fault/recover cycles exhaust it: budget + recoveries, not
+        # five faults from a reset state
+        for i in range(1, MAX_RETRIES + 1):
+            t = float(i * 1000.0)
+            s.breach(t, [])
+            s.observe_ok(t + 50.0)
+        self.assertEqual(s.state.mode, Mode.SAFE_HELD)
+
+    def test_budget_is_forgiven_after_sustained_clean_operation(self):
+        """After SUSTAINED_OK_S of clean MONITOR time, the slate is clean."""
+        from aciq.shield import BREACH_WINDOW_S, SUSTAINED_OK_S
+        s = Shield()
+        s.breach(0.0, [])
+        s.observe_ok(10.0)
+        self.assertEqual(s.state.retries, 1)
+        # past the breach window but inside the sustained period: not forgiven yet
+        s.observe_ok(10.0 + BREACH_WINDOW_S + 1.0)
+        self.assertEqual(s.state.retries, 1)
+        # past the sustained period: forgiven
+        s.observe_ok(10.0 + BREACH_WINDOW_S + 1.0 + SUSTAINED_OK_S)
+        self.assertEqual(s.state.retries, 0)
+        self.assertEqual(s.state.mode, Mode.MONITOR)
+
 
 class TestTransaction(unittest.TestCase):
     def _tm(self, runner, clock=lambda: 0.0):
