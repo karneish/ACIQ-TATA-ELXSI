@@ -9,7 +9,6 @@ data/baselines/*/
 !data/baselines/v0/**
 testbed/logs/
 *.log
-
 # ...but the evidence is allowed to keep its logs.
 #
 # Order matters and this was silently wrong: `*.log` came *after* the
@@ -113,3 +112,63 @@ venv/
 !data/host_gate_*/**/*.log
 !data/host_gate_*/**/*.json
 !data/host_gate_*/**/*.jsonl
+
+# The remaining run directories, and the acceptance logs, are the same case a
+# fourth time.
+#
+# Every artifacts/validation/<rev>/acceptance.json that is published names the
+# log each phase wrote -- unittest.log, gate.log, metric-integrity.log,
+# claim-audit.log and the rest -- in its "log" field. All 289 of those
+# references were broken: the JSON was published and the log it points at was
+# not, so a reader who followed the pointer got a missing file. The gate result
+# is only checkable if the log it claims to summarise is there.
+#
+# The same applies to testbed/logs/: docs/limitations.md names
+# testbed/logs/gate-20261009-204709.log as the record of a specific traffic
+# gate, and the other gate logs in that directory are the runs behind the
+# published gate numbers.
+#
+# And the data/ run directories -- the lease A/B seed sets, the dev*/dropcheck*
+# experiment series, the live and runs directories -- are the raw data behind
+# the measurements the gap-closure reports discuss. They are small (a few
+# hundred KB each) and they are the only place those numbers can be checked.
+#
+# A later pattern wins, so these negations come after the blanket `data/*` and
+# `*.log` rules above. Without that ordering the logs are excluded again and
+# the citations break once more.
+!artifacts/validation/
+!artifacts/validation/**
+!artifacts/validation/**/*.log
+!testbed/logs/
+!testbed/logs/**
+!testbed/logs/**/*.log
+!data/ab_lease_*/
+!data/ab_lease_*/**
+!data/ab_lease_*/**/*.log
+!data/ab_nolease*/
+!data/ab_nolease_*/
+!data/ab_nolease/**
+!data/ab_nolease_/**
+!data/ab_nolease/**/*.log
+!data/ab_nolease_*/**/*.log
+!data/dev*/
+!data/dev*/**
+!data/dev*/**/*.log
+!data/dropcheck*/
+!data/dropcheck*/**
+!data/dropcheck*/**/*.log
+!data/lease*/
+!data/lease*/**
+!data/lease*/**/*.log
+!data/leased*/
+!data/leased*/**
+!data/leased*/**/*.log
+!data/live/
+!data/live/**
+!data/live/**/*.log
+!data/runs/
+!data/runs/**
+!data/runs/**/*.log
+!data/REPORT.md
+!data/COMPARISON.md
+!data/host_gate_*/**
