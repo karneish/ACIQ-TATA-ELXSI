@@ -421,3 +421,56 @@ way. No assertion was weakened.
 Ran 757 tests in 6.7s
 OK
 ```
+
+---
+
+## P1-010 — The latency-tail gate fails on the current revision
+
+**Status: OPEN.** Found by re-running the live gates on the user's host at
+revision `c5da3fd9`, after the whole evidence chain was committed and the
+documented numbers were re-derived from the committed files.
+
+**Symptom.** The `interactive latency tail` gate measures the fraction of
+interactive packets whose round-trip time exceeds `TAIL_THRESHOLD_MS` (5 ms)
+and requires it to be at most `TAIL_MAX_FRACTION` (10%). On the current
+evidence it is **13.5%**, so the gate FAILS. The steady-state population is
+unaffected: p50 1.14 ms, p95 2.17 ms, and the slow packets are confined to
+the first few seconds of each run.
+
+**Not noise about the median — it is one slow seed, and it is explainable.**
+
+| seeds | capacity first adopted at | slow packets (>5 ms) |
+|---|---|---|
+| 43, 44, 45, 47 | t = 2.05 s | 8.2% each — pass |
+| 46, 48 | t = 4.14 s | 13.3% / 13.5% — **fail** |
+| 42 | t = 7.24 s | 5.6% — pass (one late spike, not a long transient) |
+
+The gate takes the **worst** seed, so seeds 46 and 48 alone decide the result.
+
+**Cause.** `CapacityEstimator.observe` requires `SAT_STREAK_REQUIRED` (2)
+consecutive saturated samples before it will adopt a new capacity. On seeds 46
+and 48 the `saturated` flag flickers between ticks, so the streak is reset
+before it completes and the estimate is not adopted until t = 4.14 s. Until
+then the policy is still shaped against the pre-drop capacity, bulk runs
+uncapped against the freshly-shrunk 20 Mbps link, and interactive packets
+queue behind it. The `capacity._emergency_drop` path is supposed to lift the
+streak on the first sample showing real external congestion, but it requires
+the *bottleneck's own* drop counter or a queue deeper than
+`EMERGENCY_MIN_BACKLOG_BYTES` (8192) — and on these seeds neither was true
+yet, so the emergency path could not fire either.
+
+**Why this is reported rather than fixed here.** The candidate fixes are a
+change to the estimator's adoption rule — the thing §8.4 of the project
+history already moved once — and any such change has to be re-measured on the
+kernel, because the tail gate is exactly the measurement that would tell
+whether it helped. The threshold was **not** moved to make the gate pass, and
+the failure is recorded here and in `docs/PROJECT_REPORT.md` §11.1.
+
+**Next step.** Decide between (a) letting `_emergency_drop` also accept the
+bottleneck's *sustained* congestion signal — a queue that is non-empty across
+two consecutive ticks — rather than requiring a drop or a deep queue, and (b)
+leaving the estimator alone and moving the *evidence* requirement instead: the
+tail gate could measure the slow fraction over the transition window only,
+which is what "confined to the adaptation transient" means. (b) changes what
+the gate measures, so it needs the same scrutiny as a threshold change. Either
+way the answer belongs in a measured run, not in this file.
