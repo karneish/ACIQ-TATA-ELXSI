@@ -129,34 +129,34 @@ call latency."*
 
 | median of 7 seeds | FIFO | CAKE95 | **ACIQ** |
 |---|---|---|---|
-| **p50 latency** | 83.13 ms | 82.18 ms | **1.22 ms** |
-| p95 latency | 92.84 ms | 92.60 ms | **65.11 ms** |
-| jitter | 0.89 ms | 0.88 ms | **0.71 ms** |
-| loss | 0.45% | 0.30% | **0.00%** |
+| **p50 latency** | 81.14 ms | 81.10 ms | **1.20 ms** |
+| p95 latency | 91.42 ms | 91.79 ms | **71.31 ms** |
+| jitter | 0.90 ms | 0.86 ms | **0.73 ms** |
+| loss | 0.60% | 0.45% | **0.10%** |
 
 Paired Wilcoxon, exact, by seed: **8 of 10 comparisons reach p < 0.05.**
-**p99 does not** (p = 0.4688 against FIFO, 0.0781 against CAKE).
+**p99 does not** (p = 1.0000 against FIFO, 0.0781 against CAKE).
 
 ### Scenario A — ISO download during a video call
 
 | median of 7 seeds | FIFO | CAKE95 | **ACIQ** |
 |---|---|---|---|
-| p50 | 102.831 ms | 0.259 ms | 0.266 ms |
-| p95 | 119.531 ms | 0.407 ms | **0.368 ms** |
-| jitter | 0.581 ms | 0.076 ms | **0.057 ms** |
+| p50 | 102.788 ms | 0.264 ms | 0.295 ms |
+| p95 | 119.321 ms | 0.384 ms | **0.395 ms** |
+| jitter | 0.582 ms | 0.060 ms | **0.042 ms** |
 
 **7 of 9 significant.** ACIQ beats FIFO on every metric at p = 0.0156. It beats
-CAKE on p95 and jitter — but **not on median latency** (p = 0.5000) or p99
-(p = 0.4688). On this scenario CAKE solves the problem about as well as ACIQ
-does, and the statistics say so rather than being asked to.
+CAKE on jitter only — but **not on median latency** (p = 0.1094), p95
+(p = 0.7812) or p99 (p = 0.1562). On this scenario CAKE solves the problem
+about as well as ACIQ does, and the statistics say so rather than being asked to.
 
 ### Scenario C — three TVs streaming plus gaming
 
 | median of 7 seeds | FIFO | CAKE95 | **ACIQ** |
 |---|---|---|---|
-| p50 | 0.475 ms | 0.473 ms | **0.457 ms** |
-| p95 | 2.555 ms | 0.608 ms | **0.553 ms** |
-| jitter | 0.542 ms | 0.109 ms | **0.100 ms** |
+| p50 | 0.468 ms | 0.472 ms | **0.450 ms** |
+| p95 | 2.576 ms | 0.563 ms | **0.540 ms** |
+| jitter | 0.546 ms | 0.092 ms | **0.092 ms** |
 
 Small margins, as expected on a free link: a scheduler cannot help when there is
 nothing to schedule.
@@ -167,7 +167,7 @@ nothing to schedule.
 |---|---|
 | Beats FIFO on every metric, every scenario | **YES**, p = 0.0156 |
 | Beats CAKE at the **median** under a capacity drop | **YES**, p = 0.0156 |
-| Beats CAKE on scenario A median | **NO** — p = 0.5000 |
+| Beats CAKE on scenario A median | **NO** — p = 0.1094 |
 | Beats CAKE or FIFO on **p99** anywhere | **NOT ESTABLISHED** — no scenario reaches p < 0.05 |
 
 **Read that fourth row before quoting this project.** The median advantage is
