@@ -20,8 +20,7 @@ from dataclasses import dataclass, field
 from .classify import FlowFeatures
 from .model import Flow
 
-# First tuple of a conntrack line. The second (reply) tuple is ignored: we want
-# the originator's view.
+# First tuple of a conntrack line, plus the REPLY tuple's counters when present.
 #
 # The token count before `src=` differs by protocol and TCP state:
 #   udp   17 29 src=...                                     (family, timeout)
@@ -29,11 +28,25 @@ from .model import Flow
 #   tcp   6 120 SYN_SENT src=...
 # Requiring a fixed token count silently drops every TCP flow, which is most
 # real traffic — so the state token is optional.
+#
+# The reply tuple carries its OWN packets/bytes (gate evidence, real format):
+#
+#   udp 17 29 src=A dst=B sport=.. dport=.. packets=4238 bytes=966264
+#       [UNREPLIED] src=B dst=A sport=.. dport=.. packets=0 bytes=0 mark=0 use=1
+#
+# Ignoring it was a systematic undercount, in the direction that matters: the
+# originator of a connection is the side that sends the REQUEST, and the bytes
+# everyone cares about — a download, a video segment, a game's downlink —
+# arrive in the reply direction. A flow tracker that reads only the origin
+# tuple classifies a heavy download by its request packets.
 _TUPLE_RE = re.compile(
     r"^(?P<proto>\w+)\s+\d+\s+\d+(?:\s+\S+)?\s+"
     r"src=(?P<src>\S+)\s+dst=(?P<dst>\S+)\s+"
     r"(?:sport=(?P<sport>\d+)\s+)?(?:dport=(?P<dport>\d+)\s+)?"
     r"packets=(?P<packets>\d+)\s+bytes=(?P<bytes>\d+)"
+    r"(?:\s+(?:\[UNREPLIED\]|\[ASSURED\])?"
+    r"\s+src=\S+\s+dst=\S+\s+(?:sport=\d+\s+)?(?:dport=\d+\s+)?"
+    r"packets=(?P<rpackets>\d+)\s+bytes=(?P<rbytes>\d+))?"
 )
 
 
@@ -53,16 +66,42 @@ def parse_conntrack_line(line: str) -> Flow | None:
 
 
 def parse_conntrack(text: str) -> dict[str, tuple[Flow, int, int]]:
-    """-> {flow_key: (Flow, packets, bytes)} from `conntrack -L` output."""
+    """-> {identity: (Flow, packets, bytes)} from `conntrack -L` output.
+
+    Packets and bytes are BOTH directions summed: the flow's volume is what
+    classification reasons about, and the reply tuple's counters are where
+    most payloads live. Unidirectional lines (reply absent or zero) come out
+    exactly as before.
+    """
     out: dict[str, tuple[Flow, int, int]] = {}
     for line in text.splitlines():
-        flow = parse_conntrack_line(line)
-        if flow is None:
-            continue
         m = _TUPLE_RE.match(line.strip())
+        if not m:
+            continue
         g = m.groupdict()
-        out[flow.key] = (flow, int(g["packets"]), int(g["bytes"]))
+        flow = Flow(
+            src=g["src"],
+            sport=int(g["sport"]) if g.get("sport") else 0,
+            dst=g["dst"],
+            dport=int(g["dport"]) if g.get("dport") else 0,
+            proto=g["proto"],
+        )
+        packets = int(g["packets"]) + int(g["rpackets"] or 0)
+        total_bytes = int(g["bytes"]) + int(g["rbytes"] or 0)
+        out[flow.identity] = (flow, packets, total_bytes)
     return out
+
+
+#: Seconds a flow must be absent from a SUCCESSFUL conntrack dump before the
+#: tracker forgets it. conntrack itself expires entries (udp ~30 s, tcp
+#: established can linger much longer), so anything absent for two minutes is
+#: gone from the table and its tracker sample is dead weight: `flows()` would
+#: keep offering it to the workload matcher and `features()` would keep
+#: answering with a stale rate from a flow that no longer exists.
+#:
+#: Only applied when the snapshot is NON-EMPTY: a failed read yields "" and
+#: would otherwise evict every tracked flow on one transient error.
+FLOW_EVICT_IDLE_S = 120.0
 
 
 @dataclass
@@ -73,6 +112,9 @@ class _Sample:
     moving_samples: int = 0
     total_samples: int = 0
     first_seen: float = 0.0
+    #: last time this flow appeared in a successful conntrack dump
+    last_seen: float = 0.0
+    flow: Flow | None = None
 
 
 class FlowTracker:
@@ -97,10 +139,11 @@ class FlowTracker:
             s = self._samples.get(key)
             if s is None:
                 s = _Sample(bytes=total_bytes, packets=packets, first_seen=now,
-                            total_samples=1)
+                            last_seen=now, total_samples=1)
                 s.flow = flow
                 self._samples[key] = s
                 continue
+            s.last_seen = now
             delta = total_bytes - s.bytes
             # A counter that decreased means the flow was re-created (or the
             # table was flushed). Restart rather than report nonsense.
@@ -118,12 +161,31 @@ class FlowTracker:
                 s.increments.pop(0)
             s.bytes = total_bytes
             s.packets = packets
+        # Evict flows conntrack has forgotten. Guarded on a non-empty snapshot:
+        # a failed read ("" -> {}) must never be read as "the table is empty,
+        # drop everything", which would wipe the whole run's state on one
+        # transient error.
+        if seen:
+            cutoff = now - FLOW_EVICT_IDLE_S
+            for key in [k for k, s in self._samples.items()
+                        if s.last_seen < cutoff]:
+                del self._samples[key]
 
     def features(self, key: str, dscp: int | None = None) -> FlowFeatures | None:
         s = self._samples.get(key)
         if s is None:
+            # Legacy callers pass `Flow.key` (no protocol). Exact identity is
+            # primary; this scan keeps the old spelling working, first match
+            # wins when tcp and udp share the tuple — pass `Flow.identity`
+            # for an unambiguous lookup.
+            for cand in self._samples.values():
+                fl = cand.flow
+                if fl is not None and fl.key == key:
+                    s = cand
+                    break
+        if s is None:
             return None
-        flow = getattr(s, "flow", None)
+        flow = s.flow
         if flow is None:
             return None
         age = max(0.0, self._now - s.first_seen)
@@ -163,7 +225,7 @@ class FlowTracker:
         """
         out: dict[tuple, Flow] = {}
         for s in self._samples.values():
-            fl = getattr(s, "flow", None)
+            fl = s.flow
             if fl is not None:
                 out[(fl.src, fl.dst, fl.proto, fl.dport)] = fl
         return list(out.values())
