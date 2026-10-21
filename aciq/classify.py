@@ -2,11 +2,13 @@
 
 Pure decision logic: (flow features, capacity) -> (class, confidence, evidence).
 
-**This module is not yet connected to enforcement.** `classify()` is called only
-from `tests/test_classify.py`; neither this file nor `flowtrack.py` appears in
-the import chain from `run_experiments.py`. In a real run the only thing that
-decides classes is the DSCP-EF filter, so everything non-EF falls to the HTB
-default class `1:30` (BULK). See `docs/WIRING_AUDIT.md`.
+**Wiring.** `classify()` runs on the live path: `closedloop.decide()` calls it
+and then applies `finalise()` (the abstention gate — below `MIN_CONFIDENCE`
+everything becomes UNCLASSIFIED), `harness.enforce()` reaches `decide()` with
+the `FlowFeatures` that `flowtrack` observed, and `experiment._steer()` drives
+that chain once per tick. An earlier version of this docstring said the module
+was test-only and that only the DSCP-EF filter decided classes; both claims are
+obsolete. What remains true is the constraint below.
 
 **Deliberate constraint: the classifier never keys on the test generators' own
 ports.** Our workloads listen on 5001-5004; classifying those would give 100%
@@ -144,6 +146,12 @@ MIN_PACKETS = 10
 TRUST_DECAY_FACTOR = 0.5
 MIN_EF_TRUST = 0.25
 
+#: Hard cap on the number of sources the trust store remembers, so a long run
+#: with source churn (NAT, DHCP, a spoofing attacker) cannot grow the store
+#: without limit. Same scale as the API's MAX_RATE_CLIENTS: this is a memory
+#: bound chosen for the box, not a measurement of any network.
+MAX_TRUST_SOURCES = 1024
+
 
 @dataclass(frozen=True)
 class FlowFeatures:
@@ -215,26 +223,68 @@ class TrustStore:
     MIN_EF_TRUST. A source that repeatedly mislabels itself therefore cannot keep
     claiming interactive priority — which is the only defence against a device
     setting one DSCP byte and inheriting the best class.
+
+    BOUNDED SOURCE SET
+
+    The three maps are keyed by source address, and a long run can see far more
+    distinct sources than any given instant has active: a busy NAT, DHCP churn,
+    or an attacker varying the source. "Bounded by construction" was the claim,
+    and it was false here — nothing evicted. `max_sources` closes it.
+
+    Eviction drops the *least recently seen* source, not the least trusted. A
+    stale entry's forgetting is safe because the default trust is 1.0: a source
+    that stopped mislabelling and went away is indistinguishable from a new one,
+    and a mislabeller that is still active keeps a fresh `last_seen` and is
+    never the victim. Forgetting a *stale* entry therefore cannot help an active
+    mislabeller; forgetting by trust could, by evicting a well-behaved source and
+    letting a mislabeller's low entry persist.
     """
 
     def __init__(self, decay: float = TRUST_DECAY_FACTOR,
-                 floor: float = MIN_EF_TRUST):
+                 floor: float = MIN_EF_TRUST, max_sources: int = MAX_TRUST_SOURCES):
         self.decay = decay
         self.floor = floor
+        self.max_sources = max(1, int(max_sources))
         self._trust: dict[str, float] = {}
         self._claims: dict[str, int] = {}
         self._misses: dict[str, int] = {}
+        #: Monotonic counter of the last time each source was touched, for the
+        #: bounded-eviction order. A counter rather than a wall clock because
+        #: the store has no clock and does not want one.
+        self._last_seen: dict[str, int] = {}
+        self._clock = 0
+
+    def __len__(self) -> int:
+        return len(self._last_seen)
+
+    def _touch(self, source: str) -> None:
+        self._clock += 1
+        self._last_seen[source] = self._clock
+        self._evict_if_over()
+
+    def _evict_if_over(self) -> None:
+        """Forget the least-recently-seen sources until under the cap."""
+        overflow = len(self._last_seen) - self.max_sources
+        if overflow <= 0:
+            return
+        for source, _ in sorted(self._last_seen.items(), key=lambda kv: kv[1])[:overflow]:
+            self._last_seen.pop(source, None)
+            self._trust.pop(source, None)
+            self._claims.pop(source, None)
+            self._misses.pop(source, None)
 
     def trust(self, source: str) -> float:
         return self._trust.get(source, 1.0)
 
     def record_claim(self, source: str) -> None:
         self._claims[source] = self._claims.get(source, 0) + 1
+        self._touch(source)
 
     def record_miss(self, source: str) -> float:
         self._misses[source] = self._misses.get(source, 0) + 1
         t = max(self.floor, self.trust(source) * self.decay)
         self._trust[source] = t
+        self._touch(source)
         return t
 
     def stats(self, source: str) -> dict[str, float | int]:
@@ -278,7 +328,18 @@ def classify(f: FlowFeatures, capacity_mbps: float = 100.0,
         # asymmetry -- because the only test was "does it saturate the link",
         # and on a 100 Mbps link 24 Mbps does not. An EF claim is an input
         # signal, not proof.
-        not_interactive = mature and not f.looks_interactive()
+        #
+        # `looks_interactive()` tests rate and direction. A *third* signal
+        # matters for the claim specifically: real-time media is RTP over UDP,
+        # so a reliable TCP stream carrying MTU-sized packets is a video or
+        # file transfer whatever its rate. Measured: the adversarial case is
+        # tcp/443 at 2.4 Mbps with 3000-byte packets -- low and one-way, so it
+        # passed rate+direction, but TCP with full-size payloads is not a
+        # conversation. Requiring media shape here is what turns the one
+        # high-confidence EF error into a denied claim.
+        not_media_shape = (mature and f.flow.proto == "tcp"
+                           and f.avg_packet_bytes > INTERACTIVE_MAX_AVG_PACKET / 2)
+        not_interactive = mature and (not f.looks_interactive() or not_media_shape)
 
         if too_fast:
             # The mark is a lie and the measurement is unambiguous. Deny the
