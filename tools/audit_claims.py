@@ -200,6 +200,170 @@ def check_test_count() -> dict:
     return d
 
 
+def scan_path_citations() -> list[dict]:
+    """Every path-shaped string in the tracked tree must resolve.
+
+    The fixed EVIDENCE_CLAIMS list above can only check the citations somebody
+    remembered to add to it. This checks the other kind: a path written into a
+    document or a comment, which a reader is expected to be able to open.
+
+    Three defects of this shape were found and fixed by hand, and each of them
+    was in a document that claimed to be checkable:
+
+      * docs/gap-closure/classifier-before-after.md named the before-matrix as
+        artifacts/validation/89b87758/classifier-before.txt, which is in
+        artifacts/validation/6a22208c/.
+      * docs/limitations.md pointed at data/leaseA/README.md, which has never
+        existed in this repository.
+      * every published artifacts/validation/<rev>/acceptance.json names the log
+        each phase wrote, in its "log" field, and none of those logs was
+        committed -- 289 pointers to nothing.
+
+    The last one is why the scan looks at JSON as well as prose: a gate result
+    that names a log it does not ship is a claim a reader cannot check.
+
+    A path that is a PREFIX or a PATTERN is not a broken citation -- `docs/evidence/gate-`
+    and `data/host_gate_congested_` name a family, not a file. Neither is a path
+    that is a runtime output rather than a committed artefact: `data/leases.json`
+    and `data/corrections.jsonl` are written by the controller as it runs.
+    Those are listed in RUNTIME_OUTPUTS.
+    """
+    import subprocess
+    import re
+
+    tracked = subprocess.run(
+        ["git", "-C", str(ROOT), "ls-files"],
+        capture_output=True, text=True, timeout=60).stdout.split("\n")
+    tracked = [t for t in tracked if t]
+
+    # Runtime-written paths: the controller creates these, they are not evidence.
+    runtime_outputs = {
+        "data/leases.json", "data/corrections.jsonl", "data/REPORT.md",
+        "data/COMPARISON.md", "aciq/scratch",
+    }
+    # Paths that exist only inside a test's own fixture or a doctest-style
+    # example, where the whole point is that the file is absent.
+    deliberate_absent = {"data/does_not_exist_at_all"}
+
+    # A path-shaped token: a directory of the project, then a path.
+    pat = re.compile(
+        r"\b((?:docs|artifacts|data|testbed|aciq|tools|tests)/"
+        r"[A-Za-z0-9_][A-Za-z0-9_./-]*)")
+
+    seen: dict[str, set[str]] = {}
+    # Files that QUOTE broken paths on purpose: this tool's own source (it
+    # names them in the docstring of this function as the examples it is
+    # written for) and the test that documents the defect. A finding reported
+    # by this tool is not itself a finding.
+    SELF_REFERENTIAL = {"tools/audit_claims.py", "tests/test_acceptance.py"}
+    for f in tracked:
+        if not f.endswith((".md", ".py", ".sh", ".json", ".toml")):
+            continue
+        # This tool's own output records the paths it is complaining about, so
+        # scanning it would report every finding back as a new one.
+        if f == "docs/gap-closure/claim-audit.json":
+            continue
+        try:
+            lines = (ROOT / f).read_text(errors="replace").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            # A path that appears only in a command line is an example of where
+            # to PUT an output, not a pointer at something that is published.
+            # `--results-dir data/e2e` writes a directory that is not in the
+            # repository, and its absence is not a broken citation.
+            if re.search(r"--[a-z-]+\s+\S*$", line) and re.search(
+                    r"--results-dir|--out|--report|--samples|--dir\b", line):
+                continue
+            for m in pat.finditer(line):
+                p = m.group(1).rstrip(".,;:)`\"'")
+                if p.endswith("/"):
+                    continue
+                seen.setdefault(p, set()).add(f)
+
+    # A path that ends in a separator is a PREFIX, not a file: `docs/evidence/gate-`
+    # and `testbed/logs/gate-` name a family of logs, and `tests/test_` names a
+    # family of test modules. A reader following one of those is looking for a
+    # member of the family, and a missing family is a different defect.
+    PREFIX_FAMILIES = ("docs/evidence/gate-", "docs/evidence/rollback-live-",
+                        "testbed/logs/gate-", "testbed/logs/rollback-live-",
+                        "tests/test_")
+
+    # A path that a document says is NOT YET WRITTEN is a documented gap, not
+    # a broken citation: the whole point of the sentence is that the file does
+    # not exist. `testbed/fault_inject.sh` is named that way in the
+    # enforcement-failure-testing report -- once as "not yet written" and once
+    # in a defect row whose action is to WRITE it.
+    NOT_YET_WRITTEN = re.compile(
+        r"not\s+yet\s+written|does\s+not\s+exist|not\s+written\s+yet|"
+        r"to\s+be\s+written|never\s+written|not\s+exist|TODO|"
+        r"\bwrite\b", re.I)
+
+    out = []
+    for p, where in sorted(seen.items()):
+        if p in runtime_outputs or p in deliberate_absent:
+            continue
+        if "*" in p or "<" in p:            # a family, not a file
+            continue
+        if p in PREFIX_FAMILIES:
+            continue
+        # This tool's own source quotes the broken paths it is describing, in
+        # the docstring of scan_path_citations and in the comments above. Those
+        # are the EXAMPLES of the defect, not instances of it, so a finding
+        # reported by this tool is not itself a finding. The same applies to
+        # the test that documents the defect: it has to name the broken paths
+        # to be a regression test for them.
+        if where and all(w in SELF_REFERENTIAL for w in where):
+            continue
+        # A path quoted inside a captured error message is evidence OF a
+        # failure, not a pointer at a published file. host_gate.sh records the
+        # tee error it hit; that text names a log that was never written, which
+        # is the bug the comment is explaining.
+        #
+        # A path a document says is NOT YET WRITTEN is a documented gap, not a
+        # broken citation: the whole point of the sentence is that the file
+        # does not exist. `testbed/fault_inject.sh` is named that way.
+        #
+        # Either way the citation is excused when EVERY line that mentions the
+        # path says so -- a document that points at a missing file as if it
+        # existed is still broken, and that is the case this must not excuse.
+        def _excused(w: str, path: str = p) -> bool:
+            fp = ROOT / w
+            if not fp.is_file():
+                return False
+            lines = [ln for ln in fp.read_text(errors="replace").splitlines()
+                     if path in ln]
+            if not lines:
+                return False
+            return all(
+                NOT_YET_WRITTEN.search(ln)
+                or re.search(r"(tee|error|Error|ERROR|no such file|failed|"
+                             r"never|not\s+been)\b", ln)
+                for ln in lines)
+
+        if where and all(_excused(w) for w in where):
+            continue
+        if p.startswith("data/host_gate"):
+            # `data/host_gate_congested_` and friends are PREFIXES: the
+            # documents write them as `data/host_gate_{congested_,}{aciq,...}`
+            # to name a family of directories. The families themselves exist.
+            if not list((ROOT / "data").glob("host_gate*")):
+                out.append({"path": p, "cited_in": sorted(where),
+                            "reason": "no such directory family"})
+            continue
+        # A directory citation resolves if the directory exists.
+        if (ROOT / p).is_dir():
+            continue
+        if not (ROOT / p).exists():
+            out.append({"path": p, "cited_in": sorted(where),
+                        "reason": "not in the tree"})
+            continue
+        if not _is_tracked(p):
+            out.append({"path": p, "cited_in": sorted(where),
+                        "reason": "exists but is NOT committed"})
+    return out
+
+
 def main() -> int:
     print("=== claim audit ===\n")
 
@@ -236,6 +400,14 @@ def main() -> int:
         print("  ^ cited evidence exists locally but is NOT committed; a "
               "clone would have a broken citation")
 
+    print("\n-- path citations that do not resolve --")
+    pc = scan_path_citations()
+    if not pc:
+        print("  every path-shaped citation resolves to a committed file")
+    for c in pc:
+        print(f"  [BROKEN  ] {c['path']}  ({c['reason']})")
+        print(f"             cited in: {', '.join(c['cited_in'][:4])}")
+
     print("\n-- red-flag phrases --")
     flags = scan_flags()
     if not flags:
@@ -247,10 +419,11 @@ def main() -> int:
     print("\n-- test suite --")
     t = check_test_count()
     print(f"  ran {t['ran']} tests, ok={t['ok']}, exit={t['exit']}"
-          + (f", {t['skipped']} skipped" if t['skipped'] else ""))
+          + (f", {t['skipped']} skipped" if t["skipped"] else ""))
 
     summary = {"constants_disagree": bad, "evidence": ec,
                "evidence_untracked": untracked_ev,
+               "broken_path_citations": pc,
                "red_flags": flags, "tests": t,
                "cited_tests_missing": missing}
     (ROOT / "docs" / "gap-closure" / "claim-audit.json").write_text(
@@ -263,7 +436,13 @@ def main() -> int:
     # has to reach the exit code. Reporting DRIFT and exiting 0 would make the
     # check decorative -- the same "recorded, printed, never consulted" shape
     # already found in this file and in tools/acceptance.py.
-    return 1 if (bad or flags or missing or ev_missing or untracked_ev) else 0
+    #
+    # The same applies to a path citation that resolves to nothing. A document
+    # that points at a file the reader cannot open is a claim that cannot be
+    # checked, and the three that were found by hand (see scan_path_citations)
+    # were all in documents that describe themselves as checkable.
+    return 1 if (bad or flags or missing or ev_missing or untracked_ev
+                 or pc) else 0
 
 
 if __name__ == "__main__":

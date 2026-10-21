@@ -82,7 +82,7 @@ trees:
 | `cpu_fraction` | getrusage SELF / wall | real, controller process only |
 | `capacity_mbps` | M2 | real but **0.0 in every stored run** |
 
-Measured across `data/matrix6`, `data/fixcheck`, `data/dev10`,
+Measured across `data/matrix6`, `data/fixcheck`, `data/dev10_lease`,
 `data/ab_lease_42`:
 
 ```

@@ -541,6 +541,67 @@ class TestEvidenceMustBeTracked(unittest.TestCase):
         self.assertIn("untracked_ev", src)
         self.assertIn("ev_missing or untracked_ev", src)
 
+
+class TestEveryPathCitationResolves(unittest.TestCase):
+    """Every path a document names must be a file the reader can open.
+
+    The fixed list of evidence claims in the audit could only check the
+    citations somebody remembered to add to it. Three more were missed, and each
+    was in a document that describes itself as checkable:
+
+      * docs/gap-closure/classifier-before-after.md named the before-matrix as
+        artifacts/validation/89b87758/classifier-before.txt, which is in
+        artifacts/validation/6a22208c/.
+      * docs/limitations.md pointed at data/leaseA/README.md, which has never
+        existed in this repository.
+      * every published artifacts/validation/<rev>/acceptance.json names the
+        log each phase wrote, in its "log" field, and none of those 289 logs
+        was committed -- a gate result that names a log it does not ship is a
+        claim a reader cannot check.
+
+    So the check is general: every path-shaped string in the tracked tree is
+    resolved against the files actually present.
+    """
+
+    @staticmethod
+    def _audit():
+        import importlib.util
+        from pathlib import Path as _P
+        sp = importlib.util.spec_from_file_location(
+            "audit_mod4", _P(__file__).resolve().parents[1] / "tools" / "audit_claims.py")
+        m = importlib.util.module_from_spec(sp)
+        sp.loader.exec_module(m)
+        return m
+
+    def test_no_path_citation_is_broken(self):
+        bad = self._audit().scan_path_citations()
+        self.assertEqual(bad, [],
+                         "citations that resolve to nothing: "
+                         + ", ".join(f"{b['path']} ({b['reason']}) "
+                                     f"in {b['cited_in']}" for b in bad))
+
+    def test_the_acceptance_json_logs_are_all_committed(self):
+        """A gate result that names a log it does not ship is not checkable."""
+        import json
+        from pathlib import Path as _P
+        root = _P(__file__).resolve().parents[1]
+        broken = []
+        for f in sorted(root.glob("artifacts/validation/*/acceptance.json")):
+            for g in json.loads(f.read_text()).get("gates", []):
+                log = g.get("log")
+                if log and not (f.parent / log).exists():
+                    broken.append(f"{f.parent.name}/{log}")
+        self.assertEqual(broken, [],
+                         "acceptance.json names logs that are not in the tree: "
+                         + ", ".join(broken))
+
+    def test_a_broken_citation_fails_the_audit(self):
+        """The check has to reach the exit code, or it is decorative."""
+        import inspect
+        src = inspect.getsource(self._audit().main)
+        self.assertIn("broken_path_citations", src)
+        self.assertIn("or pc)", src)
+
     def test_gitignore_does_not_exclude_cited_evidence(self):
         """The ignore rules are the root cause; assert they stay fixed."""
         import subprocess
