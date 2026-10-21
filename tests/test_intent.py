@@ -507,7 +507,7 @@ class TestIntentService(unittest.TestCase):
 
     def test_post_returns_the_expiry_as_an_absolute_time(self):
         c = Clock()
-        st, payload, _ = self._post(self._svc(c), target="device", ip="1", ttl_s=30)
+        st, payload, _ = self._post(self._svc(c), target="device", ip="10.0.1.2", ttl_s=30)
         self.assertAlmostEqual(payload["expires_in"], 30.0, places=3)
 
     def test_get_lists_live_leases(self):
@@ -527,13 +527,13 @@ class TestIntentService(unittest.TestCase):
 
     def test_deleting_twice_is_404_not_500(self):
         svc = self._svc()
-        self._post(svc, target="device", ip="1", ttl_s=60)
+        self._post(svc, target="device", ip="10.0.1.2", ttl_s=60)
         self.assertEqual(svc.handle("DELETE", "/intent/lease-1")[0], 200)
         self.assertEqual(svc.handle("DELETE", "/intent/lease-1")[0], 404)
 
     def test_status_reports_lease_count_and_countdown(self):
         svc = self._svc(Clock(1000.0))
-        self._post(svc, target="device", ip="1", ttl_s=45)
+        self._post(svc, target="device", ip="10.0.1.2", ttl_s=45)
         st, payload, _ = svc.handle("GET", "/status")
         self.assertEqual(payload["leases"], 1)
         self.assertAlmostEqual(payload["lease_expiring_in"], 45.0, places=3)
@@ -541,32 +541,32 @@ class TestIntentService(unittest.TestCase):
     def test_expired_leases_disappear_from_status(self):
         c = Clock()
         svc = self._svc(c)
-        self._post(svc, target="device", ip="1", ttl_s=10)
+        self._post(svc, target="device", ip="10.0.1.2", ttl_s=10)
         c.advance(11)
         self.assertEqual(svc.handle("GET", "/status")[1]["leases"], 0)
         self.assertIsNone(svc.handle("GET", "/status")[1]["lease_expiring_in"])
 
     def test_bad_target_is_400_with_a_reason(self):
-        st, payload, _ = self._post(self._svc(), target="banana", ip="1")
+        st, payload, _ = self._post(self._svc(), target="banana", ip="10.0.1.2")
         self.assertEqual(st, 400)
         self.assertIn("target", payload["error"])
 
     def test_weight_out_of_range_is_400(self):
-        self.assertEqual(self._post(self._svc(), target="device", ip="1",
+        self.assertEqual(self._post(self._svc(), target="device", ip="10.0.1.2",
                                     weight=99)[0], 400)
 
     def test_nan_and_infinity_are_rejected(self):
         """float('nan') survives a bare float() and every comparison against it
         is False, so a plan could contain NaN unnoticed."""
         for bad in (float("nan"), float("inf"), float("-inf")):
-            st, payload, _ = self._post(self._svc(), target="device", ip="1",
+            st, payload, _ = self._post(self._svc(), target="device", ip="10.0.1.2",
                                         weight=bad)
             self.assertEqual(st, 400, f"{bad} accepted")
             self.assertIn("finite", payload["error"])
 
     def test_a_boolean_weight_is_rejected(self):
         """True is an int in Python and would become weight=1.0 silently."""
-        st, payload, _ = self._post(self._svc(), target="device", ip="1",
+        st, payload, _ = self._post(self._svc(), target="device", ip="10.0.1.2",
                                     weight=True)
         self.assertEqual(st, 400)
         self.assertIn("boolean", payload["error"])
@@ -574,11 +574,11 @@ class TestIntentService(unittest.TestCase):
     def test_a_numeric_string_is_accepted(self):
         """Forms and environment variables deliver strings, and refusing them
         would be pedantry rather than safety."""
-        self.assertEqual(self._post(self._svc(), target="device", ip="1",
+        self.assertEqual(self._post(self._svc(), target="device", ip="10.0.1.2",
                                     weight="0.5")[0], 201)
 
     def test_a_non_numeric_string_is_rejected(self):
-        self.assertEqual(self._post(self._svc(), target="device", ip="1",
+        self.assertEqual(self._post(self._svc(), target="device", ip="10.0.1.2",
                                     weight="lots")[0], 400)
 
     def test_invalid_json_is_400_not_500(self):
