@@ -39,7 +39,7 @@ from .bridge import (
     Bridge,
     FlowKey,
 )
-from .classify import Classification, FlowFeatures, TrustStore, classify
+from .classify import Classification, FlowFeatures, TrustStore, classify, finalise
 from .corrections import CorrectionStore
 from .model import TrafficClass
 
@@ -140,14 +140,14 @@ class ClosedLoop:
         `measured` records which kind this is. Callers should pass M2's
         measurement; the flag exists so an unavoidable configured-rate fallback
         is visible in a verdict rather than silent.
+
+        An earlier version unconditionally reset `capacity_is_measured` to
+        False right after assigning it, so every caller except the harness
+        (which worked around the bug by writing the attribute directly) got a
+        permanently-False flag — the exact mislabelling M2 exists to prevent.
         """
         self.capacity_mbps = capacity_mbps
-        self.capacity_is_measured = measured
-        #: True when capacity_mbps came from M2's measurement rather than from
-        #: what was configured on class 1:1. Recorded so a report can say which
-        #: it was -- classifying against a configured rate is the error M2
-        #: exists to prevent, and it should be visible when it happens anyway.
-        self.capacity_is_measured = False
+        self.capacity_is_measured = bool(measured)
 
     def apply(self, f: FlowFeatures, now: float | None = None) -> Verdict:
         """Classify one flow and install the verdict.
@@ -160,11 +160,18 @@ class ClosedLoop:
         # classifier's reasoning about it. The lease is the more specific,
         # more recent statement of intent, so it wins -- and when it lapses the
         # correction is still there underneath.
+        #
+        # The lookup used to run unconditionally and overwrite the lease's
+        # LEASED marker, so a correction on the same flow silently won while
+        # the verdict was still stamped tier "L" with the lease's evidence --
+        # the opposite of what the comment claimed, and invisible because no
+        # test had a lease and a correction coexisting.
         lease = self.leases.for_flow(f.flow) if self.leases is not None else None
         if lease is not None:
             f = replace(f, correction=TrafficClass.LEASED)
 
-        correction = self.corrections.lookup(f.flow, now=now)
+        correction = None if lease is not None else self.corrections.lookup(
+            f.flow, now=now)
         if correction is not None:
             # Copy rather than assign: FlowFeatures is a frozen dataclass, and
             # mutating the caller's object would leave a correction stuck on a
@@ -173,6 +180,13 @@ class ClosedLoop:
             f = replace(f, correction=correction.cls)
 
         decision = classify(f, capacity_mbps=self.capacity_mbps, trust=self.trust)
+        # finalise() is the documented abstention gate: anything below
+        # MIN_CONFIDENCE becomes UNCLASSIFIED. classify() happens to never
+        # emit a classed verdict below 0.55 today, but relying on that is
+        # relying on a constant that a future rule could quietly break — and
+        # an unconfident verdict reaching enforcement is exactly what the
+        # threshold exists to prevent.
+        decision = finalise(decision)
         # classify() reports tier "X" for a user correction; relabel a lease so a
         # verdict can say which kind of override decided it.
         if lease is not None:
