@@ -31,9 +31,11 @@ without opening a port, and the socket path is tested separately on port 0.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 import secrets
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from collections.abc import Callable
@@ -62,6 +64,44 @@ MUTATING_METHODS = frozenset({"POST", "DELETE", "PUT", "PATCH"})
 
 _INTENT_RE = re.compile(r"^/intent/(?P<id>[A-Za-z0-9_.:-]{1,64})$")
 
+#: A flow lease names a 5-tuple as `src:sport->dst:dport`. Shape-checked here in
+#: addition to the book's own validation: the API is the untrusted edge, and a
+#: flow string is stored, echoed into status and eventually parsed by the
+#: matcher, so a 10 MB "flow" is a denial-of-service waiting to be buffered
+#: rather than a lease.
+_FLOW_RE = re.compile(
+    r"^(?P<src>\S{1,64}):(?P<sport>\d{1,5})->"
+    r"(?P<dst>\S{1,64}):(?P<dport>\d{1,5})$")
+
+
+def _valid_ip(value: Any) -> bool:
+    """A real IPv4/IPv6 literal. Rejects hostnames, CIDR and garbage."""
+    if not isinstance(value, str) or len(value) > 64:
+        return False
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except ValueError:
+        return False
+
+
+def _valid_flow(value: Any) -> bool:
+    if not isinstance(value, str) or len(value) > 200:
+        return False
+    m = _FLOW_RE.match(value)
+    if not m:
+        return False
+    if not (_valid_ip(m.group("src")) and _valid_ip(m.group("dst"))):
+        return False
+    # Both ends must be the same address family. A flow whose source is IPv4 and
+    # whose destination is IPv6 names a tuple no conntrack entry can ever hold,
+    # so the lease would install a filter that matches nothing and report
+    # success -- the same silent no-op the IP check above exists to prevent.
+    if (ipaddress.ip_address(m.group("src")).version
+            != ipaddress.ip_address(m.group("dst")).version):
+        return False
+    return all(0 <= int(m.group(p)) <= 65535 for p in ("sport", "dport"))
+
 
 class IntentService:
     """The API's behaviour, with no HTTP types in the signatures."""
@@ -80,10 +120,14 @@ class IntentService:
         #: memory of which default they got.
         self.token = token
         self._audit = audit or (lambda rec: None)
-        #: client -> (window_start, count). Not a lock: the ThreadingHTTPServer
-        #: would need one, and a torn counter under concurrency would at worst
-        #: let a caller slightly over its budget.
+        #: client -> (window_start, count). The ThreadingHTTPServer runs a
+        #: thread per connection, and `_allow_write` is a read-modify-write on
+        #: this dict; without the lock two concurrent writes for one client can
+        #: both read the same count and one increment is lost, so the cap can be
+        #: exceeded. It also protects the pruning pass, which replaces the whole
+        #: dict and could otherwise drop a concurrent client's fresh entry.
         self._rate: dict[str, tuple[float, int]] = {}
+        self._rate_lock = threading.Lock()
 
     # ---- routes ----------------------------------------------------------
     def handle(self, method: str, path: str, body: bytes = b"",
@@ -95,8 +139,14 @@ class IntentService:
         mutating = method in MUTATING_METHODS
 
         if mutating:
-            # Authenticate before anything else, so a rejected caller cannot
-            # reach the parser, the book, or the rate limiter's own accounting.
+            # Count the attempt BEFORE deciding anything else. An earlier
+            # revision returned 401 for bad credentials *before* consulting the
+            # limiter, so a caller could guess tokens without bound -- the one
+            # abuse the limiter exists to stop. Authentication still runs first
+            # in the sense that it decides the response (401 vs 429 is chosen
+            # below by precedence), but the budget is spent either way, so a
+            # guessing loop is throttled just like a legitimate one.
+            within_budget = self._allow_write(client)
             if self.token is not None:
                 supplied = (headers.get("authorization") or "").strip()
                 want = f"Bearer {self.token}"
@@ -105,8 +155,15 @@ class IntentService:
                 if not secrets.compare_digest(supplied, want):
                     self._audit({"method": method, "path": path,
                                  "client": client, "outcome": "unauthorised"})
+                    # If the caller is already over budget, say so rather than
+                    # 401: the limiter should bound the response, and a flood of
+                    # failed auth should be visible as throttling, not as an
+                    # unbounded stream of 401s.
+                    if not within_budget:
+                        return 429, {"error": "too many write requests"}, \
+                            "application/json"
                     return 401, {"error": "unauthorised"}, "application/json"
-            if not self._allow_write(client):
+            if not within_budget:
                 self._audit({"method": method, "path": path,
                              "client": client, "outcome": "rate_limited"})
                 return 429, {"error": "too many write requests"}, "application/json"
@@ -129,9 +186,20 @@ class IntentService:
 
         m = _INTENT_RE.match(path)
         if m and method == "DELETE":
-            gone = self.book.release(m.group("id"))
+            lease_id = m.group("id")
+            gone = self.book.release(lease_id)
             if gone is None:
+                self._audit({"method": "DELETE", "path": path, "client": client,
+                             "outcome": "not_found", "lease": lease_id})
                 return 404, {"error": "no such lease"}, "application/json"
+            # DELETE mutates policy, so it is audited exactly like POST. An
+            # earlier revision audited creation and rejection but not release,
+            # which made the audit log unable to answer "who removed the EF
+            # lease at 03:00" -- the one question a release log exists for.
+            self._audit({"method": "DELETE", "path": path, "client": client,
+                         "outcome": "released", "lease": gone.id,
+                         "target": gone.target, "ip": gone.ip,
+                         "flow": gone.flow})
             return 200, {"released": lease_to_dict(gone, self.book.now())}, \
                 "application/json"
 
@@ -142,23 +210,25 @@ class IntentService:
     def _allow_write(self, client: str) -> bool:
         """Token bucket, fixed window. Returns whether the write may proceed."""
         now = self.book.now()
-        start, count = self._rate.get(client, (now, 0))
-        if now - start >= RATE_LIMIT_WINDOW_S:
-            start, count = now, 0
-        count += 1
-        self._rate[client] = (start, count)
-        # Bound the table. Time-based pruning alone is not enough: with a fixed
-        # or coarse clock nothing ever expires and the dict grows without limit,
-        # which is itself a memory leak an attacker can drive simply by varying
-        # the source address. Evict the oldest half when over the cap.
-        if len(self._rate) > MAX_RATE_CLIENTS:
-            fresh = {k: v for k, v in self._rate.items()
-                     if now - v[0] < RATE_LIMIT_WINDOW_S}
-            if len(fresh) > MAX_RATE_CLIENTS:
-                ordered = sorted(fresh.items(), key=lambda kv: kv[1][0])
-                fresh = dict(ordered[len(ordered) // 2:])
-            self._rate = fresh
-        return count <= RATE_LIMIT_WRITES
+        with self._rate_lock:
+            start, count = self._rate.get(client, (now, 0))
+            if now - start >= RATE_LIMIT_WINDOW_S:
+                start, count = now, 0
+            count += 1
+            self._rate[client] = (start, count)
+            # Bound the table. Time-based pruning alone is not enough: with a
+            # fixed or coarse clock nothing ever expires and the dict grows
+            # without limit, which is itself a memory leak an attacker can drive
+            # simply by varying the source address. Evict the oldest half when
+            # over the cap.
+            if len(self._rate) > MAX_RATE_CLIENTS:
+                fresh = {k: v for k, v in self._rate.items()
+                         if now - v[0] < RATE_LIMIT_WINDOW_S}
+                if len(fresh) > MAX_RATE_CLIENTS:
+                    ordered = sorted(fresh.items(), key=lambda kv: kv[1][0])
+                    fresh = dict(ordered[len(ordered) // 2:])
+                self._rate = fresh
+            return count <= RATE_LIMIT_WRITES
 
     def _create(self, body: bytes, client: str = "local") -> tuple[int, Any, str]:
         if len(body) > MAX_BODY_BYTES:
@@ -169,18 +239,35 @@ class IntentService:
             return 400, {"error": f"invalid JSON: {e.msg}"}, "application/json"
         if not isinstance(data, dict):
             return 400, {"error": "body must be a JSON object"}, "application/json"
+        target = data.get("target", "")
+        ip = data.get("ip")
+        flow = data.get("flow")
+        # Validate the discriminated fields against what the target actually
+        # means before the book sees them. The book's `_validate` only checks
+        # that the field is present, so `{"target":"device","ip":"not-an-ip"}`
+        # used to become a live lease whose device scope could never match a
+        # real flow -- a silent no-op that reported success.
+        if target == "device" and ip is not None and not _valid_ip(ip):
+            return 400, {"error": "ip must be an IPv4/IPv6 address, "
+                                  f"got {ip!r}"}, "application/json"
+        if target == "flow" and flow is not None and not _valid_flow(flow):
+            return 400, {"error": "flow must be src:sport->dst:dport with real "
+                                  f"addresses, got {flow!r}"}, "application/json"
         try:
             lease = self.book.request(
-                target=data.get("target", ""),
-                ip=data.get("ip"),
-                flow=data.get("flow"),
+                target=target,
+                ip=ip,
+                flow=flow,
                 weight=_num(data.get("weight"), 0.4, "weight"),
                 ttl_s=_num(data.get("ttl_s"), 90.0, "ttl_s"),
             )
         except IntentError as e:
-            # 400 for a malformed request, 422 for one that parses but cannot be
-            # satisfied. Different classes of mistake deserve different fixes from
-            # the caller.
+            # 400: the request parsed as JSON but names a lease the book cannot
+            # satisfy (bad TTL, bad weight, missing scope field). An earlier
+            # comment promised a separate 422 for "parses but cannot be
+            # satisfied"; nothing emitted it, so the comment described a status
+            # the API never returns. One code for all rejected writes is honest;
+            # the body names the specific fault.
             return 400, {"error": str(e)}, "application/json"
         except TypeError as e:
             return 400, {"error": str(e)}, "application/json"
@@ -245,7 +332,14 @@ def make_handler(service: IntentService):
                 n = int(self.headers.get("Content-Length") or 0)
             except ValueError:
                 n = 0
-            return self.rfile.read(min(n, MAX_BODY_BYTES))
+            # Read one byte past the cap when the caller claims a larger body,
+            # so `_create`'s `len(body) > MAX_BODY_BYTES` check can actually
+            # fire. An earlier version read `min(n, MAX_BODY_BYTES)`, which
+            # truncated an oversized body to exactly the cap and made the 413
+            # branch unreachable over the wire: the "refuse absurd bodies"
+            # docstring described behaviour the socket path never performed.
+            want = MAX_BODY_BYTES + 1 if n > MAX_BODY_BYTES else n
+            return self.rfile.read(want)
 
         def _client(self) -> str:
             return self.client_address[0] if self.client_address else "unknown"
