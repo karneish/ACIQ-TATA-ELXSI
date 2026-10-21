@@ -51,8 +51,16 @@ class TestPureFunctions(unittest.TestCase):
         self.assertLessEqual(p["p50"], p["p95"])
         self.assertLessEqual(p["p95"], p["p99"])
 
-    def test_percentiles_empty(self):
-        self.assertEqual(percentiles([])["p50"], 0.0)
+    def test_percentiles_empty_is_none_not_zero(self):
+        """An empty sample set is *not measured*, not "measured at 0 ms".
+
+        Returning 0.0 made a class with no probe traffic indistinguishable from
+        one measured at exactly zero latency -- the exact confusion the
+        None-everywhere policy exists to prevent.
+        """
+        self.assertIsNone(percentiles([])["p50"])
+        self.assertIsNone(percentiles([])["p95"])
+        self.assertIsNone(percentiles([])["p99"])
 
     def test_jain_bounds(self):
         self.assertAlmostEqual(jain_fairness([10, 10, 10]), 1.0, places=9)
@@ -285,6 +293,80 @@ class TestCollector(unittest.TestCase):
         f = c.poll()
         self.assertGreaterEqual(f.cpu_fraction, 0.0)
         self.assertLessEqual(f.cpu_fraction, 1.5)
+
+
+class TestProbeStaleness(unittest.TestCase):
+    """A probe that has gone quiet must stop contributing, not keep reporting
+    its last p95 forever."""
+
+    def test_a_fresh_probe_reports_latency(self):
+        c = MetricsCollector(StaticSource([snap(100.0, **{I: {"rx_bytes": 0}})]))
+        c.ingest(EvaluationData(t=100.0, label="call", rtt_ms=12.0), cls=I)
+        self.assertEqual(c.poll().per_class[I].metric_status, "valid")
+        self.assertIsNotNone(c.poll().per_class[I].rtt_p50)
+
+    def test_a_stale_probe_reports_nothing(self):
+        from aciq.metrics import PROBE_STALE_S
+        c = MetricsCollector(StaticSource(
+            [snap(100.0 + PROBE_STALE_S + 1.0, **{I: {"rx_bytes": 0}})]))
+        c.ingest(EvaluationData(t=100.0, label="call", rtt_ms=12.0), cls=I)
+        m = c.poll().per_class[I]
+        self.assertIsNone(m.rtt_p50, "a silent probe kept reporting its last rtt")
+        self.assertIsNone(m.loss_ratio)
+        self.assertEqual(m.metric_status, "no_probe")
+
+    def test_the_boundary_is_inclusive(self):
+        from aciq.metrics import PROBE_STALE_S
+        c = MetricsCollector(StaticSource(
+            [snap(100.0 + PROBE_STALE_S, **{I: {"rx_bytes": 0}})]))
+        c.ingest(EvaluationData(t=100.0, label="call", rtt_ms=12.0), cls=I)
+        self.assertEqual(c.poll().per_class[I].metric_status, "valid")
+
+
+class TestJitterIsComputedFromRttsWhenUnreported(unittest.TestCase):
+    """`jitter_from_samples` existed for the case where a workload does not
+    self-report jitter but the probe did collect RTTs -- and was never called,
+    so the jitter panel stayed blank. It is now the fallback."""
+
+    def test_jitter_falls_back_to_the_rtt_samples(self):
+        c = MetricsCollector(StaticSource([snap(0.0, **{I: {"rx_bytes": 0}})]))
+        for v in (10.0, 12.0, 11.0, 40.0):
+            c.ingest(EvaluationData(t=0.0, label="call", rtt_ms=v), cls=I)
+        # RFC 3550 mean abs consecutive difference of (10,12,11,40):
+        # (2 + 1 + 29)/3 = 10.666...
+        self.assertAlmostEqual(c.poll().per_class[I].jitter_ms, 32 / 3, places=4)
+
+    def test_a_reported_jitter_is_not_overridden(self):
+        """The generator's own figure wins when it reports one."""
+        c = MetricsCollector(StaticSource([snap(0.0, **{I: {"rx_bytes": 0}})]))
+        for v in (10.0, 12.0, 11.0, 40.0):
+            c.ingest(EvaluationData(t=0.0, label="call", rtt_ms=v,
+                                    jitter_ms=1.5), cls=I)
+        self.assertAlmostEqual(c.poll().per_class[I].jitter_ms, 1.5, places=4)
+
+    def test_a_single_sample_yields_no_jitter(self):
+        """One RTT cannot have a consecutive difference; leave it unmeasured."""
+        c = MetricsCollector(StaticSource([snap(0.0, **{I: {"rx_bytes": 0}})]))
+        c.ingest(EvaluationData(t=0.0, label="call", rtt_ms=10.0), cls=I)
+        self.assertIsNone(c.poll().per_class[I].jitter_ms)
+
+
+class TestMemoryFootprint(unittest.TestCase):
+    """Peak RSS is a graded metric; the frame must carry it."""
+
+    def test_max_rss_is_reported_in_bytes(self):
+        c = MetricsCollector(StaticSource([snap(0.0, **{B: {"rx_bytes": 0}})]))
+        rss = c.poll().max_rss_bytes
+        self.assertGreater(rss, 0, "peak RSS not measured")
+        # Sanity: a CPython process is megabytes, not kilobytes-eq or gigabytes.
+        self.assertGreater(rss, 1_000_000)
+        self.assertLess(rss, 100_000_000_000)
+
+    def test_max_rss_is_a_high_water_mark(self):
+        c = MetricsCollector(StaticSource([snap(0.0, **{B: {"rx_bytes": 0}})]))
+        first = c.poll().max_rss_bytes
+        second = c.poll().max_rss_bytes
+        self.assertGreaterEqual(second, first)
 
 
 class TestTextClassSource(unittest.TestCase):
