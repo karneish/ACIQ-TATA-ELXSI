@@ -6,6 +6,7 @@ bottleneck's buffer is sized, and that the bottleneck is installed out of band
 so it cannot fight the controller for the same class.
 """
 import unittest
+from pathlib import Path
 
 from aciq.harness import (BUFFER_S, _MTU_BYTES, _MIN_BUFFER_PACKETS,
                           _netem_limit)
@@ -67,3 +68,60 @@ class TestNetemBufferIsRealistic(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestAppliedRateReadback(unittest.TestCase):
+    """The recovery evidence must show what the kernel has, not what was asked.
+
+    Uses the transaction manager's OWN read-back path. A private `tc -j` parser
+    was tried first and was wrong in a way only a real host reveals: txn.py
+    already documents that `tc -s -j class show` returned empty on this machine,
+    so every apply would have logged `readable: false` -- evidence that looks
+    diligent and is empty.
+    """
+
+    @staticmethod
+    def _harness(stdout, rc):
+        from aciq.harness import Harness
+        from aciq.txn import TransactionManager
+        from aciq.shield import Shield
+
+        class R:
+            def run(self, cmd, **kw):
+                return (rc, stdout, "")
+        h = Harness.__new__(Harness)
+        h.runner = R()
+        h.txn = TransactionManager(R(), Shield())
+        h.dev = "veth-lan"
+        return h
+
+    def test_it_reports_the_installed_classes(self):
+        text = ("class htb 1:1 root prio 0 rate 20Mbit ceil 20Mbit burst 15Kb\n"
+                "class htb 1:30 leaf 1:1 prio 0 rate 4Mbit ceil 17Mbit\n")
+        out = self._harness(text, 0)._read_applied_rates()
+        self.assertTrue(out["readable"], out)
+        self.assertEqual(out["source"], "tc-text")
+        self.assertIn("1:1", out["classes"])
+
+    def test_a_failed_readback_is_unreadable_not_empty_success(self):
+        out = self._harness("", 1)._read_applied_rates()
+        self.assertFalse(out["readable"])
+        self.assertIn("error", out)
+        # Crucially NOT {"readable": True, "classes": {}}, which would be
+        # indistinguishable from a kernel with nothing installed.
+        self.assertNotIn("classes", out)
+
+    def test_no_class_state_is_unreadable(self):
+        out = self._harness("", 0)._read_applied_rates()
+        self.assertFalse(out["readable"])
+        self.assertIn("error", out)
+
+    def test_it_does_not_call_tc_json_directly(self):
+        """The JSON-only path is known to return nothing on this host."""
+        src = (Path(__file__).resolve().parents[1] / "aciq" / "harness.py").read_text()
+        i = src.index("def _read_applied_rates")
+        j = src.index("def reset_loop", i)
+        body = src[i:j]
+        self.assertNotIn('"tc", "-j"', body,
+                         "a private tc -j parser was reintroduced; use "
+                         "_read_class_state, which is text-first")
+        self.assertIn("_read_class_state", body)
