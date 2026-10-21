@@ -359,8 +359,8 @@ want to watch.
 Device-scope leases match on IP **and on the destination**, because traffic runs
 internet -> device. Matching the source alone -- the original behaviour -- meant
 a lease for the client's own address matched nothing at all, while the run
-reported the lease as held. See `data/leaseA/README.md` and the "The first
-attempt at that command failed" note below.
+reported the lease as held. The runs are in `data/leaseA` and `data/leaseB`; the
+note that records the first attempt failing is section 5i below.
 
 ## 5i. WITHDRAWN: the lease A/B comparison measured our own bug
 

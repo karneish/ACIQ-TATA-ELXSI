@@ -407,8 +407,8 @@ class Harness:
         #: estimator's recovery target only -- see `seed_high_water`.
         if link_mbps and link_mbps > 0.0:
             self._estimator.seed_high_water(link_mbps)
-        #: None until enable_enforcement() is called. See aciq/enforce.py for why
-        #: this is opt-in rather than always-on.
+        #: None until enable_enforcement() is called. See ClosedLoop and the
+        #: enforce_* helpers below for why this is opt-in rather than always-on.
         self._enforcer: ClosedLoop | None = None
         #: M7's lease book. None until enable_leases(), so a run that never
         #: opens the intent API behaves exactly as it did before M7 existed.
@@ -418,7 +418,7 @@ class Harness:
         #: filter pointing at a class that was never created steers nothing.
         self._lease_in_effect = False
 
-    # ---------------- enforcement: opt-in, see aciq/enforce.py ----------------
+    # ---------------- enforcement: opt-in, see ClosedLoop ----------------
     @property
     def enforcement_enabled(self) -> bool:
         return self._enforcer is not None
