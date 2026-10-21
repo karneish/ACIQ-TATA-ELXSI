@@ -5,6 +5,13 @@
 7 paired seeds, `--enforce` on, per-flow steering verified in every run
 (`filters_installed > 0`), 50 ms bottleneck buffer.
 
+> **Provenance.** These figures are a record of the run stamped `a84b86cb`. That
+> run's raw per-seed files are **not** in this repository — the `data/host_gate_*`
+> directories here hold the *current-revision* run (`c5da3fd9`), not this one — so
+> these numbers are reported, not re-derivable. The current-revision figures are
+> in `docs/PROJECT_REPORT.md` and `docs/ACIQ_COMPLETE.md`, and the tool that
+> re-derives them from the committed files is `tools/reconcile_results.py`.
+
 | median of 7 seeds | FIFO | CAKE95 | **ACIQ** |
 |---|---|---|---|
 | **p50 latency** | 81.83 ms | 82.18 ms | **1.18 ms** |
