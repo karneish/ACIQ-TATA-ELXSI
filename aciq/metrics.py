@@ -16,6 +16,7 @@ import json
 import resource
 import re
 import subprocess
+import sys
 import time
 from dataclasses import dataclass, field
 from typing import Protocol
@@ -27,6 +28,16 @@ from .model import TrafficClass
 #: Below this wall-clock window, getrusage granularity makes a CPU fraction
 #: meaningless (the CPU delta can exceed the wall delta). Report 0.0 instead.
 MIN_CPU_WINDOW_S = 0.05
+
+#: A probe whose last sample is older than this stops contributing to the
+#: class's latency/loss. Without an age bound the collector reported the LAST
+#: rtt forever: a generator that finished (or died) at t=30 kept a fresh-looking
+#: p95 at t=300, so "the probe is silent" and "the probe just measured 12 ms"
+#: were the same output. That is the same missing-vs-zero confusion the None
+#: fields were introduced to remove, one level up. The generators report
+#: continuously, and the run ticks faster than this, so a live probe is never
+#: aged out; a stopped one is.
+PROBE_STALE_S = 10.0
 
 
 # --------------------------------------------------------------------------
@@ -269,11 +280,21 @@ class EvaluationData:
 # --------------------------------------------------------------------------
 # pure functions
 # --------------------------------------------------------------------------
-def percentiles(xs: list[float], ps: tuple[float, ...] = (50, 95, 99)) -> dict[str, float]:
+def percentiles(xs: list[float],
+                ps: tuple[float, ...] = (50, 95, 99)) -> dict[str, float | None]:
+    """Nearest-rank percentiles of `xs`.
+
+    **Empty input returns None per percentile, not 0.0.** Returning 0.0 made a
+    class with no probe traffic indistinguishable from one measured at exactly
+    zero milliseconds -- the same "not measured is not zero" rule this module
+    enforces everywhere else, which `percentiles` alone broke. Callers that
+    require a float must handle the None; `poll` only calls this when there is
+    at least one sample.
+    """
     if not xs:
-        return {f"p{int(p)}": 0.0 for p in ps}
+        return {f"p{int(p)}": None for p in ps}
     s = sorted(xs)
-    out = {}
+    out: dict[str, float | None] = {}
     for p in ps:
         i = min(len(s) - 1, int(round((p / 100.0) * (len(s) - 1))))
         out[f"p{int(p)}"] = s[i]
@@ -524,6 +545,12 @@ class MetricsFrame:
     per_class: dict[TrafficClass, ClassMetrics] = field(default_factory=dict)
     fairness: float = 0.0
     cpu_fraction: float = 0.0
+    #: Peak RSS of this process in bytes, via getrusage ru_maxrss. The control
+    #: loop's memory was a stated evaluation metric ("resource footprint") and
+    #: nothing measured it; CPU alone does not show a leak, and a controller
+    #: that grows unbounded is a real failure on a router. ru_maxrss is a
+    #: high-water mark, so it never decreases -- that is what "peak" means.
+    max_rss_bytes: int = 0
 
 
 class MetricsCollector:
@@ -594,13 +621,21 @@ class MetricsCollector:
             # with no probe traffic reports metric_status "no_probe" and leaves
             # the latency fields None -- which is the honest answer for a bulk
             # transfer that carries no measurement probe at all.
+            #
+            # A probe that has gone quiet is treated the same way: its samples
+            # are dropped once they are older than PROBE_STALE_S relative to
+            # this frame, so a finished generator cannot keep reporting a stale
+            # p95. `rtts(lbl)` returns the raw sample list for callers that
+            # want it, but the per-class view here only counts fresh ones.
             labels = self.labels_for(cls)
             evals = [self._last_eval[l] for l in labels
-                     if l in self._last_eval]
+                     if l in self._last_eval and self._fresh(l, snap.t)]
             if evals:
+                fresh = set(labels)
                 rtts: list[float] = []
                 for lbl in labels:
-                    rtts.extend(self.rtts(lbl))
+                    if lbl in fresh and self._fresh(lbl, snap.t):
+                        rtts.extend(self._fresh_rtts(lbl, snap.t))
                 if rtts:
                     p = percentiles(rtts)
                     m.rtt_p50, m.rtt_p95, m.rtt_p99 = p["p50"], p["p95"], p["p99"]
@@ -610,6 +645,15 @@ class MetricsCollector:
                 jitters = [e.jitter_ms for e in evals if e.jitter_ms is not None]
                 if jitters:
                     m.jitter_ms = sum(jitters) / len(jitters)
+                elif len(rtts) >= 2:
+                    # No generator reported jitter, but the probe collected RTT
+                    # samples for this class -- so jitter is measurable and was
+                    # simply not being computed. `jitter_from_samples` existed
+                    # for exactly this and was never called, leaving the jitter
+                    # panel blank for any class whose workload does not
+                    # self-report. RFC 3550 mean absolute consecutive
+                    # difference, from the observations we already hold.
+                    m.jitter_ms = jitter_from_samples(rtts)
                 losses = [e.loss_ratio for e in evals if e.loss_ratio is not None]
                 if losses:
                     m.loss_ratio = sum(losses) / len(losses)
@@ -620,8 +664,26 @@ class MetricsCollector:
         if goodputs:
             frame.fairness = jain_fairness(goodputs)
         frame.cpu_fraction = self.cpu_fraction()
+        frame.max_rss_bytes = self.max_rss_bytes()
         self._prev = snap
         return frame
+
+    def _fresh(self, label: str, now: float) -> bool:
+        e = self._last_eval.get(label)
+        return e is not None and (now - e.t) <= PROBE_STALE_S
+
+    def _fresh_rtts(self, label: str, now: float) -> list[float]:
+        """RTT samples from this label that arrived within the stale window.
+
+        `_rtts` is a bounded ring of the most recent samples and carries no
+        timestamps, so ageing it would need a parallel instant list. The real
+        path ingests every tick, which means a fresh label's whole ring is
+        fresh; the only case this matters for is a label that just went quiet,
+        and there we correctly fall back to zero rtts rather than old ones.
+        """
+        if not self._fresh(label, now):
+            return []
+        return list(self._rtts.get(label, []))
 
     def last_counters(self) -> dict:
         """The most recent raw per-class counters, or {} before the first poll.
@@ -651,3 +713,17 @@ class MetricsCollector:
         if wall < MIN_CPU_WINDOW_S:
             return 0.0
         return max(0.0, cpu / wall)
+
+    def max_rss_bytes(self) -> int:
+        """Peak resident set size of this process, in bytes.
+
+        Linux reports `ru_maxrss` in kilobytes; every other platform in bytes.
+        Normalising here keeps the field's unit honest, which matters because
+        the artefact serialises it and a consumer cannot tell 40 000 from
+        40 960 000 by looking.
+        """
+        ru = resource.getrusage(resource.RUSAGE_SELF)
+        raw = int(getattr(ru, "ru_maxrss", 0) or 0)
+        if sys.platform.startswith("linux"):
+            return raw * 1024
+        return raw
