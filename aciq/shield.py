@@ -187,8 +187,31 @@ class Shield:
         return (now - self.state.last_fault_t) >= self.backoff_s()
 
     def observe_ok(self, now: float) -> None:
-        """A clean observation in MONITOR resets the budget after enough time."""
-        if self.state.mode is not Mode.MONITOR:
+        """A clean, successful observation — called after a verified commit.
+
+        In FAULT_PENDING this marks the recovery as *successful* and returns
+        the shield to MONITOR. That transition was missing: `observe_ok`
+        early-returned for every non-MONITOR mode, so a resolved fault left
+        the shield permanently in FAULT_PENDING, `retries` accumulated across
+        arbitrarily well-separated recoveries, and five lifetime faults —
+        each fully recovered — latched SAFE_HELD. The household was then held
+        in safe state despite being healthy, with manual reset as the only
+        way out.
+
+        The retry *budget* deliberately carries over into MONITOR: a system
+        that keeps faulting and recovering must still exhaust it. Only after
+        SUSTAINED_OK_S of clean MONITOR operation is the budget forgiven.
+
+        SAFE_HELD is unchanged: it is a latched safe state and still requires
+        a manual reset.
+        """
+        if self.state.mode is Mode.SAFE_HELD:
+            return
+        if self.state.mode is Mode.FAULT_PENDING:
+            self.state.mode = Mode.MONITOR
+            self.state.last_ok_t = now
+            self.state.last_fault_t = None
+            self.state.alarm = None
             return
         self.state.breaches = [b for b in self.state.breaches if b >= now - BREACH_WINDOW_S]
         if not self.state.breaches:
