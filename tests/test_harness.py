@@ -750,3 +750,81 @@ class TestUnitTestsNeverShellOut(unittest.TestCase):
         back to the offered sum rather than to zero."""
         h = Harness(runner=FakeRunner(auto_readback=True), clock=lambda: 0.0)
         self.assertIsNone(h.bottleneck_delivered_mbps(1.0))
+
+
+class TestCrossRunStateLeaks(unittest.TestCase):
+    """Evidence from run 1 must never appear in run 2's report."""
+
+    def test_reset_for_run_clears_the_policy_change_log(self):
+        h = harness()
+        h.apply_system(SystemSpec.ACIQ, 100.0)
+        h.policy_change_log.append({"t": 1.0, "intended_capacity_mbps": 100.0})
+        h.policy_changes = 3
+        h.reset_for_run()
+        self.assertEqual(h.policy_change_log, [],
+                         "run 1's policy applications leaked into run 2's "
+                         "evidence, making a fresh run look like it had been "
+                         "changing policy all along")
+        self.assertEqual(h.policy_changes, 0)
+
+    def test_reset_loop_clears_the_bottleneck_byte_counter(self):
+        """Run 2's first delta was measured against run 1's counter."""
+        h = harness()
+        h._prev_delivered_bytes = 123_456_789
+        h.reset_loop()
+        self.assertFalse(hasattr(h, "_prev_delivered_bytes"),
+                         "the bottleneck counter survived the reset; the next "
+                         "reading would be a delta against another experiment")
+
+    def test_reset_for_run_clears_lease_and_measurement_state(self):
+        h = harness()
+        h.last_measurement = object()
+        h._lease_in_effect = True
+        h.reset_for_run()
+        self.assertFalse(h._lease_in_effect)
+        self.assertIsNone(h.last_measurement)
+
+
+class TestBridgeStateAfterFailedApply(unittest.TestCase):
+    """A rebuild destroys every filter whether or not the commit succeeded.
+
+    Invalidating only on success left the bridge's slot map claiming filters
+    existed after a failed apply had rolled the tree back, so `mark()` no-op'd
+    for flows with nothing on the device -- verdicts reported, traffic going
+    to the default class.
+    """
+
+    def _harness_with_stale_slots(self):
+        r = FakeRunner(auto_readback=True)
+        h = Harness(runner=r, clock=lambda: 0.0)
+        enforcer = h.enable_enforcement(executor=FakeRunner())
+        h.apply_system(SystemSpec.ACIQ, 100.0)
+        # a flow the bridge believes is installed
+        enforcer.bridge.state.slots["flow-sig-1"] = 1
+        return h, r
+
+    def test_failed_lease_apply_invalidates_the_bridge(self):
+        h, r = self._harness_with_stale_slots()
+        h.runner.fail_on = "class add"          # the rebuild will be refused
+        h.clock = lambda: 6.0                   # past the shield change window
+        lease = Lease(id="l", target="device", ip="203.0.113.4", weight=0.6)
+        self.assertFalse(h.sync_lease(lease, 100.0))
+        self.assertEqual(h._enforcer.bridge.state.slots, {},
+                         "the apply failed after the rebuild, so the old "
+                         "filters are gone; the bridge still claimed them")
+
+    def test_deferred_apply_leaves_the_bridge_alone(self):
+        """No kernel touch, no churn: a rate-limited apply must not clear
+        filters that are still on the device."""
+        h, _r = self._harness_with_stale_slots()
+        h.clock = lambda: 0.1                   # inside the change window
+        lease = Lease(id="l", target="device", ip="203.0.113.4", weight=0.6)
+        self.assertFalse(h.sync_lease(lease, 100.0))
+        self.assertEqual(h._enforcer.bridge.state.slots, {"flow-sig-1": 1})
+
+    def test_committed_apply_invalidates_the_bridge(self):
+        h, _r = self._harness_with_stale_slots()
+        h.clock = lambda: 6.0
+        lease = Lease(id="l", target="device", ip="203.0.113.4", weight=0.6)
+        self.assertTrue(h.sync_lease(lease, 100.0))
+        self.assertEqual(h._enforcer.bridge.state.slots, {})
