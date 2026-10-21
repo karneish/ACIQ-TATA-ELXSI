@@ -645,7 +645,21 @@ class ExperimentRunner:
                 "estimator_saturated": self.harness._estimator.current.saturated,
                 "fairness": frame.fairness,
                 "cpu_fraction": frame.cpu_fraction,
+                # Peak RSS of the controller process this tick. CPU alone does
+                # not show a leak; a controller that grows without bound is a
+                # real failure on a router, and "resource footprint" was a
+                # stated metric with nothing measuring it.
+                "max_rss_bytes": frame.max_rss_bytes,
                 "capacity_mbps": self.harness._estimator.current.mbps,
+                # The result of the most recent transactional policy apply, as
+                # the transaction itself reported it. Recorded so the dashboard
+                # can show "last verified kernel state" and "policy failures /
+                # rollback events" from the artefact rather than inferring them
+                # -- an inferred rollback would be a guess dressed as a
+                # measurement, and the whole point of the transaction is that it
+                # knows. ok=verified+committed, rolled_back=the kernel was
+                # restored, reason is the transaction's own explanation.
+                "policy_outcome": self._policy_outcome(),
                 # What each workload was steered to this tick, if enforcement is
                 # on. Recorded per sample so the artefact shows the decision and
                 # its timing, rather than asking the reader to trust the code.
@@ -708,9 +722,17 @@ class ExperimentRunner:
             if f.exists():
                 try:
                     workloads[label] = json.loads(f.read_text())
+                    # Same percentile as the per-tick path in `_ingest_probes`.
+                    # The two used to disagree -- this site took `p50`, the
+                    # live one took `p95` -- and both write into the same
+                    # `_rtts` ring, so the collector's "p95" was computed over
+                    # a distribution that mixed medians with 95th percentiles.
+                    # A p95 of that mixture is a p95-of-p95: not the tail of
+                    # the flow, and not comparable with the generator's own
+                    # report. One percentile, ingested consistently.
                     collector.ingest(EvaluationData(
                         t=time.monotonic(), label=label,
-                        rtt_ms=workloads[label].get("p50"),
+                        rtt_ms=workloads[label].get("p95"),
                         jitter_ms=workloads[label].get("jitter_ms"),
                         loss_ratio=workloads[label].get("loss_ratio")))
                 except json.JSONDecodeError:
@@ -798,6 +820,27 @@ notes=(([] if dropped else ["no capacity drop in this run"])
         paths.write_json("result.json", json.loads(res.to_json()))
         return res
 
+    def _policy_outcome(self) -> dict | None:
+        """The transaction's own last outcome, flattened for the artefact.
+
+        None until a transactional apply has run, so an artefact from a run with
+        no enforcement makes no claim about the kernel. When present, `ok` is
+        the transaction's verdict and `rolled_back`/`kernel_touched` say whether
+        the kernel was actually put back -- the two facts a dashboard needs to
+        distinguish "policy applied and verified" from "policy failed and was
+        reverted".
+        """
+        out = self.harness.txn.last_outcome
+        if out is None:
+            return None
+        return {
+            "ok": bool(out.ok),
+            "committed": bool(out.committed),
+            "rolled_back": bool(out.rolled_back),
+            "kernel_touched": bool(out.kernel_touched),
+            "reason": out.reason,
+        }
+
     def _enforcement_step(self, ports, now: float) -> tuple[dict[str, dict], int]:
         """One enforcement tick: observe flows, classify, steer.
 
@@ -882,7 +925,7 @@ notes=(([] if dropped else ["no capacity drop in this run"])
             label = want.get(flow.dport)
             if label is None:
                 continue
-            f = self._tracker.features(flow.key)
+            f = self._tracker.features(flow.identity)
             if f is None:
                 continue
             v = self.harness.enforce(f, now=now)
