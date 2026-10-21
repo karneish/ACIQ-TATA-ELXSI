@@ -571,3 +571,95 @@ class TestTheRecordedRunConverges(unittest.TestCase):
                         child_backlog_bytes=10 ** 6)
         self.assertFalse(m.saturated,
                          "backlog declared saturation with no parent counters")
+
+
+class TestStaleAndOutOfOrderMeasurements(unittest.TestCase):
+    """A buffered, replayed or clock-skewed sample must not wedge the estimate.
+
+    Nothing enforced timestamp monotonicity before. A reading with an earlier
+    `t` than one already applied would make every dwell comparison see a
+    negative interval and refuse to adapt -- a frozen estimate that looks like
+    stability. `STALE_GAP_S` is the explicit bound.
+    """
+
+    def test_a_replayed_old_sample_does_not_move_the_estimate(self):
+        from aciq.capacity import STALE_GAP_S
+        e = CapacityEstimator()
+        e.observe(sat(100.0, 20.0))
+        e.observe(sat(101.0, 20.0))
+        before = e.current.mbps
+        # A sample stamped 60 s in the past: buffered/replayed.
+        e.observe(sat(100.0 - STALE_GAP_S - 1.0, 5.0))
+        self.assertEqual(e.current.mbps, before,
+                         "a stale sample moved the estimate")
+
+    def test_a_small_backwards_step_does_not_wedge_adaptation(self):
+        """Clock jitter of a fraction of a second is normal; it must not leave
+        the dwell rule comparing against a future timestamp forever."""
+        e = CapacityEstimator()
+        e.observe(sat(100.0, 50.0))
+        e.observe(sat(101.0, 50.0))
+        # A slightly earlier stamp, then a normal forward one: adaptation resumes.
+        e.observe(sat(100.9, 50.0))
+        e.observe(sat(106.5, 20.0))
+        self.assertLess(e.current.mbps, 50.0, "the estimate never adapted")
+
+    def test_a_forward_gap_is_allowed(self):
+        """The loop idling for a while is not stale data."""
+        e = CapacityEstimator()
+        e.observe(sat(100.0, 50.0))
+        e.observe(sat(101.0, 50.0))
+        e.observe(sat(200.0, 20.0))
+        self.assertLess(e.current.mbps, 50.0)
+
+
+class TestTransitionCostIsBounded(unittest.TestCase):
+    """The tail latency is an adaptation TRANSIENT, and it is bounded.
+
+    `tools/tail_analysis.py` splits a real run's one-way delays at t=5 s:
+    steady-state p95 is ~2.1 ms across all seven congested seeds, while the
+    transition carries the ~100 ms tail. That makes the tail a property of the
+    cold start -- the estimator must observe before it can act -- not of the
+    scheduler. These tests pin the two facts an honest report depends on:
+
+    * the loop adopts a 100 -> 20 Mbps step within `SAT_STREAK_REQUIRED + 1`
+      ticks (the earliest the streak permits), and
+    * the emergency path can adopt it on the FIRST congested sample, so a
+      transition that shows real bottleneck congestion does not cost the full
+      streak.
+    """
+
+    def test_a_hard_step_is_adopted_within_the_streak_window(self):
+        e = CapacityEstimator()
+        e.seed_high_water(100.0)
+        # Tick 0 establishes the baseline (prev counters); tick 1 is the first
+        # sample the estimator can act on. Allow exactly one extra tick for the
+        # streak, no more.
+        steps = 0
+        for i in range(SAT_STREAK_REQUIRED + 2):
+            e.observe(sat(float(i), 20.0))
+            steps += 1
+            if e.current.mbps and e.current.mbps < 40.0:
+                break
+        self.assertLess(e.current.mbps or 1e9, 40.0,
+                        "a 5x drop was not adopted inside the streak window")
+        self.assertLessEqual(steps, SAT_STREAK_REQUIRED + 1)
+
+    def test_the_emergency_path_adopts_on_the_first_congested_sample(self):
+        """Bottleneck congestion plus sub-half delivered rate lifts the streak.
+
+        This is the mechanism that keeps the transition from costing the full
+        streak when the external queue is visibly full on the first sample.
+        """
+        from aciq.capacity import EMERGENCY_MIN_BACKLOG_BYTES
+        e = CapacityEstimator()
+        e.seed_high_water(100.0)
+        e.observe(sat(0.0, 5.0))  # baseline
+        first = Measurement(t=1.0, goodput_mbps=5.0, drop_rate_per_s=0.0,
+                            overlimit_rate_per_s=0.0,
+                            link_drop_rate_per_s=0.0,
+                            link_overlimit_rate_per_s=0.0,
+                            bottleneck_drop_rate_per_s=50.0,
+                            bottleneck_backlog_bytes=EMERGENCY_MIN_BACKLOG_BYTES)
+        e.observe(first)
+        self.assertTrue(e.current.saturated)
