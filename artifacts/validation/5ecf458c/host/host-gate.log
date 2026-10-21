@@ -1,0 +1,26 @@
+ACIQ host gate -- revision 5ecf458c
+date: 2026-10-13T13:36:36+05:30
+
+-- prerequisites --
+  [ok ] root
+  [ok ] ip -> /usr/sbin/ip
+  [ok ] tc -> /usr/sbin/tc
+  [ok ] iperf3 -> /usr/bin/iperf3
+  [ok ] network namespace support
+
+kernel: 7.1.5-76070105-generic
+iproute2: tc utility, iproute2-6.1.0, libbpf 1.3.0
+
+== gate 1: live rollback verification (real kernel) ==
+  [PASS] live rollback
+
+== gate 2: acceptance harness ==
+  [WARN] acceptance ran but is NOT complete -- see the gate list above
+
+== summary ==
+  evidence directory: artifacts/validation/5ecf458c/host
+  kernel: 7.1.5-76070105-generic
+  RESULT: every executed gate passed.
+  Gates marked SKIPPED above produced no evidence and must not be
+  counted as passing. Re-run the acceptance harness and read its own
+  per-gate table before drawing any conclusion.
