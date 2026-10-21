@@ -648,6 +648,51 @@ uplink shaping.
 *a working correction loop* (`aciq/corrections.py`, on the enforcement path
 since `aciq/closedloop.py`).
 
+### Resource footprint (updated 2026-10-20)
+
+Peak memory is now measured: `MetricsCollector.max_rss_bytes()` reads
+`getrusage(RUSAGE_SELF).ru_maxrss` (normalised to bytes), it is serialised per
+sample in `samples.jsonl`, and the dashboard carries a "memory (peak RSS)" tile.
+Previously only CPU was recorded, and CPU alone does not show a leak.
+
+The controller's own **long-run** memory behaviour is now measured offline, with
+no privileges. `tools/offline_soak.py` drives the same per-tick arithmetic the
+live loop uses (`FlowTracker` → `classify` → `TrustStore` →
+`CapacityEstimator` → `build_plan`) and reports RSS over time plus the size of
+every bounded structure. RSS is read from `/proc/self/statm` (current resident
+pages), not `ru_maxrss`, whose peak can only climb and would hide reclamation.
+The 30-minute run at 200 flows: 277 106 ticks, tracked flows flat at 200, RSS
+17.03 → 17.41 MB — 0.38 MB total drift, plateauing. The invariant is pinned by
+`tests/test_offline_soak.py`; the run is recorded in
+`docs/gap-closure/offline-soak-30min.json`.
+
+The soak found two bugs: a real leak (`TrustStore`'s per-source maps were
+documented "bounded" but never evicted; they now evict the least-recently-seen
+source at `MAX_TRUST_SOURCES = 1024`), and a bug in the harness itself, whose
+first revision retained one float per tick and then reported that retention as
+controller drift. Both are fixed.
+
+That soak found a genuine leak: `TrustStore`'s per-source maps were described
+"bounded" but nothing evicted, so a run with source churn grew them
+unboundedly. They now evict the least-recently-seen source at
+`MAX_TRUST_SOURCES = 1024`.
+
+What is **still not measured**: qdisc/packet-buffer memory, control-loop
+latency-under-load, and behaviour at 50/100/500 concurrent flows. Those require
+the kernel-integrated run this shell cannot perform (no root, no `tc`, no network
+namespaces) and are recorded as blocked rather than estimated.
+
+### Latency percentiles ingested consistently (2026-10-20)
+
+The collector's `_rtts` ring was fed by two sites that disagreed: the per-tick
+`_ingest_probes` took the generator's `p95`, while the final `collect()` block
+took its `p50`. Both wrote into the same ring, so the reported p50/p95/p99 were
+computed over a distribution that mixed medians with 95th percentiles — a
+p95-of-p95 that is neither the flow's tail nor comparable with the generator's
+own report. Both sites now ingest `p95`. The dashboard's latency panel plots
+p50, p95 and p99 as separate labelled series, so the tail is visible rather than
+collapsed into one line.
+
 ## 11. Honest reading of the v0 results
 
 Frozen in `data/baselines/v0/` and tagged `v0-baseline`.
