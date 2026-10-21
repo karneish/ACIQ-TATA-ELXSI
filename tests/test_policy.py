@@ -290,3 +290,47 @@ class TestPlanSurvivesRendering(unittest.TestCase):
         self.assertTrue(bulk, "no class 1:30 in the rendered commands")
         self.assertIn("ceil", bulk[0])
         self.assertIn("17", bulk[0])
+
+
+class TestDegradedModeIsReportedNotHidden(unittest.TestCase):
+    """Under overload the nominal floors cannot all be honoured. The documented
+    guarantee must not claim otherwise: the plan scales them down *and* says so.
+
+    The distinction the brief asks for is between a *policy allocation*
+    guarantee (what build_plan promises when capacity suffices) and a *delivered*
+    guarantee (what the kernel can actually give when it does not). This class
+    pins the first half: a degraded plan never over-allocates and always flags.
+    """
+
+    def test_a_degraded_plan_never_over_allocates(self):
+        for cap in (0.0, 0.5, 1.0, 2.0, 5.0):
+            plan = build_plan(cap)
+            self.assertLessEqual(plan.total(), cap + 1e-9,
+                                 f"plan over-allocates at {cap} Mbps")
+            if cap <= floor_mbps(cap) * len(TrafficClass) + 1e-9:
+                self.assertTrue(plan.degraded,
+                                f"floors cannot fit at {cap} Mbps but plan is "
+                                f"not marked degraded")
+
+    def test_a_degraded_plan_still_gives_every_class_something(self):
+        """Scaling down proportionally, not starving one class to keep the
+        others whole, is the whole point of the degraded path."""
+        plan = build_plan(3.0)
+        self.assertTrue(plan.degraded)
+        for cls, r in plan.rates.items():
+            self.assertGreater(r, 0.0, f"{cls} got nothing in degraded mode")
+
+    def test_the_degraded_floor_is_the_achievable_one_not_the_nominal(self):
+        """At 3 Mbps the nominal floor is max(2.0, 0.05*3)=2.0, which cannot be
+        given to every class -- so the effective floor is capacity/n, and the
+        plan must report values consistent with that, not with 2.0."""
+        cap = 3.0
+        plan = build_plan(cap)
+        n = len(plan.rates)
+        self.assertAlmostEqual(plan.total(), cap, places=6)
+        for r in plan.rates.values():
+            self.assertLessEqual(r, cap / n + 1e-9)
+
+    def test_ordinary_capacity_is_not_marked_degraded(self):
+        for cap in (100.0, 20.0, 10.0):
+            self.assertFalse(build_plan(cap).degraded, f"{cap} Mbps is not tight")
