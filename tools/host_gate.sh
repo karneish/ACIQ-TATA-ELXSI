@@ -223,8 +223,15 @@ congested_comparison() {
     # for aciq is what made the previous headline measurement meaningless:
     # every sample recorded filters_installed: 0, so "ACIQ beat CAKE" was
     # measured on a controller that never steered a single flow.
+    #
+    # --observe is passed for ALL THREE, always. The interactive-latency-tail
+    # gate and the transition/steady split both read the per-packet trace from
+    # THIS directory; without it they can only report NOT RUN. The trace does
+    # not change the headline medians (it records packets the run already sent),
+    # so it cannot bias the comparison. $OBSERVE is still honoured so a caller
+    # who already asked for --observe keeps a single source of truth.
     python3 run_experiments.py --scenario s2_wan_drop --system "$sysname" \
-        --drop 20 --drop-at 5 --seeds 7 --seed 42 --enforce $OBSERVE \
+        --drop 20 --drop-at 5 --seeds 7 --seed 42 --enforce --observe $OBSERVE \
         --results-dir "data/host_gate_congested_${sysname}" 2>&1 \
         | tee -a "$OUT/comparison-congested.log" | tail -2
   done
