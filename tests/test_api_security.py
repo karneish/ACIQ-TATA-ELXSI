@@ -161,6 +161,110 @@ class TestRateLimiting(unittest.TestCase):
             s.handle("POST", "/intent", body, client=f"10.9.{i // 256}.{i % 256}")
         self.assertLessEqual(len(s._rate), MAX_RATE_CLIENTS)
 
+    def test_concurrent_writes_cannot_exceed_the_cap(self):
+        """`_allow_write` is a read-modify-write and the server is threaded.
+
+        Without a lock, N threads for one client can all read the same count
+        and the increment is lost, so the cap is exceeded. The first limiter
+        had no lock; this drives 8 threads x RATE_LIMIT_WRITES+20 and asserts
+        the exact budget is never beaten.
+        """
+        import threading
+        s = _service()
+        body = json.dumps({"target": "device", "ip": "10.0.1.2"}).encode()
+        accepted = []
+        lock = threading.Lock()
+
+        def hammer():
+            n = 0
+            for _ in range(RATE_LIMIT_WRITES + 20):
+                st, _b, _c = s.handle("POST", "/intent", body, client="3.3.3.3")
+                if st == 201:
+                    n += 1
+            with lock:
+                accepted.append(n)
+
+        threads = [threading.Thread(target=hammer) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertLessEqual(sum(accepted), RATE_LIMIT_WRITES)
+
+
+class TestInputValidation(unittest.TestCase):
+    """The API is the untrusted edge. A malformed field must be refused here
+    rather than stored as a lease that can never match a real flow."""
+
+    def _post(self, s, **fields):
+        return s.handle("POST", "/intent", json.dumps(fields).encode())
+
+    def test_a_device_lease_with_a_non_ip_is_refused(self):
+        s = _service()
+        st, body, _c = self._post(s, target="device", ip="not-an-ip")
+        self.assertEqual(st, 400)
+        self.assertEqual(len(s.book.active()), 0)
+
+    def test_a_device_lease_with_cidr_is_refused(self):
+        s = _service()
+        st, _b, _c = self._post(s, target="device", ip="10.0.1.0/24")
+        self.assertEqual(st, 400)
+
+    def test_a_valid_ipv6_device_lease_is_accepted(self):
+        s = _service()
+        st, _b, _c = self._post(s, target="device", ip="fd00::2")
+        self.assertEqual(st, 201)
+
+    def test_a_flow_lease_with_a_bad_tuple_is_refused(self):
+        s = _service()
+        for bad in ("not-a-flow", "a:1->b:2", "10.0.1.2:x->10.0.1.3:80",
+                    "10.0.1.2:99999->10.0.1.3:80"):
+            st, _b, _c = self._post(s, target="flow", flow=bad)
+            self.assertEqual(st, 400, msg=bad)
+        self.assertEqual(len(s.book.active()), 0)
+
+    def test_a_valid_flow_lease_is_accepted(self):
+        s = _service()
+        st, _b, _c = self._post(s, target="flow",
+                                flow="10.0.1.2:40000->203.0.113.9:443")
+        self.assertEqual(st, 201)
+
+    def test_a_flow_cannot_mix_address_families(self):
+        """A v4 source with a v6 destination names a tuple no conntrack entry
+        can hold; the lease would match nothing and still report success."""
+        s = _service()
+        for bad in ("10.0.1.2:40000->fd00::9:443",
+                    "fd00::2:40000->203.0.113.9:443"):
+            st, _b, _c = self._post(s, target="flow", flow=bad)
+            self.assertEqual(st, 400, msg=bad)
+        self.assertEqual(len(s.book.active()), 0)
+
+
+class TestDeleteIsAudited(unittest.TestCase):
+    """POST was audited, DELETE was not. The one question a release log exists
+    for -- who removed the EF lease and when -- could not be answered."""
+
+    def test_a_release_is_audited(self):
+        recs = []
+        s = _service(audit=recs.append)
+        s.handle("POST", "/intent",
+                 body=json.dumps({"target": "device", "ip": "10.0.1.2"}).encode(),
+                 client="4.4.4.4")
+        recs.clear()
+        st, _b, _c = s.handle("DELETE", "/intent/lease-1", client="4.4.4.4")
+        self.assertEqual(st, 200)
+        self.assertEqual(len(recs), 1)
+        self.assertEqual(recs[0]["outcome"], "released")
+        self.assertEqual(recs[0]["client"], "4.4.4.4")
+        self.assertEqual(recs[0]["lease"], "lease-1")
+
+    def test_a_failed_release_is_audited(self):
+        recs = []
+        s = _service(audit=recs.append)
+        st, _b, _c = s.handle("DELETE", "/intent/lease-99", client="4.4.4.4")
+        self.assertEqual(st, 404)
+        self.assertEqual(recs[0]["outcome"], "not_found")
+
 
 class TestAudit(unittest.TestCase):
     def test_a_created_lease_is_audited(self):
@@ -198,6 +302,40 @@ class TestAudit(unittest.TestCase):
         self.assertNotIn("TOPSECRET", json.dumps(recs))
 
 
+class TestFailedAuthIsThrottled(unittest.TestCase):
+    """A rejected caller must not be able to guess tokens without bound.
+
+    The first version authorised *before* consulting the limiter, so a wrong
+    token returned 401 and never spent budget: an attacker could try tokens as
+    fast as the socket allowed. The limiter now counts every mutating attempt,
+    including failed authentication, and reports 429 once the budget is gone.
+    """
+
+    def test_wrong_token_guesses_are_eventually_throttled(self):
+        s = _service(token="correct-horse")
+        codes = [s.handle("POST", "/intent", b"{}",
+                          headers={"authorization": f"Bearer guess-{i}"},
+                          client="6.6.6.6")[0]
+                 for i in range(RATE_LIMIT_WRITES + 10)]
+        self.assertEqual(codes.count(401), RATE_LIMIT_WRITES)
+        self.assertGreater(codes.count(429), 0)
+        self.assertEqual(codes[-1], 429)
+
+    def test_a_correct_token_after_guessing_is_also_throttled(self):
+        """The budget is per client, so exhausting it with guesses also denies
+        the real token -- which is the point: the attacker shares the client."""
+        s = _service(token="correct-horse")
+        for i in range(RATE_LIMIT_WRITES):
+            s.handle("POST", "/intent", b"{}",
+                     headers={"authorization": f"Bearer guess-{i}"},
+                     client="6.6.6.6")
+        st, _b, _c = s.handle(
+            "POST", "/intent", json.dumps({"target": "device",
+                                           "ip": "10.0.1.2"}).encode(),
+            headers={"authorization": "Bearer correct-horse"}, client="6.6.6.6")
+        self.assertEqual(st, 429)
+
+
 class TestOverTheWire(unittest.TestCase):
     """The socket path, on port 0, loopback only."""
 
@@ -232,6 +370,13 @@ class TestOverTheWire(unittest.TestCase):
         self.assertIn("id", body)
 
     def test_an_oversized_body_is_refused(self):
+        """Exactly 413 over the wire, not a truncate-then-400.
+ 
+        The socket adapter used to read `min(n, MAX_BODY_BYTES)`, so an
+        oversized body was silently truncated to the cap and `_create`'s size
+        check could never fire: the API claimed to "refuse absurd bodies" and
+        instead accepted a truncated one. It now reads one byte past the cap.
+        """
         req = urllib.request.Request(
             f"http://127.0.0.1:{self.port}/intent",
             data=json.dumps({"target": "device", "ip": "10.0.1.2",
@@ -240,7 +385,7 @@ class TestOverTheWire(unittest.TestCase):
             urllib.request.urlopen(req, timeout=5)
             self.fail("a 200 kB body was accepted")
         except urllib.error.HTTPError as e:
-            self.assertIn(e.code, (413, 400))
+            self.assertEqual(e.code, 413)
 
     def test_malformed_json_is_a_400_not_a_500(self):
         req = urllib.request.Request(
