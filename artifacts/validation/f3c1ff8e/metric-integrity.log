@@ -1,0 +1,56 @@
+test_a_metric_is_never_zero_when_it_is_missing (tests.test_measure.TestAccounting.test_a_metric_is_never_zero_when_it_is_missing)
+The defect this module exists to prevent. ... ok
+test_counts_add_up (tests.test_measure.TestAccounting.test_counts_add_up) ... ok
+test_every_derived_figure_is_recomputable_from_the_raw_stream (tests.test_measure.TestAccounting.test_every_derived_figure_is_recomputable_from_the_raw_stream)
+§5.7: derived metrics must be reconstructible. Metrics carries ... ok
+test_window_is_the_span_of_the_observations (tests.test_measure.TestAccounting.test_window_is_the_span_of_the_observations) ... ok
+test_a_duplicate_does_not_deflate_loss (tests.test_measure.TestDuplicates.test_a_duplicate_does_not_deflate_loss) ... ok
+test_a_duplicate_is_not_counted_twice (tests.test_measure.TestDuplicates.test_a_duplicate_is_not_counted_twice) ... ok
+test_reordering_does_not_invent_loss (tests.test_measure.TestDuplicates.test_reordering_does_not_invent_loss) ... ok
+test_reordering_is_counted_not_penalised (tests.test_measure.TestDuplicates.test_reordering_is_counted_not_penalised) ... ok
+test_the_first_reply_wins_for_a_repeated_sequence (tests.test_measure.TestDuplicates.test_the_first_reply_wins_for_a_repeated_sequence)
+A duplicate reply is not a second measurement. Order decides, so the ... ok
+test_alternating_delay_reports_the_mean_swing (tests.test_measure.TestJitter.test_alternating_delay_reports_the_mean_swing) ... ok
+test_constant_delay_is_zero_jitter (tests.test_measure.TestJitter.test_constant_delay_is_zero_jitter)
+Zero is a real measurement here, not a missing value. ... ok
+test_jitter_ignores_a_paused_sample (tests.test_measure.TestJitter.test_jitter_ignores_a_paused_sample) ... ok
+test_one_sample_has_no_jitter (tests.test_measure.TestJitter.test_one_sample_has_no_jitter) ... ok
+test_a_known_drop_is_counted (tests.test_measure.TestLoss.test_a_known_drop_is_counted) ... ok
+test_all_lost_is_total_loss_not_missing (tests.test_measure.TestLoss.test_all_lost_is_total_loss_not_missing) ... ok
+test_in_flight_packets_are_not_lost_packets (tests.test_measure.TestLoss.test_in_flight_packets_are_not_lost_packets)
+A run's last packets have not returned when the window closes. Counting ... ok
+test_loss_survives_when_latency_does_not (tests.test_measure.TestLoss.test_loss_survives_when_latency_does_not) ... ok
+test_no_loss_is_zero (tests.test_measure.TestLoss.test_no_loss_is_zero) ... ok
+test_a_negative_rtt_is_impossible_and_discarded (tests.test_measure.TestOutliers.test_a_negative_rtt_is_impossible_and_discarded) ... ok
+test_an_implausible_sample_is_discarded (tests.test_measure.TestOutliers.test_an_implausible_sample_is_discarded) ... ok
+test_empty_input_is_not_measured_not_zero (tests.test_measure.TestPercentiles.test_empty_input_is_not_measured_not_zero) ... ok
+test_exactly_the_minimum_is_enough (tests.test_measure.TestPercentiles.test_exactly_the_minimum_is_enough) ... ok
+test_nearest_rank_does_not_invent_a_value (tests.test_measure.TestPercentiles.test_nearest_rank_does_not_invent_a_value) ... ok
+test_too_few_samples_gives_none_not_a_number (tests.test_measure.TestPercentiles.test_too_few_samples_gives_none_not_a_number) ... ok
+test_a_flat_path_reports_its_delay_at_every_percentile (tests.test_measure.TestRtt.test_a_flat_path_reports_its_delay_at_every_percentile) ... ok
+test_a_missing_reply_is_not_an_rtt (tests.test_measure.TestRtt.test_a_missing_reply_is_not_an_rtt) ... ok
+test_one_way_delay_is_not_claimed (tests.test_measure.TestRtt.test_one_way_delay_is_not_claimed)
+No synchronised clocks exist across the namespaces, so every latency ... ok
+test_a_silent_port_produces_total_loss_not_no_data (tests.test_measure_integration.TestLossIsMeasuredNotInferred.test_a_silent_port_produces_total_loss_not_no_data)
+Nothing listening: every packet is lost, and that is a *result*, not a ... ok
+test_every_derived_figure_is_recomputable_from_raw (tests.test_measure_integration.TestRawObservationsAreComplete.test_every_derived_figure_is_recomputable_from_raw)
+§5.7: derived metrics must be reconstructible, not merely asserted. ... /usr/lib/python3.12/unittest/case.py:589: ResourceWarning: unclosed <socket.socket fd=4, family=2, type=2, proto=0, laddr=('0.0.0.0', 45525)>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_every_sequence_appears_exactly_once (tests.test_measure_integration.TestRawObservationsAreComplete.test_every_sequence_appears_exactly_once) ... /usr/lib/python3.12/unittest/case.py:589: ResourceWarning: unclosed <socket.socket fd=4, family=2, type=2, proto=0, laddr=('0.0.0.0', 39150)>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_a_class_with_no_probe_is_none_not_zero (tests.test_measure_integration.TestTheSeriesIsLive.test_a_class_with_no_probe_is_none_not_zero) ... ok
+test_status_reports_valid_once_there_is_enough_data (tests.test_measure_integration.TestTheSeriesIsLive.test_status_reports_valid_once_there_is_enough_data) ... ok
+test_the_collector_reports_a_value_that_changes_between_polls (tests.test_measure_integration.TestTheSeriesIsLive.test_the_collector_reports_a_value_that_changes_between_polls) ... ok
+test_the_generator_writes_an_incremental_partial_report (tests.test_measure_integration.TestTheSeriesIsLive.test_the_generator_writes_an_incremental_partial_report) ... /usr/lib/python3.12/unittest/case.py:589: ResourceWarning: unclosed <socket.socket fd=4, family=2, type=2, proto=0, laddr=('0.0.0.0', 51520)>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+
+----------------------------------------------------------------------
+Ran 34 tests in 3.397s
+
+OK

@@ -1,0 +1,33 @@
+ACIQ acceptance -- revision f3c1ff8e
+
+phase 1: environment-independent tests
+  [PASS   ] unit+integration+socket  -- 849 tests, 1 skipped, exit 0
+
+phase 2: metric integrity
+  [PASS   ] metric integrity  -- arithmetic + socket recomputation
+
+phase 3: api security
+  [PASS   ] api security  -- auth, bind policy, rate limit, audit
+
+phase 4: classifier
+  [PASS   ] classifier evaluation  -- 16 constructed cases, two capacities
+
+phase 5: benchmarks
+  [PASS   ] control-plane benchmark
+
+phase 6: kernel-dependent gates
+  [PASS   ] live rollback verification (kernel)  -- tc read-back in an isolated namespace
+  [PASS   ] testbed gate (21 checks)  -- exit 0
+  [NOTRUN] live enforcement  -- not executed by this harness -- sudo ./tools/host_gate.sh   (21-check traffic gate; see gate.sh)
+  [NOTRUN] rollback under real tc failure  -- not executed by this harness -- sudo python3 -m unittest tests.test_rollback_live -v
+  [NOTRUN] live adaptation loop  -- not executed by this harness -- sudo python3 run_experiments.py --scenario s2_wan_drop --system aciq --enforce
+  [NOTRUN] FIFO/CAKE/ACIQ comparison  -- not executed by this harness -- sudo python3 run_experiments.py --scenario s3_tv_and_gaming --system b0_fifo|b
+  [NOTRUN] 30-minute stability  -- not executed by this harness -- sudo python3 run_experiments.py --scenario s3_tv_and_gaming --system aciq --du
+
+phase 7: claim audit
+  [PASS   ] claim audit  -- constants, evidence, red-flag phrases
+
+  PASS 8  FAIL 0  BLOCKED 0  NOT RUN 5
+  1 test(s) skipped (none mandatory) -- not counted as passed
+  complete acceptance run: False
+  evidence: artifacts/validation/f3c1ff8e/
