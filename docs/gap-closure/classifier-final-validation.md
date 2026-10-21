@@ -1,5 +1,13 @@
 # Classifier final validation
 
+> **Superseded in part.** This record is tied to revision `89b87758`. The
+> *required-properties* table below still holds, but the measured case count and
+> accuracy in the "Measured result" section are stale: the fixture carried the
+> service port in `sport` and labelled 21–32 Mbps flows "bulk" at 100 Mbps.
+> Current results — two corpora × two capacities, 100% on labelled, zero
+> high-confidence errors — are in `docs/PROJECT_REPORT.md` §4.4 and
+> `docs/ACIQ_COMPLETE.md` §4.4.
+
 The `89b87758` changes were re-inspected and re-measured, not rewritten.
 
 ## Required properties, each traced to code and a test
