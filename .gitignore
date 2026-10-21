@@ -80,3 +80,36 @@ venv/
 !data/ab_lease/**
 !data/ab_lease_42/
 !data/ab_lease_42/**
+
+# The host-gate evidence is the same case, and the same defect, one level up.
+#
+# docs/PROJECT_REPORT.md, docs/ACIQ_COMPLETE.md and
+# docs/gap-closure/documentation-consistency.md publish the congested headline
+# table (p50/p95/p99/jitter/loss for FIFO, CAKE95 and ACIQ) and the per-seed
+# table, and name the directory the numbers come from:
+#
+#     data/host_gate_congested_aciq
+#     data/host_gate_congested_b0_fifo
+#     data/host_gate_congested_b1_cake95
+#
+# tools/reconcile_results.py re-derives every one of those numbers from the raw
+# per-seed call.json files under exactly those directories, and
+# tools/tail_analysis.py splits the per-packet trace in
+# data/host_gate_congested_aciq into the transition and steady windows the
+# report's tail section quotes. `data/*` excluded all of it, so the published
+# numbers had no data behind them -- the identical failure the two comments
+# above describe, for a third time, in a third directory.
+#
+# The claim "the committed data/host_gate_* runs carry revisions ..." was
+# therefore false in the same way: nothing under data/host_gate_* had ever been
+# committed. What is committed now is the current-revision run, and each
+# directory carries a REVISION file naming the revision that produced it.
+#
+# A later pattern wins, so these negations must come after the blanket `data/*`
+# and the blanket `*.log` rules above -- otherwise the logs are excluded again
+# and the per-seed evidence is incomplete.
+!data/host_gate_*/
+!data/host_gate_*/**
+!data/host_gate_*/**/*.log
+!data/host_gate_*/**/*.json
+!data/host_gate_*/**/*.jsonl
