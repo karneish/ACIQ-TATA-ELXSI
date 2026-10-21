@@ -1,0 +1,49 @@
+ACIQ acceptance -- revision c5da3fd9
+
+phase 1: environment-independent tests
+  [PASS   ] unit+integration+socket  -- 1174 tests, 3 skipped, exit 0
+
+phase 2: metric integrity
+  [PASS   ] metric integrity  -- arithmetic + socket recomputation
+
+phase 3: api security
+  [PASS   ] api security  -- auth, bind policy, rate limit, audit
+
+phase 4: classifier
+  [PASS   ] classifier evaluation  -- two corpora (constructed + independent), two capacities
+
+phase 4b: offline resource soak
+  [PASS   ] offline resource soak  -- controller structures bounded over a 20 s soak
+
+phase 5: benchmarks
+  [PASS   ] control-plane benchmark
+
+phase 6: kernel-dependent gates
+  [PASS   ] live rollback verification (kernel)  -- tc read-back in an isolated namespace
+  [PASS   ] testbed gate (21 checks)  -- exit 0
+  [PASS   ] live enforcement  -- 20 PASS, 1 MEASURED, 0 FAIL (gate-20261013-135720.log)
+  [PASS   ] rollback under real tc failure  -- live rollback tests passed (rollback-live-20261013.log)
+  [PASS   ] live adaptation loop  -- 100.0 -> 10.0 Mbps, estimator 10.31, 41 samples
+  [PASS   ] FIFO/CAKE/ACIQ comparison  -- aciq=7, b0_fifo=7, b1_cake95=7 paired seeds, aciq p95=0.549ms; b0_fifo p95=2.578ms; b1_cake95 p95=0.584ms
+  [PASS   ] congested FIFO/CAKE/ACIQ comparison  -- aciq=7, b0_fifo=7, b1_cake95=7 paired seeds on a dropped link, aciq p95=62.925ms; b0_fifo p95=91.401ms; b1_cak
+  [PASS   ] controller CPU overhead  -- median 0.0055, peak 0.0068 of one core over 1856s; bound 0.02
+  [NOTRUN] interactive latency tail  -- no per-packet trace in the congested evidence; re-run with --observe to account for the tail
+  [PASS   ] scenario A: ISO download during call  -- aciq=7, b0_fifo=7, b1_cake95=7 paired seeds, aciq p95=0.401ms; b0_fifo p95=119.265ms; b1_cake95 p95=0.407ms
+  [PASS   ] capacity recovery (rising edge)  -- link restored to 100.0 Mbps; best sustained goodput 57.27 Mbps (57% of the restored link) -- was 0.85x the deg
+  [PASS   ] policy leaves headroom  -- steady goodput 17.63 of 20.0 Mbps (88%), leaving 12% headroom
+  [PASS   ] 30-minute stability  -- 1856s sustained, 5 policy changes
+
+phase 6b: static analysis
+  [PASS   ] lint (ruff)  -- 0 findings, from tools/lint.sh at revision c5da3fd9 (ruff is not importable here; evidence is revision-bound)
+
+phase 7: claim audit
+  [PASS   ] claim audit  -- constants, evidence, red-flag phrases
+
+phase 7b: data reconciliation
+  [PASS   ] headline vs raw reconciliation  -- medians re-derived; self-report matches per-packet obs
+  [FAIL   ] transition/steady tail split  -- per-packet delay split at t=5 s
+
+  PASS 21  FAIL 1  BLOCKED 0  NOT RUN 1
+  3 test(s) skipped (none mandatory) -- not counted as passed
+  complete acceptance run: False
+  evidence: artifacts/validation/c5da3fd9/
