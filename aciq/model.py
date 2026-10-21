@@ -42,6 +42,19 @@ class Flow:
     def key(self) -> str:
         return f"{self.src}:{self.sport}->{self.dst}:{self.dport}"
 
+    @property
+    def identity(self) -> str:
+        """`key` plus the protocol.
+
+        `key` is deliberately protocol-free because it is the *user-facing*
+        spelling: leases name flows as `host:port->host:port` and the match at
+        intent.py compares that string. But as a *tracker* key it is wrong —
+        DNS over tcp and udp to the same server is one `key` and two flows, so
+        their counters merged and neither was classified on its own numbers.
+        The tracker keys on identity; the lease API keeps its stable spelling.
+        """
+        return f"{self.proto} {self.key}"
+
 
 @dataclass(frozen=True)
 class Classification:
