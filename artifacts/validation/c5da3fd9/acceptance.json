@@ -1,0 +1,170 @@
+{
+  "run_id": "c5da3fd9",
+  "revision": "c5da3fd956069fc70a12eb48054a4f2cd138b754",
+  "started_utc": "2026-10-21T15:58:39.275956+00:00",
+  "kernel": "7.1.5-76070105-generic",
+  "python": "3.12.3",
+  "uid": 0,
+  "hostname": "pop-os",
+  "tests": {
+    "tests": 1174,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 1,
+    "ok": true,
+    "summary": "Ran 1174 tests in 62.309s",
+    "skipped_tests": [
+      "tests.test_acceptance.TestHostGateScript.test_it_refuses_without_root_and_changes_nothing"
+    ]
+  },
+  "finished_utc": "2026-10-21T16:02:50.315558+00:00",
+  "gates": [
+    {
+      "gate": "unit+integration+socket",
+      "status": "PASS",
+      "detail": "1174 tests, 1 skipped, exit 0",
+      "log": "unittest.log"
+    },
+    {
+      "gate": "metric integrity",
+      "status": "PASS",
+      "detail": "arithmetic + socket recomputation",
+      "log": "metric-integrity.log"
+    },
+    {
+      "gate": "api security",
+      "status": "PASS",
+      "detail": "auth, bind policy, rate limit, audit",
+      "log": "api-security.log"
+    },
+    {
+      "gate": "classifier evaluation",
+      "status": "PASS",
+      "detail": "two corpora (constructed + independent), two capacities",
+      "log": "classifier-eval.log"
+    },
+    {
+      "gate": "offline resource soak",
+      "status": "PASS",
+      "detail": "controller structures bounded over a 20 s soak",
+      "log": "offline-soak.log"
+    },
+    {
+      "gate": "control-plane benchmark",
+      "status": "PASS",
+      "detail": "",
+      "log": "benchmark.log"
+    },
+    {
+      "gate": "live rollback verification (kernel)",
+      "status": "PASS",
+      "detail": "tc read-back in an isolated namespace",
+      "log": "rollback-live.log"
+    },
+    {
+      "gate": "testbed gate (21 checks)",
+      "status": "PASS",
+      "detail": "exit 0",
+      "log": "gate.log"
+    },
+    {
+      "gate": "live enforcement",
+      "status": "PASS",
+      "detail": "20 PASS, 1 MEASURED, 0 FAIL (gate-20261013-135720.log)",
+      "log": ""
+    },
+    {
+      "gate": "rollback under real tc failure",
+      "status": "PASS",
+      "detail": "live rollback tests passed (rollback-live-20261013.log)",
+      "log": ""
+    },
+    {
+      "gate": "live adaptation loop",
+      "status": "PASS",
+      "detail": "100.0 -> 10.0 Mbps, estimator 10.3, 41 samples",
+      "log": ""
+    },
+    {
+      "gate": "FIFO/CAKE/ACIQ comparison",
+      "status": "PASS",
+      "detail": "aciq=7, b0_fifo=7, b1_cake95=7 paired seeds, aciq p95=0.540ms; b0_fifo p95=2.576ms; b1_cake95 p95=0.563ms",
+      "log": ""
+    },
+    {
+      "gate": "congested FIFO/CAKE/ACIQ comparison",
+      "status": "PASS",
+      "detail": "aciq=7, b0_fifo=7, b1_cake95=7 paired seeds on a dropped link, aciq p95=71.310ms; b0_fifo p95=91.415ms; b1_cake95 p95=91.794ms",
+      "log": ""
+    },
+    {
+      "gate": "controller CPU overhead",
+      "status": "PASS",
+      "detail": "median 0.0088, peak 0.0090 of one core over 1900s; bound 0.02",
+      "log": ""
+    },
+    {
+      "gate": "interactive latency tail",
+      "status": "FAIL",
+      "detail": "slow packets are not confined to the adaptation transient: 13.5% of packets, above the 10% limit",
+      "log": ""
+    },
+    {
+      "gate": "scenario A: ISO download during call",
+      "status": "PASS",
+      "detail": "aciq=7, b0_fifo=7, b1_cake95=7 paired seeds, aciq p95=0.395ms; b0_fifo p95=119.321ms; b1_cake95 p95=0.384ms",
+      "log": ""
+    },
+    {
+      "gate": "capacity recovery (rising edge)",
+      "status": "PASS",
+      "detail": "link restored to 100.0 Mbps; best sustained goodput 57.27 Mbps (57% of the restored link) -- was 0.85x the degraded rate",
+      "log": ""
+    },
+    {
+      "gate": "policy leaves headroom",
+      "status": "PASS",
+      "detail": "steady goodput 17.64 of 20.0 Mbps (88%), leaving 12% headroom",
+      "log": ""
+    },
+    {
+      "gate": "30-minute stability",
+      "status": "PASS",
+      "detail": "1900s sustained, 5 policy changes",
+      "log": ""
+    },
+    {
+      "gate": "lint (ruff)",
+      "status": "PASS",
+      "detail": "0 findings, from tools/lint.sh at revision c5da3fd9 (ruff is not importable here; evidence is revision-bound)",
+      "log": ""
+    },
+    {
+      "gate": "claim audit",
+      "status": "PASS",
+      "detail": "constants, evidence, red-flag phrases",
+      "log": "claim-audit.log"
+    },
+    {
+      "gate": "headline vs raw reconciliation",
+      "status": "PASS",
+      "detail": "medians re-derived; self-report matches per-packet obs",
+      "log": "reconcile.log"
+    },
+    {
+      "gate": "transition/steady tail split",
+      "status": "PASS",
+      "detail": "per-packet delay split at t=5 s",
+      "log": "tail-analysis.log"
+    }
+  ],
+  "counts": {
+    "PASS": 22,
+    "FAIL": 1,
+    "BLOCKED": 0,
+    "NOT RUN": 0
+  },
+  "skipped": 1,
+  "skipped_mandatory": [],
+  "complete": true
+}
