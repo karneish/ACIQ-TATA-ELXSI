@@ -200,14 +200,16 @@ class TestMalformed(StoreCase):
 
     def test_bad_json_is_skipped_not_fatal(self):
         self._write("{not json",
-                    json.dumps({"src": "a", "dst": "b", "proto": "tcp",
-                                "dport": 22, "cls": "bulk_transfer"}))
+                    json.dumps({"src": "10.0.1.2", "dst": "203.0.113.9",
+                                "proto": "tcp", "dport": 22,
+                                "cls": "bulk_transfer"}))
         s = self.store()
         self.assertEqual(len(s), 1)
         self.assertEqual(s.stats.skipped_malformed, 1)
 
     def test_missing_field_is_skipped(self):
-        self._write(json.dumps({"src": "a", "dst": "b", "proto": "tcp"}))
+        self._write(json.dumps({"src": "10.0.1.2", "dst": "203.0.113.9",
+                                "proto": "tcp"}))
         s = self.store()
         self.assertEqual(len(s), 0)
         self.assertEqual(s.stats.skipped_malformed, 1)
@@ -236,8 +238,9 @@ class TestMalformed(StoreCase):
 
     def test_comments_and_blank_lines_ignored(self):
         self._write("", "# a note", "   ",
-                    json.dumps({"src": "a", "dst": "b", "proto": "tcp",
-                                "dport": 22, "cls": "bulk_transfer"}))
+                    json.dumps({"src": "10.0.1.2", "dst": "203.0.113.9",
+                                "proto": "tcp", "dport": 22,
+                                "cls": "bulk_transfer"}))
         s = self.store()
         self.assertEqual(len(s), 1)
         self.assertEqual(s.stats.skipped_malformed, 0)
@@ -254,8 +257,8 @@ class TestMalformed(StoreCase):
 
 class TestValidation(unittest.TestCase):
     def _line(self, **kw):
-        base = {"src": "a", "dst": "b", "proto": "tcp", "dport": 22,
-                "cls": "bulk_transfer"}
+        base = {"src": "10.0.1.2", "dst": "203.0.113.9", "proto": "tcp",
+                "dport": 22, "cls": "bulk_transfer"}
         base.update(kw)
         return json.dumps(base)
 
@@ -264,10 +267,33 @@ class TestValidation(unittest.TestCase):
         self.assertEqual(c.cls, TrafficClass.BULK)
         self.assertEqual(c.schema, SCHEMA_VERSION)
 
-    def test_all_classes_accepted(self):
+    def test_all_classes_except_leased_accepted(self):
+        from aciq.corrections import CorrectionError
         for tc in TrafficClass:
-            c = parse_correction(self._line(cls=tc.value))
-            self.assertEqual(c.cls, tc)
+            if tc is TrafficClass.LEASED:
+                with self.assertRaises(CorrectionError, msg=tc.value):
+                    parse_correction(self._line(cls=tc.value))
+            else:
+                c = parse_correction(self._line(cls=tc.value))
+                self.assertEqual(c.cls, tc)
+
+    def test_leased_alias_in_a_line_is_rejected(self):
+        from aciq.corrections import CorrectionError
+        for name in ("leased", "lease", "leased_flow"):
+            with self.assertRaises(CorrectionError, msg=name):
+                parse_correction(self._line(cls=name))
+
+    def test_bad_ip_is_rejected(self):
+        from aciq.corrections import CorrectionError
+        for bad in ("999.1.1.1", "not-an-ip", "10.0.1.2 extra", ""):
+            with self.assertRaises(CorrectionError, msg=bad):
+                parse_correction(self._line(src=bad))
+
+    def test_bad_proto_is_rejected(self):
+        from aciq.corrections import CorrectionError
+        for bad in ("tcp udp", "tcp;reboot", "", "  "):
+            with self.assertRaises(CorrectionError, msg=repr(bad)):
+                parse_correction(self._line(proto=bad))
 
     def test_proto_case_normalised(self):
         self.assertEqual(parse_correction(self._line(proto="TCP")).proto, "tcp")
@@ -390,12 +416,22 @@ class TestClassAliases(unittest.TestCase):
         self.assertEqual(parse_class("interactive"), TrafficClass.INTERACTIVE)
         self.assertEqual(parse_class("adaptive"), TrafficClass.ADAPTIVE)
         self.assertEqual(parse_class("bulk"), TrafficClass.BULK)
-        self.assertEqual(parse_class("leased"), TrafficClass.LEASED)
+
+    def test_leased_alias_is_rejected(self):
+        """A correction must not mint lease capacity (see _reject_leased)."""
+        from aciq.corrections import CorrectionError, parse_class
+        for name in ("leased", "lease", "leased_flow"):
+            with self.assertRaises(CorrectionError, msg=name):
+                parse_class(name)
 
     def test_canonical_values_still_work(self):
-        from aciq.corrections import parse_class
+        from aciq.corrections import CorrectionError, parse_class
         for c in TrafficClass:
-            self.assertEqual(parse_class(c.value), c)
+            if c is TrafficClass.LEASED:
+                with self.assertRaises(CorrectionError):
+                    parse_class(c.value)
+            else:
+                self.assertEqual(parse_class(c.value), c)
 
     def test_case_insensitive(self):
         from aciq.corrections import parse_class
@@ -425,3 +461,104 @@ class TestClassAliases(unittest.TestCase):
             CorrectionStore(path).record(SSH, TrafficClass.BULK)
             line = path.read_text().strip()
             self.assertEqual(json.loads(line)["cls"], "bulk_transfer")
+
+
+class TestIPv6Canonicalisation(StoreCase):
+    """Matching compares addresses, not spellings."""
+
+    def test_different_spellings_of_one_address_hit(self):
+        s = self.store()
+        v6 = Flow("2001:DB8::1", 40000, "2001:db8:0:0:0:0:0:9", 443, "tcp")
+        s.record(v6, TrafficClass.INTERACTIVE, dport=443)
+        other = Flow("2001:db8:0:0:0:0:0:1", 51000,
+                     "2001:0db8::9", 443, "tcp")
+        self.assertIsNotNone(s.lookup(other),
+                             "the same host written in two spellings must hit")
+
+    def test_distinct_addresses_still_miss(self):
+        s = self.store()
+        v6 = Flow("2001:db8::1", 40000, "2001:db8::9", 443, "tcp")
+        s.record(v6, TrafficClass.INTERACTIVE, dport=443)
+        other = Flow("2001:db8::2", 40000, "2001:db8::9", 443, "tcp")
+        self.assertIsNone(s.lookup(other))
+
+    def test_record_canonicalises_on_write(self):
+        s = self.store()
+        c = s.record(Flow("2001:DB8:0:0:0:0:0:1", 1,
+                          "2001:db8::9", 443, "tcp"),
+                     TrafficClass.INTERACTIVE, dport=443)
+        self.assertEqual(c.src, "2001:db8::1")
+
+    def test_unparseable_flow_address_misses_without_raising(self):
+        s = self.store()
+        s.record(SSH, TrafficClass.BULK)
+        weird = Flow("definitely-not-an-ip", 1, "10.0.1.9", 22, "tcp")
+        self.assertIsNone(s.lookup(weird))
+
+
+class TestLiveReload(StoreCase):
+    """The CLI writes while this process runs; the store must notice."""
+
+    def test_a_correction_written_after_startup_is_seen(self):
+        s = self.store(now=1000.0)
+        self.assertIsNone(s.lookup(SSH))
+        # the CLI appends, bypassing this store's in-memory copy
+        s2 = CorrectionStore(self.path, now=1000.0)
+        s2.record(SSH, TrafficClass.BULK)
+        # past the throttle window; the mtime has changed
+        self.assertIsNotNone(s.lookup(SSH, now=1001.0),
+                             "a correction recorded while running must apply")
+
+    def test_reload_is_throttled(self):
+        from aciq.corrections import RELOAD_CHECK_S
+        s = self.store(now=1000.0)
+        s.lookup(CALL, now=1000.0)          # first check arms the throttle
+        s2 = CorrectionStore(self.path, now=1000.0)
+        s2.record(SSH, TrafficClass.BULK)   # external write, mtime changed
+        self.assertIsNone(s.lookup(SSH, now=1000.0 + RELOAD_CHECK_S - 0.1),
+                          "inside the window the store must not re-stat")
+        self.assertIsNotNone(s.lookup(SSH, now=1000.0 + RELOAD_CHECK_S + 0.1),
+                             "once the window passes the write must be seen")
+
+    def test_reload_preserves_hit_and_miss_counters(self):
+        s = self.store(now=1000.0)
+        s.record(SSH, TrafficClass.BULK)
+        s.lookup(SSH)                       # hit
+        s.lookup(CALL)                      # miss
+        before = (s.stats.hits, s.stats.misses)
+        s.reload()
+        self.assertEqual((s.stats.hits, s.stats.misses), before)
+        # file-shaped counters DO reset: they describe the new file
+        self.assertGreaterEqual(s.stats.loaded, 1)
+
+    def test_our_own_write_does_not_trigger_a_reload(self):
+        s = self.store(now=1000.0)
+        s.record(SSH, TrafficClass.BULK)
+        hits_before = s.stats.hits
+        s.lookup(SSH, now=1001.0)           # mtime unchanged by our write
+        self.assertEqual(s.stats.hits, hits_before + 1)
+        self.assertGreaterEqual(s.stats.loaded, 1,
+                                "an immediate reload would have reset the "
+                                "file counters right after record()")
+
+
+class TestLeasedIsNotACorrectionClass(StoreCase):
+    """A JSONL line must not mint lease capacity (see _reject_leased)."""
+
+    def test_record_rejects_leased(self):
+        s = self.store()
+        with self.assertRaises(CorrectionError):
+            s.record(SSH, TrafficClass.LEASED)
+
+    def test_a_leased_line_is_skipped_not_loaded(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps(
+            {"src": "10.0.1.2", "dst": "203.0.113.9", "proto": "tcp",
+             "dport": 22, "cls": "leased_flow"}) + "\n")
+        s = self.store()
+        self.assertEqual(len(s), 0)
+        self.assertEqual(s.stats.skipped_malformed, 1)
+
+
+if __name__ == "__main__":
+    unittest.main()
