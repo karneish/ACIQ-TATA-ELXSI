@@ -180,6 +180,110 @@ class TestTheChartsAreHonest(unittest.TestCase):
         for tile in ("samples", "peak throughput", "capacity (M2)"):
             self.assertIn(tile, html)
 
+    def test_the_memory_tile_reports_peak_rss(self):
+        """P2-002: memory was a stated metric with nothing measuring it. CPU
+        alone does not show a leak."""
+        rows = _real_rows()
+        for r in rows:
+            r["max_rss_bytes"] = 42_000_000
+        html = build_from_samples(rows, refresh_s=5)
+        self.assertIn("memory (peak RSS)", html)
+        self.assertIn("42.0 MB", html)
+
+    def test_no_memory_tile_when_nothing_recorded_it(self):
+        """An old artefact with no max_rss_bytes must not claim 0 MB."""
+        rows = _real_rows()
+        for r in rows:
+            r.pop("max_rss_bytes", None)
+        html = build_from_samples(rows, refresh_s=5)
+        self.assertNotIn("memory (peak RSS)", html)
+
+    def test_headroom_tile_appears_when_capacity_is_measured(self):
+        """Headroom is the property the headline claim rests on, so it belongs
+        on the dashboard, not only in a gate."""
+        rows = _real_rows()
+        for r in rows:
+            r["capacity_mbps"] = 20.0
+            r["per_class"] = {"bulk_transfer": {"goodput_mbps": 5.0}}
+        html = build_from_samples(rows, refresh_s=5)
+        self.assertIn("headroom", html)
+
+    def test_headroom_absent_when_capacity_unmeasured(self):
+        rows = _real_rows()
+        for r in rows:
+            r["capacity_mbps"] = 0.0
+        html = build_from_samples(rows, refresh_s=5)
+        self.assertNotIn("headroom", html)
+
+    def test_active_classes_counts_only_those_that_carried_traffic(self):
+        rows = _real_rows()
+        for r in rows:
+            r["per_class"] = {"realtime_interactive": {"goodput_mbps": 1.0},
+                              "bulk_transfer": {"goodput_mbps": 0.0}}
+        html = build_from_samples(rows, refresh_s=5)
+        self.assertIn("active classes", html)
+
+    def test_classification_confidence_is_surfaced(self):
+        """A run that steered flows at 0.35 confidence was guessing; this makes
+        that visible instead of implied."""
+        rows = _real_rows()
+        for r in rows:
+            r["verdicts"] = {"call": {"class": "realtime_interactive",
+                                      "confidence": 0.95, "tier": "A"},
+                             "bulk": {"class": "unclassified",
+                                      "confidence": 0.35, "tier": "C"}}
+        html = build_from_samples(rows, refresh_s=5)
+        self.assertIn("classification confidence", html)
+
+    def test_last_kernel_state_uses_the_transactions_own_verdict(self):
+        """Not inferred: the transaction reports ok/rolled_back after read-back."""
+        rows = _real_rows()
+        for r in rows:
+            r["policy_outcome"] = {"ok": True, "committed": True,
+                                   "rolled_back": False, "kernel_touched": True}
+        html = build_from_samples(rows, refresh_s=5)
+        self.assertIn("last kernel state", html)
+        self.assertIn("verified", html)
+
+    def test_a_rollback_is_reported_from_the_recorded_outcome(self):
+        rows = _real_rows()
+        for r in rows:
+            r["policy_outcome"] = {"ok": True, "committed": True,
+                                   "rolled_back": False, "kernel_touched": True}
+        rows[5]["policy_outcome"] = {"ok": False, "committed": False,
+                                     "rolled_back": True, "kernel_touched": True,
+                                     "reason": "read-back mismatch"}
+        html = build_from_samples(rows, refresh_s=5)
+        self.assertIn("rolled back", html)
+
+    def test_no_kernel_state_tile_without_a_recorded_outcome(self):
+        """A run with no enforcement must make no claim about the kernel."""
+        rows = _real_rows()
+        for r in rows:
+            r.pop("policy_outcome", None)
+        html = build_from_samples(rows, refresh_s=5)
+        self.assertNotIn("last kernel state", html)
+
+    def test_the_latency_panel_plots_the_whole_distribution(self):
+        """p95 alone hid the tail this project's central claim is about --
+        "bounded tail latency" is a statement about p99, and p99 was collected
+        every tick and drawn nowhere."""
+        rows = []
+        for i in range(15):
+            rows.append({
+                "t": float(i),
+                "per_class": {"realtime_interactive": {
+                    "goodput_mbps": 1.0, "backlog_bytes": 0,
+                    "rtt_p50": 2.0 + i, "rtt_p95": 8.0 + i,
+                    "rtt_p99": 20.0 + 2 * i, "jitter_ms": 0.5,
+                    "loss_ratio": 0.0}},
+                "link": {"rx_bytes": 1_000 * i}, "fairness": 1.0,
+                "cpu_fraction": 0.0, "capacity_mbps": 0.0,
+                "max_rss_bytes": 1_000_000})
+        html = build_from_samples(rows, refresh_s=5)
+        for lbl in ("interactive p50", "interactive p95", "interactive p99"):
+            self.assertIn(lbl, html, f"{lbl} series missing from the legend")
+
     def test_capacity_is_reported_as_unmeasured_rather_than_zero(self):
         html = build_from_samples(_real_rows(), refresh_s=5)
         self.assertIn("not measured", html)
