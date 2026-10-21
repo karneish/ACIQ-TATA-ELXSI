@@ -197,6 +197,14 @@ untouched) so the mandated duration can actually be run.
 Measured on revision `a84b86cb`, 7 paired seeds, `--enforce` on, per-flow
 steering verified in every run, 50 ms bottleneck buffer.
 
+> **Provenance.** These figures are a record of the run stamped `a84b86cb`. That
+> run's raw per-seed files are **not** in this repository — the
+> `data/host_gate_*` directories here hold the *current-revision* run
+> (`c5da3fd9`), not this one — so these numbers are reported, not re-derivable.
+> The current-revision figures are in `docs/PROJECT_REPORT.md` and
+> `docs/ACIQ_COMPLETE.md`, and the tool that re-derives them from the committed
+> files is `tools/reconcile_results.py`.
+
 | median of 7 seeds | FIFO | CAKE95 | **ACIQ** |
 |---|---|---|---|
 | **p50 latency** | 81.83 ms | 82.18 ms | **1.18 ms** |
@@ -351,34 +359,42 @@ still unmeasured, and this environment is not where that can be found out.
 
 | # | Evaluation criterion | Status | Evidence |
 |---|---|---|---|
-| 21 | Classification + estimation accuracy | **PASS** | 15/16 cases; estimator 20.57 vs a true 20 Mbps |
+| 21 | Classification + estimation accuracy | **PASS** | 100% on labelled across 2 corpora × 2 capacities, 0 high-confidence errors; estimator 20.57 vs a true 20 Mbps |
 | 22 | Reduce interactive latency, jitter, loss | **PASS** | p50 **1.22 ms** vs ~83 ms; loss 0.00% vs 0.30-0.45%; all 7/7 paired |
 | 23 | Fairness, absence of starvation | **PASS** | per-flow within ~1%; class floors; 1851 s soak |
 | 24 | Adaptation speed + policy stability | **PASS** | a 5x capacity step is adopted in **one** tick and **one** policy application; convergence window down from 5.4 s to ~3 s, inside the tail gate |
 | 25 | CPU overhead, reproducibility, clarity | **PASS** | 0.0049 of a core median, 0.0052 peak over 1851 s, bound 0.02; revision-stamped evidence |
 
-### Congested comparison, final (revision ce53da12)
+### Congested comparison, current revision (`c5da3fd9`)
 
-All gates pass on evidence produced by this revision. Three defects were found
-and fixed in sequence, each by a gate that had been written to fail first:
+The current-revision run, produced on the user's host with
+`sudo tools/host_gate.sh --full`. Three defects were found and fixed in
+sequence, each by a gate that had been written to fail first:
 
 | | seed 42 at the first measurement | now |
 |---|---|---|
-| estimator | 22.39 (offered load) | **20.21** |
+| estimator | 22.39 (offered load) | **20.62** |
 | steady goodput | 19.98 Mbps — link saturated | **17.30 Mbps — 14% headroom** |
 | policy applications | 5 | **1** |
-| p95 | 70.8 ms | **65.1 ms** |
-| slow packets (>5 ms) | 45.1% | **3.0%** (worst seed 8.3%) |
+| p95 | 70.8 ms | **29.1 ms** (seed 42) |
+| slow packets (>5 ms) | 45.1% | **13.5%** — the tail gate **FAILS** at this revision |
 
 Median of 7 paired seeds, `--enforce` on, steering verified in every run:
 
 | | FIFO | CAKE95 | **ACIQ** |
 |---|---|---|---|
-| **p50 latency** | 83.13 ms | 82.18 ms | **1.22 ms** |
-| p95 latency | 92.84 ms | 92.60 ms | **65.11 ms** |
-| p99 latency | 99.56 ms | 103.72 ms | 97.87 ms |
-| jitter | 0.89 ms | 0.88 ms | **0.71 ms** |
-| loss | 0.45% | 0.30% | **0.00%** |
+| **p50 latency** | 81.14 ms | 81.10 ms | **1.20 ms** |
+| p95 latency | 91.42 ms | 91.79 ms | **71.31 ms** |
+| p99 latency | 99.57 ms | 105.41 ms | 97.32 ms |
+| jitter | 0.90 ms | 0.86 ms | **0.73 ms** |
+| loss | 0.60% | 0.45% | **0.10%** |
+
+**One gate does not pass on this evidence: `interactive latency tail`, 13.5% of
+packets slow against a 10% limit.** The threshold was not moved. Two of seven
+seeds adopted the degraded capacity at t = 4.14 s instead of 2.05 s, so bulk ran
+uncapped against the shrunk link for two extra seconds and the interactive
+packets queued behind it. `docs/PROJECT_REPORT.md` §11.1 has the per-seed
+breakdown. The other gates pass.
 
 ACIQ better than FIFO: p50 **7/7**, p95 **7/7**, loss **7/7**.
 ACIQ better than CAKE: p95 **7/7**.
