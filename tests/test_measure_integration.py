@@ -102,11 +102,13 @@ class TestTheSeriesIsLive(unittest.TestCase):
                             "the partial report did not advance mid-run")
 
     def test_the_collector_reports_a_value_that_changes_between_polls(self):
+        import time as _t
         c = MetricsCollector(_Source())
         c.poll()
         seen = []
+        base = _t.monotonic()
         for i in range(6):
-            c.ingest(EvaluationData(t=float(i), label="call",
+            c.ingest(EvaluationData(t=base + i, label="call",
                                     rtt_ms=5.0 + i, loss_ratio=0.0), cls=I)
             c.poll()
             seen.append(c.poll().per_class[I].rtt_p50)
@@ -122,10 +124,13 @@ class TestTheSeriesIsLive(unittest.TestCase):
         self.assertEqual(m.metric_status, "no_probe")
 
     def test_status_reports_valid_once_there_is_enough_data(self):
+        import time as _t
         c = MetricsCollector(_Source())
         c.poll()
+        base = _t.monotonic()
         for i in range(15):
-            c.ingest(EvaluationData(t=float(i), label="call", rtt_ms=4.0 + i * 0.1,
+            c.ingest(EvaluationData(t=base + i, label="call",
+                                    rtt_ms=4.0 + i * 0.1,
                                     jitter_ms=0.2, loss_ratio=0.0), cls=I)
         m = c.poll().per_class[I]
         self.assertEqual(m.metric_status, VALID)
@@ -139,10 +144,12 @@ class TestLossIsMeasuredNotInferred(unittest.TestCase):
     def test_a_silent_port_produces_total_loss_not_no_data(self):
         """Nothing listening: every packet is lost, and that is a *result*, not a
         missing measurement."""
+        import time as _t
         c = MetricsCollector(_Source())
         c.poll()
+        base = _t.monotonic()
         for i in range(20):
-            c.ingest(EvaluationData(t=float(i), label="call",
+            c.ingest(EvaluationData(t=base + i, label="call",
                                     rtt_ms=None, loss_ratio=1.0), cls=I)
         m = c.poll().per_class[I]
         self.assertEqual(m.loss_ratio, 1.0)
