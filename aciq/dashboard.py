@@ -56,6 +56,20 @@ _CLASS_COLOURS = {
     "bulk_transfer": "#7f8c8d",
     "leased_flow": "#8e44ad",
     "link": "#2c3e50",
+    # Latency percentile series, "<class> pNN". Shade by percentile within each
+    # class so the p99 tail stands out from the p50 it diverges from.
+    "realtime_interactive p50": "#e6a99f",
+    "realtime_interactive p95": "#c0392b",
+    "realtime_interactive p99": "#7b241c",
+    "adaptive_video p50": "#a9d0ef",
+    "adaptive_video p95": "#2e86c1",
+    "adaptive_video p99": "#1a5276",
+    "bulk_transfer p50": "#c8ccd0",
+    "bulk_transfer p95": "#7f8c8d",
+    "bulk_transfer p99": "#5d6d7e",
+    "leased_flow p50": "#d2b4de",
+    "leased_flow p95": "#8e44ad",
+    "leased_flow p99": "#6c3483",
 }
 
 
@@ -108,11 +122,21 @@ def panels_from_samples(samples: Iterable[dict], classes: Sequence[str] = ()) ->
 
     #: panel -> metric, straight from the collector's field names.
     per_class_metrics = (
-        ("latency", "rtt_p95"),
         ("jitter", "jitter_ms"),
         ("loss", "loss_ratio"),
         ("queue_depth", "backlog_bytes"),
         ("throughput", "goodput_mbps"),
+    )
+    #: The latency panel carries the whole distribution the collector computes,
+    #: not just its middle. Plotting p95 alone hid the tail this project's
+    #: central claim is about -- "bounded tail latency" is a statement about
+    #: p99, and p99 was collected every tick and drawn nowhere. Each percentile
+    #: is a separate labelled series so a reader can see where the tail diverges
+    #: from the median.
+    latency_metrics = (
+        ("p50", "rtt_p50"),
+        ("p95", "rtt_p95"),
+        ("p99", "rtt_p99"),
     )
 
     for r in rows:
@@ -127,6 +151,10 @@ def panels_from_samples(samples: Iterable[dict], classes: Sequence[str] = ()) ->
             # announces itself when someone adds one.
             for panel, metric_name in per_class_metrics:
                 put(panel, cls, t, m.get(metric_name))
+            for pct, metric_name in latency_metrics:
+                # Named "<class> <pct>" so the legend distinguishes them; the
+                # series exists only when the class reported that percentile.
+                put("latency", f"{cls} {pct}", t, m.get(metric_name))
         # Fairness is a property of the link, not of a class.
         put("fairness", "fairness", t, r.get("fairness"))
 
@@ -352,9 +380,77 @@ def summary_tiles(rows: Sequence[dict]) -> list[tuple[str, str, str]]:
     if changes:
         out.append(("flows steered", str(changes), "ticks with a verdict"))
 
+    # Active classes: the classes that actually carried traffic. A class present
+    # with zero goodput throughout is not "active"; counting every key would
+    # claim the run used classes it never used.
+    active: set[str] = set()
+    for r in rows:
+        for name, m in (r.get("per_class") or {}).items():
+            if float(m.get("goodput_mbps") or 0.0) > 0:
+                active.add(name)
+    if active:
+        out.append(("active classes", str(len(active)),
+                    ", ".join(sorted(active))))
+
+    # Headroom: capacity minus delivered throughput at the tightest sample. This
+    # is the "policy leaves headroom" property the project's headline claim
+    # rests on, so it belongs on the face of the dashboard rather than only in
+    # a gate. Only meaningful once M2 has a measurement.
+    if cap > 0 and good:
+        tight = min(max(0.0, cap - g) for g in good)
+        out.append(("headroom", f"{tight:.2f} Mb/s",
+                    f"{100 * tight / cap:.0f}% of measured capacity at the "
+                    f"tightest sample"))
+
+    # Classification confidence: what the classifier actually decided, and how
+    # sure it was. A run that steered flows at 0.35 confidence was guessing;
+    # this is where that becomes visible.
+    confs = [float(v.get("confidence") or 0.0)
+             for r in rows for v in (r.get("verdicts") or {}).values()
+             if v.get("confidence") is not None]
+    if confs:
+        out.append(("classification confidence",
+                    f"{min(confs):.2f}–{max(confs):.2f}",
+                    f"min–max over {len(confs)} verdicts"))
+
+    # Current policy: the measured capacity and whether a lease was in force.
+    # Both are sampled, so this summarises the run's policy state rather than
+    # promising a live view.
+    leased = any(bool(r.get("lease_active")) for r in rows)
+    if cap > 0:
+        out.append(("policy", f"cap {cap:.1f} Mb/s",
+                    "lease active" if leased else "no lease"))
+
+    # Last verified kernel state: the transaction's own outcome. This is the
+    # one thing the dashboard is normally forbidden from guessing -- it is not
+    # inferred, it is the value the transaction reported after read-back.
+    outcomes = [r.get("policy_outcome") for r in rows if r.get("policy_outcome")]
+    if outcomes:
+        last = outcomes[-1]
+        rolled = sum(1 for o in outcomes if o.get("rolled_back"))
+        failed = sum(1 for o in outcomes if not o.get("ok"))
+        if last.get("ok"):
+            val, hint = "verified", "last apply committed after read-back"
+        elif last.get("rolled_back"):
+            val, hint = "rolled back", (last.get("reason") or "kernel restored")
+        else:
+            val, hint = "not applied", (last.get("reason") or "no change")
+        if failed:
+            hint += f"; {failed} failed, {rolled} rolled back"
+        out.append(("last kernel state", val, hint))
+
     cpu = [float(r.get("cpu_fraction") or 0.0) for r in rows]
     if max(cpu) > 0:
         out.append(("cpu overhead", f"{100 * max(cpu):.2f}%", "peak"))
+
+    # Peak RSS. P2-002 recorded that memory was a stated metric with nothing
+    # measuring it; CPU alone does not show a leak, and a controller that grows
+    # without bound is a real failure on a router. `max_rss_bytes` is a
+    # high-water mark, so the peak over the run is just the max of the samples.
+    rss = [int(r.get("max_rss_bytes") or 0) for r in rows]
+    if max(rss) > 0:
+        out.append(("memory (peak RSS)", f"{max(rss) / 1e6:.1f} MB",
+                    "controller process"))
 
     return out
 
@@ -388,6 +484,23 @@ def detect_events(rows: Sequence[dict], configured: Sequence[dict] = ()) -> list
                         events.append({"t": t,
                                        "label": f"cap -> {v:.0f} Mb/s"})
                     break
+
+    # Rollback / policy-failure marks, read from the transaction's own recorded
+    # outcome -- not inferred. A transition from ok to not-ok is where a
+    # rollback happened; marking every not-ok sample would stripe the axis, so
+    # only the first of each contiguous run is marked.
+    prev_ok = True
+    for r in rows:
+        o = r.get("policy_outcome")
+        if not o:
+            continue
+        ok = bool(o.get("ok"))
+        if not ok and prev_ok:
+            t = float(r.get("t", 0.0))
+            if round(t, 1) not in have:
+                label = "rolled back" if o.get("rolled_back") else "apply failed"
+                events.append({"t": t, "label": label})
+        prev_ok = ok
     return sorted(events, key=lambda e: e["t"])
 
 
@@ -505,7 +618,14 @@ _PRETTY = {
 
 
 def _pretty(label: str) -> str:
-    return _PRETTY.get(label, label)
+    """Human label for a series, including the "<class> pNN" latency series."""
+    if label in _PRETTY:
+        return _PRETTY[label]
+    for base, short in _PRETTY.items():
+        prefix = f"{base} "
+        if label.startswith(prefix):
+            return f"{short} {label[len(prefix):]}"
+    return label
 
 
 def build_from_samples(rows: Iterable[dict], subtitle: str = "",
