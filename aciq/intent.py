@@ -171,7 +171,7 @@ class LeaseStore:
         for l in self.active(now):
             if l.target == "device" and l.ip in (flow.src, flow.dst):
                 cand, prec = l, 1
-            elif l.target == "flow" and l.flow == flow.key:
+            elif l.target == "flow" and l.flow in (flow.key, flow.identity):
                 cand, prec = l, 2
             else:
                 continue
