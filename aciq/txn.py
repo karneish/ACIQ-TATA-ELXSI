@@ -11,7 +11,9 @@ fault recovery — is testable without root and without touching a real interfac
 from __future__ import annotations
 
 import json
+import re
 import subprocess
+import threading
 import time
 from dataclasses import dataclass, field
 
@@ -20,6 +22,24 @@ from .qdisc import parse_qdisc_text
 from .shield import Mode, Shield, Violation
 from .tc import (TcTree, Mismatch, build_tree, canon_classid, compare_states,
                  parse_class_state, render, verify, unverified_fields)
+
+#: Linux interface and network-namespace names: up to 15 characters, no
+#: leading dash. The leading-dash rule is the load-bearing one: `dev` and `ns`
+#: are interpolated into `tc`/`ip` argv, so a value like `--help` would be
+#: parsed by the tool as an option (argument injection) even though no shell
+#: is involved. Anything else is refused before a single command runs.
+_IDENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,14}$")
+
+
+def validate_ident(name: str | None, what: str) -> str | None:
+    """Refuse interface/namespace names that could be parsed as options."""
+    if name is None:
+        return None
+    if not isinstance(name, str) or not _IDENT_RE.match(name):
+        raise ValueError(
+            f"{what} {name!r} is not a valid Linux interface/namespace name "
+            "(expected [A-Za-z0-9][A-Za-z0-9._-]{{0,14}})")
+    return name
 
 
 class Runner:
@@ -206,6 +226,14 @@ class Outcome:
     mismatches: list[Mismatch] = field(default_factory=list)
     reason: str = ""
     rollback: RollbackResult | None = None
+    #: True when the apply reached `_rebuild` — i.e. the root qdisc was
+    #: deleted and the tree was (re)built, even if it later failed and was
+    #: rolled back. Callers that keep their own shadow of kernel state (the
+    #: bridge's per-flow filter map) must invalidate on this flag, not on
+    #: `ok`: a failed apply whose rollback replayed last-good still destroyed
+    #: every flower filter, and clearing shadow state only on success left
+    #: the bridge believing filters existed that the rebuild had removed.
+    kernel_touched: bool = False
 
 
 class TransactionManager:
@@ -221,10 +249,16 @@ class TransactionManager:
     ):
         self.runner = runner
         self.shield = shield or Shield()
-        self.dev = dev
-        self.ns = ns
+        self.dev = validate_ident(dev, "dev") or "veth-lan"
+        self.ns = validate_ident(ns, "ns")
         self.clock = clock
         self.audit: list[dict] = []
+        #: Serialises every kernel-touching operation. Two concurrent applies
+        #: would interleave their del/add sequences on the same device, each
+        #: side's read-back would see the other's half-built tree, and both
+        #: would roll back — mutual thrash with no winner. The API server is
+        #: threaded, so this is reachable, not theoretical.
+        self._lock = threading.RLock()
         #: last known-good rendered command list, so a rebuild can be undone
         self._last_good: list[tuple[str, ...]] | None = None
         #: canonical read-back state observed when that tree committed. This is
@@ -238,6 +272,9 @@ class TransactionManager:
         #: human-readable explanation of the most recent refusal, so a driver
         #: can print *why* rather than only *that* it failed
         self.last_reason: str = ""
+        #: the most recent apply()'s outcome, including failures -- `kernel_touched`
+        #: on it is what lets a caller know per-flow filters were destroyed
+        self.last_outcome: Outcome | None = None
 
     # ---------------- kernel access (M4) ----------------
     def _read_classes(self) -> dict[str, dict[str, float]]:
@@ -312,7 +349,25 @@ class TransactionManager:
         legitimate change would be vetoed as rate-limited.
         """
         now = self.clock() if now is None else now
+        with self._lock:
+            out = self._apply_locked(plan, drop_rate=drop_rate,
+                                     overlimit_rate=overlimit_rate,
+                                     leaf=leaf, now=now)
+            # Exposed so callers holding their own shadow of kernel state can
+            # react to `kernel_touched` even when the apply failed -- a failed
+            # apply that rebuilt and rolled back still destroyed per-flow
+            # filters, and callers could only see `ok`.
+            self.last_outcome = out
+            return out
 
+    def _apply_locked(
+        self,
+        plan: RatePlan,
+        drop_rate: float,
+        overlimit_rate: float,
+        leaf: tuple[str, ...] | str,
+        now: float,
+    ) -> Outcome:
         if self.shield.state.in_fault and not self.shield.may_retry(now):
             self.last_reason = (f"shield {self.shield.state.mode.value}: "
                                 f"{self.shield.state.alarm or 'recovery not due'}")
@@ -337,7 +392,18 @@ class TransactionManager:
             return Outcome(False, False, False, violations=v, reason="vetoed")
 
         tree = build_tree(plan, leaf=leaf)
-        ok, err = self._rebuild(tree)
+        try:
+            ok, err = self._rebuild(tree)
+        except KeyboardInterrupt:
+            # An interrupt mid-sequence leaves a half-built tree. Restore the
+            # last known-good state (or the safe state) before propagating, so
+            # the household is never left with a partially applied policy and
+            # no record of what happened.
+            rb = self._rollback()
+            self._log(now, "interrupted", rolled_back=rb.ok,
+                      rollback=rb.outcome, rb_reason=rb.reason)
+            self.last_reason = "interrupted during apply"
+            raise
         self.last_reason = err
         if not ok:
             self.shield.breach(now, [Violation("apply_failed", err)])
@@ -346,7 +412,7 @@ class TransactionManager:
                       rollback=rb.outcome, rb_reason=rb.reason)
             return Outcome(False, False, rb.ok,
                            violations=[Violation("apply_failed", err)],
-                           reason=err, rollback=rb)
+                           reason=err, rollback=rb, kernel_touched=True)
 
         state = self._read_classes()
         unverifiable = unverified_fields(tree, state)
@@ -366,7 +432,32 @@ class TransactionManager:
                       rolled_back=rb.ok, rollback=rb.outcome, rb_reason=rb.reason,
                       source=self.last_readback_source)
             return Outcome(False, False, rb.ok, mismatches=mism,
-                           reason="read-back mismatch", rollback=rb)
+                           reason="read-back mismatch", rollback=rb,
+                           kernel_touched=True)
+
+        # The rollback path refuses to compare states with nothing to compare
+        # ("an empty comparison is not a match"), and the commit gate must be
+        # at least as strict. A reader that reports classes but no rates used
+        # to produce zero mismatches and a `verified` commit whose stored
+        # rollback target was permanently unverifiable. A plan with classes
+        # can only be verified against a read-back that exposes at least one
+        # rate or ceil for at least one of them.
+        if tree.classes:
+            intended = {canon_classid(c.classid):
+                        {"rate": c.rate_mbps, "ceil": c.ceil_mbps}
+                        for c in tree.classes}
+            if not _comparable_pairs(intended, state):
+                self.last_reason = (
+                    "read-back exposed no comparable rate/ceil fields "
+                    f"(source={self.last_readback_source}); the applied state "
+                    "cannot be confirmed -- refusing to commit an unverifiable "
+                    "policy")
+                rb = self._rollback()
+                self._log(now, "readback_unverifiable", reason=self.last_reason,
+                          rolled_back=rb.ok, rollback=rb.outcome,
+                          rb_reason=rb.reason, source=self.last_readback_source)
+                return Outcome(False, False, rb.ok, reason=self.last_reason,
+                               rollback=rb, kernel_touched=True)
 
         # committed
         self.last_reason = ""
@@ -388,7 +479,7 @@ class TransactionManager:
                   applied={c.classid: [round(c.rate_mbps, 4),
                                        round(c.ceil_mbps, 4)]
                            for c in tree.classes})
-        return Outcome(True, True, False)
+        return Outcome(True, True, False, kernel_touched=True)
 
     def _replay(self, argv_list) -> list[str]:
         """Run restore commands, collecting the ones the kernel refused.
@@ -419,8 +510,20 @@ class TransactionManager:
                         continue
                     state = {}
                     for q in data if isinstance(data, list) else []:
-                        if q.get("root") or q.get("parent") in (None, "root"):
-                            state[str(q.get("handle") or "root")] =                                 str(q.get("kind", ""))
+                        # iproute2 marks the root qdisc with parent "none" (or
+                        # omits parent entirely); older/other outputs may say
+                        # "root" or carry a "root" flag. Anything with a real
+                        # parent is a child qdisc and must not be counted.
+                        parent = q.get("parent")
+                        if not (q.get("root") or parent in (None, "none",
+                                                            "root", "0:", "0")):
+                            continue
+                        # Keyed "root", not by handle: the consumer (and the
+                        # text parser) both look the state up under "root", so
+                        # keying the JSON branch by the real handle ("1:")
+                        # made every safe-state confirmation fail whenever the
+                        # text reader was empty and JSON answered.
+                        state["root"] = str(q.get("kind", ""))
                     if state:
                         return state, "tc-json"
                 else:
@@ -430,6 +533,10 @@ class TransactionManager:
         return {}, "none"
 
     def _rollback(self) -> RollbackResult:
+        with self._lock:
+            return self._rollback_locked()
+
+    def _rollback_locked(self) -> RollbackResult:
         """Restore the last known-good tree and **verify it was restored**.
 
         Replaying commands proves only that commands ran. The kernel may refuse
@@ -572,6 +679,10 @@ class TransactionManager:
         Losing the class breakdown is an accepted cost: during a fault,
         protection beats classification.
         """
+        with self._lock:
+            return self._force_safe_locked(result)
+
+    def _force_safe_locked(self, result: bool = False):
         pre = ("ip", "netns", "exec", self.ns) if self.ns else ()
         cap = self._last_capacity or 20.0
         ladder = (
