@@ -1,0 +1,30 @@
+ACIQ host gate -- revision 2f1c2927
+date: 2026-10-18T00:16:05+05:30
+
+-- prerequisites --
+  [ok ] root
+  [ok ] ip -> /usr/sbin/ip
+  [ok ] tc -> /usr/sbin/tc
+  [ok ] iperf3 -> /usr/bin/iperf3
+  [ok ] network namespace support
+
+kernel: 7.1.5-76070105-generic
+iproute2: tc utility, iproute2-6.1.0, libbpf 1.3.0
+
+== gate 1: live rollback verification (real kernel) ==
+  [PASS] live rollback
+
+== gate 2: acceptance harness ==
+  [PASS] acceptance complete, 0 failures
+
+== diagnostic: latency tail, 1 seed, per-packet trace ==
+  ~2 min. This is a diagnostic run, not a gate result.
+  trace: data/host_gate_tail/*/call.obs.jsonl
+
+== summary ==
+  evidence directory: artifacts/validation/2f1c2927/host
+  kernel: 7.1.5-76070105-generic
+  RESULT: every executed gate passed.
+  Gates marked SKIPPED above produced no evidence and must not be
+  counted as passing. Re-run the acceptance harness and read its own
+  per-gate table before drawing any conclusion.
