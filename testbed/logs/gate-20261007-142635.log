@@ -1,0 +1,37 @@
+=== ACIQ M0 gate ===
+log: logs/gate-20261007-142635.log
+kernel:   7.1.5-76070105-generic
+tc:       tc utility, iproute2-6.1.0, libbpf 1.3.0
+pyroute2: 0.9.6
+
+[PASS] check 1: tooling
+[PASS] check 2: modules
+[setup] creating namespaces
+[setup] installing nft rule to activate conntrack accounting
+[setup] nf_conntrack_acct=1
+[setup] done
+conntrack v1.4.8 (conntrack-tools): 2 flow entries have been shown.
+udp      17 29 src=127.0.0.1 dst=127.0.0.1 sport=57229 dport=9999 packets=4273 bytes=4392644 [UNREPLIED] src=127.0.0.1 dst=127.0.0.1 sport=9999 dport=57229 packets=0 bytes=0 mark=0 use=1
+udp      17 29 src=127.0.0.1 dst=127.0.0.1 sport=47691 dport=9998 packets=4273 bytes=974244 [UNREPLIED] src=127.0.0.1 dst=127.0.0.1 sport=9998 dport=47691 packets=0 bytes=0 mark=0 use=1
+9999(1000B)=4392644  9998(200B)=974244
+[PASS] check 3: conntrack loopback per-flow
+[PASS] check 4: namespaces and routes
+[PASS] check 5: offloads off
+Warning: sch_htb: quantum of class 10001 is big. Consider r2q change.
+Warning: sch_htb: quantum of class 10010 is big. Consider r2q change.
+Warning: sch_htb: quantum of class 10030 is big. Consider r2q change.
+at 100mbit: 92.7 Mbps
+dropping parent 1:1 to 20mbit AND rescaling children (ceil must not exceed parent)
+invariant: sum(child rate)=16 <= 20, sum(child ceil)=18 <= 20 -> HOLDS
+at 20mbit:  8.6 Mbps
+[FAIL] check 6: A=92.7 B=8.6 (want ~90-97 then ~18-20; empty means iperf3 failed)
+
+STOPPED AT FIRST FAILURE
+
+=== SUMMARY ===
+PASS      check 1: tooling
+PASS      check 2: modules
+PASS      check 3: conntrack loopback per-flow
+PASS      check 4: namespaces and routes
+PASS      check 5: offloads off
+FAIL      check 6: A=92.7 B=8.6 (want ~90-97 then ~18-20; empty means iperf3 failed)
