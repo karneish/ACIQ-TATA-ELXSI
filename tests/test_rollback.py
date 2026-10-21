@@ -448,26 +448,60 @@ class TestVacuousVerification(unittest.TestCase):
     Found by tracing where the rollback target comes from, as the brief asks:
     `_last_good_state` is the read-back captured at commit, and `verify()`
     deliberately tolerates fields the reader cannot see. So a commit under a
-    reader that reports classes but no rates stores a baseline with **no
-    comparable fields**, and `compare_states` then returns an empty mismatch
-    list -- meaning "nothing was wrong", not "everything matched".
+    reader that reports classes but no rates used to store a baseline with
+    **no comparable fields**, and `compare_states` then returned an empty
+    mismatch list -- meaning "nothing was wrong", not "everything matched".
+
+    The gate now sits at COMMIT time, not only at rollback time: a read-back
+    that exposes no rate/ceil for any class in the applied tree refuses the
+    commit outright and rolls back. A state that cannot be verified must never
+    become the known-good target in the first place, because every later
+    rollback against it would inherit the same blindness.
     """
 
     NO_RATE_READBACK = json.dumps(
         [{"kind": "htb", "handle": h} for h in ("1:1", "1:10", "1:20", "1:30")])
 
-    def _blind_commit(self):
+    def _refused_apply(self):
+        """Apply a plan under a reader that shows classes but no rates."""
         tm = TransactionManager(NoRatesBase(), Shield())
         tm.remember_capacity(CAP)
         out = tm.apply(plan(), now=1000.0)
-        self.assertTrue(out.ok)
-        # the commit succeeded, but stored nothing comparable
-        self.assertEqual(tm._last_good_state,
-                         {"1:1": {}, "1:10": {}, "1:20": {}, "1:30": {}})
-        return tm
+        return tm, out
+
+    def test_a_blind_readback_refuses_the_commit(self):
+        tm, out = self._refused_apply()
+        self.assertFalse(out.ok)
+        self.assertFalse(out.committed)
+        self.assertIn("cannot be confirmed", out.reason)
+        self.assertIn("unverifiable", out.reason)
+        # nothing verifiable was ever installed as known-good
+        self.assertIsNone(tm._last_good)
+        self.assertIsNone(tm._last_good_state)
+
+    def test_the_refusal_rolls_back_and_is_audited(self):
+        tm, out = self._refused_apply()
+        self.assertIsNotNone(out.rollback, "a refused commit must still "
+                                           "leave the device in a known state")
+        events = [e.get("event") for e in tm.audit]
+        self.assertIn("readback_unverifiable", events)
+        # a blind apply must never be recorded as a policy change
+        self.assertFalse(any(e.get("event") == "commit" for e in tm.audit))
+
+    def test_a_healthy_reader_still_commits(self):
+        """The gate must reject blindness, not verification itself."""
+        tm = CommitThen()
+        self.assertIsNotNone(tm._last_good_state)
+        # past the shield's change window: this must fail only if the gate
+        # itself refuses, never because of rate limiting
+        out = tm.apply(plan(), now=tm.clock() + 6.0)
+        self.assertTrue(out.ok, out.reason)
 
     def test_a_baseline_with_no_comparable_fields_is_not_a_pass(self):
-        tm = self._blind_commit()
+        """The rollback-side gate remains for states captured before the fix."""
+        tm = CommitThen()
+        tm._last_good_state = {k: {} for k in tm._last_good_state}
+        tm.runner = FakeRunner(auto_readback=True)
         res = tm._rollback()
         self.assertFalse(res.ok)
         self.assertEqual(res.outcome, UNVERIFIABLE)
@@ -476,10 +510,12 @@ class TestVacuousVerification(unittest.TestCase):
 
     def test_outcome_rolled_back_is_false_when_nothing_was_comparable(self):
         """The verdict must reach Outcome.rolled_back, not just the audit log."""
-        tm = self._blind_commit()
+        tm = CommitThen()
+        # a vacuous target: classids with no fields, i.e. nothing to compare
+        tm._last_good_state = {k: {} for k in tm._last_good_state}
 
         class FailNext(NoRatesBase):
-            """Same blind reader, but the next apply is refused."""
+            """Blind read-back, but the next apply is refused."""
             def run(self, argv):
                 if "class" in argv and "add" in argv and self.commands:
                     self.commands.append(argv)
@@ -487,7 +523,7 @@ class TestVacuousVerification(unittest.TestCase):
                 return super().run(argv)
 
         tm.runner = FailNext()
-        out = tm.apply(plan(), now=2000.0)
+        out = tm.apply(plan(), now=tm.clock() + 6.0)
         self.assertFalse(out.ok)
         self.assertIsNotNone(out.rollback)
         self.assertEqual(out.rollback.outcome, UNVERIFIABLE)
@@ -515,3 +551,80 @@ class TestVacuousVerification(unittest.TestCase):
         self.assertEqual(_comparable_pairs(
             {"1:10": {"rate": 6.0}}, {"1:10": {}}), 0)
         self.assertEqual(_comparable_pairs({}, {}), 0)
+
+
+class TestPartialRollback(unittest.TestCase):
+    """State matches, but a restore command was refused: PARTIAL, not a pass.
+
+    Weaker than VERIFIED on purpose: the observed tree was restored, but a
+    refused command may have left something the reader cannot see (a filter,
+    say), and "we checked what we could" must never read as "it is all fine".
+    """
+
+    def test_refused_restore_with_matching_state_is_partial(self):
+        tm = CommitThen()
+        # same runner instance: its _applied still holds the good tree, so the
+        # read-back works while the replayed class adds are refused
+        tm.runner.fail_on = "class add"
+        res = tm._rollback()
+        self.assertFalse(res.ok)
+        self.assertEqual(res.outcome, PARTIAL, res.reason)
+        self.assertTrue(res.failed_commands)
+        self.assertEqual(res.mismatches, [], "the observed state matched; "
+                                             "the refusal is the only defect")
+        self.assertIn("refused", res.reason)
+
+
+class TestIdentValidation(unittest.TestCase):
+    """dev/ns reach the command line; they must never parse as options."""
+
+    def test_injection_shaped_names_are_rejected(self):
+        from aciq.txn import validate_ident
+        for bad in ("veth-lan; reboot", "$(reboot)", "a b", "-n", "eth0\ncat",
+                    "", "..", "x" * 40, "veth`id`", "veth|id"):
+            with self.assertRaises(ValueError, msg=repr(bad)):
+                validate_ident(bad, "dev")
+
+    def test_normal_idents_pass_through(self):
+        from aciq.txn import validate_ident
+        for good in ("veth-lan", "br0", "ns.router", "a", "eth0"):
+            self.assertEqual(validate_ident(good, "dev"), good)
+
+    def test_none_stays_none(self):
+        """ns is optional; absence of a namespace is not a validation error."""
+        from aciq.txn import validate_ident
+        self.assertIsNone(validate_ident(None, "ns"))
+
+    def test_transaction_manager_refuses_a_bad_dev_at_construction(self):
+        with self.assertRaises(ValueError):
+            TransactionManager(FakeRunner(), Shield(), dev="veth-lan; reboot")
+
+
+class TestKernelTouchedFlag(unittest.TestCase):
+    """`kernel_touched` is what tells a caller its shadow state is stale."""
+
+    def test_committed_apply_reports_kernel_touched(self):
+        tm = CommitThen()
+        self.assertIsNotNone(tm.last_outcome)
+        self.assertTrue(tm.last_outcome.kernel_touched)
+
+    def test_vacuous_refusal_still_touched_the_kernel(self):
+        """The commands ran before the read-back refused them."""
+        tm = TransactionManager(NoRatesBase(), Shield())
+        tm.remember_capacity(CAP)
+        out = tm.apply(plan(), now=1000.0)
+        self.assertFalse(out.committed)
+        self.assertTrue(out.kernel_touched,
+                        "a rebuild that was rolled back still destroyed the "
+                        "tree; callers must be told")
+
+    def test_pure_deferral_never_touched_the_kernel(self):
+        tm = CommitThen()
+        tm.shield.note_change(tm.clock())
+        out = tm.apply(plan(), now=tm.clock() + 0.1)
+        self.assertFalse(out.ok)
+        self.assertFalse(out.committed)
+        self.assertFalse(out.kernel_touched,
+                         "a rate-limited apply must not look like a rebuild; "
+                         "invalidating filters here would churn every tick")
+        self.assertIsNone(out.rollback)
