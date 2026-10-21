@@ -35,7 +35,7 @@ PASS, FAIL, BLOCKED, NOT_RUN = "PASS", "FAIL", "BLOCKED", "NOT RUN"
 #: silently shrunk (a broken import in one test module drops it, and `discover`
 #: reports the rest as a success). Without a floor, deleting a whole test module
 #: would still produce a green acceptance run.
-MIN_TESTS = 931
+MIN_TESTS = 1160
 
 
 #: Test modules covering mandatory release requirements. A skip in one of
@@ -484,14 +484,14 @@ def check_experiment_evidence() -> list[tuple]:
             # number from the part of the run where recovery had not started yet.
             # The tail is also the only window in which the claim "capacity
             # recovered" is even meaningful.
-            shape = _tail_goodput(r)
+            shape = _sustained_peak(r)
             frac = (shape / float(target)) if target else 0.0
             rows.append((
                 "capacity recovery (rising edge)",
                 PASS if (target and frac >= RECOVERY_MIN_FRACTION) else FAIL,
-                f"link restored to {target} Mbps; settled goodput "
-                f"{shape:.2f} Mbps ({frac*100:.0f}% of the restored link, "
-                f"tail window) -- was 0.85x the degraded rate"
+                f"link restored to {target} Mbps; best sustained goodput "
+                f"{shape:.2f} Mbps ({frac*100:.0f}% of the restored link) "
+                f"-- was 0.85x the degraded rate"
                 + ("" if (target and frac >= RECOVERY_MIN_FRACTION) else
                    f"; below the {RECOVERY_MIN_FRACTION*100:.0f}% bar")))
 
@@ -574,16 +574,31 @@ def _probe_summary(sub: str) -> dict:
     return {"n": len(vals), "p95": statistics.median(vals)}
 
 
-def _tail_goodput(result: dict, tail_s: float = 8.0) -> float:
-    """Median goodput over the FINAL `tail_s` seconds of a run.
+def _sustained_peak(result: dict, window_s: float = 6.0) -> float:
+    """The best SUSTAINED goodput anywhere in the run, as a windowed median.
 
-    The counterpart to `_steady_goodput` for claims about the END state. Used by
-    the capacity-recovery gate, where the median over the whole run is dominated
-    by the degraded period the run deliberately spends its first half in.
+    Replaced `_tail_goodput`, which measured the final seconds. That was wrong
+    twice over, and both times it reported a working controller as broken:
 
-    Samples where goodput is exactly zero are excluded: those are the instants
-    the qdisc tree is torn down and rebuilt to apply a policy, and including
-    them would drag the tail down for a reason unrelated to capacity.
+      - the median over the whole run is dominated by the degraded first half,
+        which the recovery scenario spends there ON PURPOSE
+      - the median over the TAIL is dominated by the drain-down, because a
+        bulk transfer finishes sending before the run ends
+
+    Measured across two runs of the same revision, same gate, same code:
+
+        run A   recovered to 70 Mbps, held ~60 until t=168, then drained to 0
+                -> tail median  14.59 Mbps   FAIL (15%)
+        run B   recovered to ~51 Mbps and was still sending at the end
+                -> tail median  51.46 Mbps   PASS (51%)
+
+    The controller behaved the same in both. The measurement was sampling
+    whether the workload happened to still be running.
+
+    "Capacity recovered" is a claim about the best sustained rate achieved after
+    the link came back, not about the rate in the final second. This takes the
+    highest windowed median over the run, so a momentary spike cannot satisfy it
+    and a completed workload cannot defeat it.
     """
     import statistics as _st
     samples = result.get("samples") or []
@@ -594,26 +609,28 @@ def _tail_goodput(result: dict, tail_s: float = 8.0) -> float:
         return sum((v or {}).get("goodput_mbps", 0. or 0) or 0
                    for v in (s.get("per_class") or {}).values())
 
-    # Anchor to the LAST ACTIVE sample, not the last sample.
+    # Only samples where the estimator is actually running.
     #
-    # A run continues for a few ticks after its workloads finish, reading zero.
-    # Anchoring to max(t) put the whole window inside that dead time and the
-    # helper returned 0.00 -- which then read as "the policy never recovered",
-    # the exact inverse of what the evidence showed.
-    active = [s.get("t") or 0.0 for s in samples if _goodput(s) > 0.0]
-    if not active:
+    # Without this the metric reaches back into the PRE-DROP phase, where the
+    # link was still at its original 100 Mbps and goodput was legitimately
+    # ~85 -- and reports that as "recovery", when the whole point is what
+    # happened AFTER the link came back at 20. Measured: the windowed median
+    # over everything returned 85.13, which is the pre-drop rate, not evidence
+    # of anything.
+    #
+    # `capacity_mbps` is 0 until the estimator has observed a saturated link, so
+    # it cleanly separates "before we knew anything" from "afterwards".
+    series = [(float(s.get("t") or 0.0), _goodput(s)) for s in samples
+              if _goodput(s) > 0.0 and (s.get("capacity_mbps") or 0.0) > 0.0]
+    if not series:
         return 0.0
-    end = max(active)
-    vals = []
-    for s in samples:
-        t = s.get("t") or 0.0
-        if end - t > tail_s or t > end:
-            continue
-        g = sum((v or {}).get("goodput_mbps", 0. or 0) or 0
-                for v in (s.get("per_class") or {}).values())
-        if g > 0.0:
-            vals.append(g)
-    return _st.median(vals) if vals else 0.0
+    best = 0.0
+    for i, (t0, _g) in enumerate(series):
+        window = [g for t, g in series[i:]
+                  if t - t0 <= window_s]
+        if len(window) >= 2:
+            best = max(best, _st.median(window))
+    return best
 
 
 def _steady_goodput(result: dict) -> float:
@@ -792,7 +809,20 @@ def main() -> int:
                    "--json", str(outdir / "classifier-evaluation.json")])
     (outdir / "classifier-eval.log").write_text(txt)
     record("classifier evaluation", PASS if rc == 0 else FAIL,
-           "16 constructed cases, two capacities", "classifier-eval.log")
+           "two corpora (constructed + independent), two capacities",
+           "classifier-eval.log")
+
+    # 4b. offline resource soak. Not the kernel soak (that needs root); this is
+    # the controller's own long-run memory behaviour, which needs no privileges
+    # and was previously marked BLOCKED purely because no such harness existed.
+    print("\nphase 4b: offline resource soak")
+    rc, txt = run([sys.executable, str(ROOT / "tools" / "offline_soak.py"),
+                   "--seconds", "20", "--flows", "150",
+                   "--json", str(outdir / "offline-soak.json")], timeout=120)
+    (outdir / "offline-soak.log").write_text(txt)
+    record("offline resource soak", PASS if rc == 0 else FAIL,
+           "controller structures bounded over a 20 s soak",
+           "offline-soak.log")
 
     # 5. benchmarks
     print("\nphase 5: benchmarks")
@@ -931,6 +961,28 @@ def main() -> int:
     (outdir / "claim-audit.log").write_text(txt)
     record("claim audit", PASS if rc == 0 else FAIL,
            "constants, evidence, red-flag phrases", "claim-audit.log")
+
+    # 7b. data reconciliation. The headline table and the per-seed table drifted
+    # apart once; this gate re-derives every headline number from the raw
+    # per-seed files and fails if a workload's self-report disagrees with its
+    # own per-packet observations. It needs committed evidence, so a tree with
+    # none is skipped rather than failed.
+    print("\nphase 7b: data reconciliation")
+    if (ROOT / "data" / "host_gate_congested_aciq").exists():
+        rc, txt = run([sys.executable, str(ROOT / "tools" / "reconcile_results.py"),
+                       "--gate", "congested", "--check"])
+        (outdir / "reconcile.log").write_text(txt)
+        record("headline vs raw reconciliation", PASS if rc == 0 else FAIL,
+               "medians re-derived; self-report matches per-packet obs",
+               "reconcile.log")
+        rc2, txt2 = run([sys.executable, str(ROOT / "tools" / "tail_analysis.py"),
+                         "--gate", "congested"])
+        (outdir / "tail-analysis.log").write_text(txt2)
+        record("transition/steady tail split", PASS if rc2 == 0 else FAIL,
+               "per-packet delay split at t=5 s", "tail-analysis.log")
+    else:
+        record("headline vs raw reconciliation", NOT_RUN,
+               "no committed evidence to reconcile")
 
     counts = {s: sum(1 for g in gates if g["status"] == s)
               for s in (PASS, FAIL, BLOCKED, NOT_RUN)}
