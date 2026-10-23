@@ -136,17 +136,16 @@ def collect_window(label: str, plan: tuple, env: NSEnv,
     wl = str(workloads_dir)
     tracker = tracker or FlowTracker(window=max(2, int(duration_s / poll_s)))
     source = source or ConntrackSource(ns=env.router)
-    sink = Generator(script, env.nsexec(env.client, ["python3", f"{wl}/{script}",
-                                                     "--listen", "--port", str(dport)]),
-                     [])
+    sink = Generator(script,
+                     env.nsexec(env.client, ["python3", f"{wl}/{script}",
+                                             "--listen", "--port", str(dport)]),
+                     env.nsexec(env.wan, ["python3", f"{wl}/{script}",
+                                          "--dst", env.client_ip,
+                                          "--port", str(dport),
+                                          "--duration", str(duration_s)]
+                                   + (extra_flags or [])))
     with sink:
         time.sleep(1.5)
-        flags = extra_flags or []
-        sender_flags = (env.nsexec(env.wan, ["python3", f"{wl}/{script}",
-                                             "--dst", env.client_ip,
-                                             "--port", str(dport),
-                                             "--duration", str(duration_s)]
-                                     + flags))
         sink.start_sender()
         deadline = time.monotonic() + duration_s + 2.0
         while time.monotonic() < deadline:
