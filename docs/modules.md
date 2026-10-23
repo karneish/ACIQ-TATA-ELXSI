@@ -14,7 +14,7 @@ is one a unit test drives on the live paths of this repo.
 
 Transitions are driven by `aciq/controller.py`'s own run loop; the common
 papered-over path (treating any state as STABLE) is caught by
-`tests/test_controller*.py`, which asserts that ONLY STABLE samples count
+`tests/test_controller*.py` (all `tests/test_controller*` names), which asserts that ONLY STABLE samples count
 and that ARMED never produces a verdict prematurely.
 
 ## `aciq/shield.py` — safety latch, 3 states

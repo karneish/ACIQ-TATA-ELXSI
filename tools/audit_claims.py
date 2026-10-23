@@ -316,7 +316,7 @@ def scan_path_citations() -> list[dict]:
             continue
         if "*" in p or "<" in p:            # a family, not a file
             continue
-        if p in PREFIX_FAMILIES:
+        if p.startswith(PREFIX_FAMILIES):   # a FAMILY prefix, not a file
             continue
         # This tool's own source quotes the broken paths it is describing, in
         # the docstring of scan_path_citations and in the comments above. Those
