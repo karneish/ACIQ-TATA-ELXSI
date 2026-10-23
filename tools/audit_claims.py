@@ -240,6 +240,11 @@ def scan_path_citations() -> list[dict]:
     runtime_outputs = {
         "data/leases.json", "data/corrections.jsonl", "data/REPORT.md",
         "data/COMPARISON.md", "aciq/scratch",
+        # Produced by the privileged live script only; offline trees quote
+        # these paths as the names the LIVE run will fill in.
+        "data/experiments/classifier_corpus/corpus.jsonl",
+        "data/experiments/s5/s5_summary.json",
+        "data/experiments/dashboard",
     }
     # Paths that exist only inside a test's own fixture or a doctest-style
     # example, where the whole point is that the file is absent.
