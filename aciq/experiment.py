@@ -877,6 +877,8 @@ class ExperimentRunner:
             capacity_change_applied=not self._capacity_change_failed,
             capacity_change_error=self.harness._capacity_change_error,
             estimator_mbps=round(est, 2) if est else None,
+            resources=resources_of(samples,
+                                   getattr(self.harness, "decision_latency", lambda: None)()),
             # The WHOLE series, not the tail.
             #
             # This truncated to the last 3 samples, which discarded the entire
@@ -1194,7 +1196,37 @@ notes=(([] if dropped else ["no capacity drop in this run"])
 
 
 def _counters_from_last_frame(collector: MetricsCollector):
+    """The per-class counters of the last tick, keyed for the closed loop."""
     return collector.last_counters()
+
+
+def resources_of(samples: list[dict], decision: dict | None = None) -> dict | None:
+    """Aggregate the per-tick resource evidence into one summary (T5).
+
+    Everything here is arithmetic over what the tick sampler already wrote:
+    `cpu_fraction` and `max_rss_bytes` come from MetricsFrame, and the
+    decision-latency summary comes from the harness's own perf_counter ring.
+    Conversion factors are stated so they cannot drift: cpu_fraction is a
+    fraction of ONE core per unit wall-clock (0.5 = half a core), RSS is bytes.
+
+    Returns None only when the run recorded no samples at all (a dry run) --
+    "no samples" and "no measurable overhead" are different states.
+    """
+    if not samples:
+        return None
+    cpu = [s["cpu_fraction"] for s in samples
+           if isinstance(s.get("cpu_fraction"), (int, float))]
+    rss = [s["max_rss_bytes"] for s in samples
+           if isinstance(s.get("max_rss_bytes"), (int, float))]
+    out: dict = {}
+    if cpu:
+        out["cpu_mean_frac"] = round(sum(cpu) / len(cpu), 6)
+        out["cpu_ticks"] = len(cpu)
+    if rss:
+        out["rss_max_bytes"] = int(max(rss))
+    if decision is not None:
+        out["decision_ms"] = decision
+    return out
 
 
 #: First address handed out to a simulated device. 203.0.113.2 is the wan

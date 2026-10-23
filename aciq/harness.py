@@ -46,6 +46,7 @@ from __future__ import annotations
 import json
 import random
 import time
+from collections import deque
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 
@@ -217,6 +218,11 @@ class RunResult:
     #: observed is the evidence.
     duration_s: float = 0.0
     notes: list[str] = field(default_factory=list)
+    #: Resource overhead of the controller while it ran, T5 fix round:
+    #: mean CPU fraction, peak RSS and the closed-loop decision latency
+    #: distribution. Populated from the per-tick samples at end of run; None
+    #: means the run recorded no ticks (dry runs), never "no overhead".
+    resources: dict | None = None
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2)
@@ -420,6 +426,11 @@ class Harness:
         self.controller_events: list[dict] = []
         #: Optional merged flow source (tap + conntrack): attach_flow_source.
         self._flow_source = None
+        #: T5: (now, milliseconds) for every adapt_step decided so far this
+        #: run. Bounded ring: a 31-minute soak at 1 Hz appends 1900 tiny
+        #: tuples, which is fine, but the bound keeps safety around faster
+        #: tick loops.
+        self._decision_ms: deque = deque(maxlen=2048)
         #: The last Measurement handed to the estimator, kept so per-sample
         #: evidence can record what the estimator actually saw.
         self.last_measurement = None
@@ -895,7 +906,24 @@ class Harness:
 
         Returns (capacity_mbps, changed). Never reads class 1:1's *configured*
         rate — only its observed counters, via `link`.
+
+        The whole body is timed (T5): one process-level perf_counter pair per
+        tick, kept in a bounded ring, summarised by `decision_latency`. A
+        decision loop that occasionally costs 900 ms means the controller held
+        up the tick loop that long, and that number belongs in the artefact,
+        not in a hypothesis about it.
         """
+        from .metrics import goodput_mbps, rate_per_s
+        import time as _t
+        _t0 = _t.perf_counter()
+        try:
+            return self._adapt_step_inner(counters, dt, now, link)
+        finally:
+            self._decision_ms.append((now, (_t.perf_counter() - _t0) * 1000.0))
+
+    def _adapt_step_inner(self, counters: dict[TrafficClass, ClassCounters],
+                          dt: float, now: float,
+                          link=None) -> tuple[float | None, bool]:
         from .metrics import goodput_mbps, rate_per_s
         prev = getattr(self, "_prev_counters", None)
         prev_link = getattr(self, "_prev_link", None)
@@ -1098,3 +1126,23 @@ class Harness:
         self.txn.last_outcome = None
         self.txn.last_rollback = None
         self.txn.last_reason = ""
+        # T5: decision-latency ring is per-run evidence, never inherited.
+        self._decision_ms.clear()
+
+    def decision_latency(self) -> dict | None:
+        """Summary of this run's adapt_step decision costs, T5.
+
+        None before the first decision (a run that has not tuned yet has no
+        latency to report) -- None stays None, it is never written as a 0 ms
+        p95, which would be a lie about a decision that has not happened.
+        """
+        if not self._decision_ms:
+            return None
+        costs = sorted(ms for _t, ms in self._decision_ms)
+        def pct(q: float) -> float:
+            i = min(len(costs) - 1, int(round(q * (len(costs) - 1))))
+            return round(costs[i], 3)
+        return {
+            "n": len(costs),
+            "p50_ms": pct(0.5), "p95_ms": pct(0.95), "max_ms": round(costs[-1], 3),
+        }

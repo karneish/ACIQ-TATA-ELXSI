@@ -9,9 +9,9 @@
 #
 # 60 real runs, roughly an hour of wall clock. Outputs:
 #   data/runs/... (60 run artefacts)
-#   data/experiments/phase6/matrix.json
-#   data/experiments/phase6/comparison.json  (seed-paired rows, per scenario)
-#   data/experiments/phase6/comparison.md    (human-readable paired table)
+#   the phase-6 matrix output
+#   the phase-6 comparison output  (seed-paired rows, per scenario)
+#   the paired markdown report    (human-readable paired table)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 VENV="${ACIQ_VENV:-/home/mekarz/aciq-venv}"

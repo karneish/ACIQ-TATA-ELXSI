@@ -22,4 +22,4 @@ echo "[phase5] testbed ready at $(date -Iseconds)"
     --link-mbps 100 --drop-mbps 20 --drop-at 10 \
     --out data/experiments/phase5
 
-echo "[phase5] matrix complete; comparison written to data/experiments/phase5/comparison.json"
+echo "[phase5] matrix complete; comparison written to the phase-5 comparison output"

@@ -65,7 +65,7 @@ for c in tree.classes:
           f"{'(root)' if c.cls is None else c.cls.value}")
 
 # TEXT read-back, not JSON: on this iproute2 build `tc -j -s class` returns
-# empty JSON (documented sharp edge in aciq/metrics; the legacy gate shows the
+# empty JSON (documented sharp edge in the metrics module; the legacy gate shows the
 # same). aciq.qdisc.parse_class_text is the primary, gate-validated source.
 r = subprocess.run(["ip", "netns", "exec", "router",
                     "tc", "-s", "class", "show", "dev", "veth-lan"],

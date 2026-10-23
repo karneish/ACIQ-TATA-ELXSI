@@ -1,6 +1,6 @@
 """Phase 7: learned-vs-rules honesty evaluation on the SAME corpora.
 
-The comparisons tools/eval_classifier already renders belong to the RULES.
+The comparisons the classifer evaluator already renders belong to the RULES.
 This adds the learned model (aciq.learned) evaluated on identical corpora,
 identical skips, identical abstention rules, and prints the three-way
 comparison an honest evaluation needs:
@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from aciq.classify import TrustStore, classify  # noqa: E402
 
-#: The trust store flags used by tools/eval_classifier itself — the rules
+#: The trust store flags used by the classifer evaluator itself — the rules
 #: comparison re-runs the SAME configuration the rules-only evaluation uses.
 TRUST_DECAY = 0.5
 TRUST_FLOOR = 0.25

@@ -327,7 +327,11 @@ class TestCitedCliValues(unittest.TestCase):
     def test_cited_systems_exist(self):
         from aciq.experiment import SystemSpec
         real = {x.value for x in SystemSpec}
-        self.assertTrue(real <= {"b0_fifo", "b1_cake95", "aciq"}, real)
+        # T2 adds the labelled-unrealistic CAKE-oracle arm; B0/B1/ACIQ names are
+        # unchanged, and the shorthand "cake" (which collides with the qdisc's
+        # own name and would blur the two CAKE arms) is still not a system.
+        self.assertTrue(real <= {"b0_fifo", "b1_cake95", "b1_cake_oracle",
+                                 "aciq"}, real)
         self.assertNotIn("cake", real)
 
     def test_duration_override_exists_and_preserves_the_scenario(self):

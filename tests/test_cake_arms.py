@@ -1,6 +1,6 @@
 """T2 — the two CAKE arms must be distinguishable, and their rates recorded.
 
-Contract under test (see docs/modules.md, T2 fix round):
+Contract under test (see the modules doc, T2 fix round):
 
 * B0/B1/CAKE-oracle/ACIQ all share one out-of-band netem bottleneck that a
   baseline tree is NEVER re-applied against mid-run, so the pre-existing
