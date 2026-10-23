@@ -109,6 +109,22 @@ def load_runs(runs_root: Path) -> tuple[list[dict], list[str]]:
         except (json.JSONDecodeError, OSError) as e:
             skipped.append(f"{d.name} ({type(e).__name__}: {e})")
             continue
+        # Special-condition runs are NOT part of the four-arm matrix and must
+        # never move a matrix cell: a failure-injection run or a leased run
+        # answers a DIFFERENT question. They are excluded BY NAME (their own
+        # reason in the report), not averaged in, because one S5 seed among
+        # ten otherwise rewrites "the matrix" into "the matrix plus an S5".
+        special = []
+        if cfg.get("inject_fail_apply"):
+            special.append("inject_fail_apply")
+        if cfg.get("enforce"):
+            special.append("enforce")
+        if cfg.get("lease"):
+            special.append("lease")
+        if special:
+            skipped.append(d.name + " (special-condition run: "
+                           + ", ".join(special) + ")")
+            continue
         runs.append({"dir": d.name, "cfg": cfg, "wl": wl,
                      "res": res, "samples": samples})
     return runs, skipped
