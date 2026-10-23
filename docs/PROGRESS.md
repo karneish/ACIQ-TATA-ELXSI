@@ -223,3 +223,12 @@ Remaining open items: commit decision (user); nothing else pending.
 - comparison.md written by the tool alongside comparison.json. No code
   change was needed after the run: the numbers came from the same pipeline
   the offline tests pin.
+
+## 2026-10-23 FIX ROUND (T1–T10) DONE offline; one live command pending
+Commits `38233a1`→`7cd5cb3` per task. See docs/FIX_REPORT.md for the
+per-task table. Suite 1326 OK (skipped=10 live-kernel), citation audit 0
+broken, secret-scan clean. PENDING: the single sudo step
+`sudo env ACIQ_VENV=/home/mekarz/aciq-venv ./testbed/run_all_live.sh`
+(4-arm matrices incl. cake-ORACLE, S4 intent+TTL-15s expiry (starvation
+evidence), S5 live with injected failed-apply witnesses, classifier
+corpus + eval, dashboard evidence, teardown+report).
