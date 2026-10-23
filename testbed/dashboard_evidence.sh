@@ -9,7 +9,7 @@ VENV="${ACIQ_VENV:-/home/mekarz/aciq-venv}"
 PY="$VENV/bin/python"; [ -x "$PY" ] || PY=python3
 DEST="data/experiments/dashboard"
 mkdir -p "$DEST" testbed/logs
-LOG="testbed/logs/dashboard-$(date +%Y%m%d-%H%M%S).log"
+LOG="testbed/logs/dashboard-evidence.log"
 
 testbed/cleanup.sh 2>/dev/null || true
 testbed/setup.sh >/dev/null
@@ -17,7 +17,7 @@ testbed/setup.sh >/dev/null
 echo "[dash] one ACIQ run (s2_wan_drop, seed 42), then render the page"
 "$PY" run_experiments.py --scenario s2_wan_drop --system aciq --seed 42 \
   --seeds 1 >"$LOG" 2>&1 || true
-RUN=$(ls -td data/runs/s2_wan_drop__aciq__adaptive__seed42 | head -1)
+RUN=$(ls -td data/runs/s2_wan_drop__aciq__adaptive__seed* 2>/dev/null | head -1)
 echo "[dash] run dir: $RUN"
 
 "$PY" - "$RUN" "$DEST/dashboard.html" <<'EOF'

@@ -40,6 +40,9 @@ SAFE_SHAPES = (re.compile(r"^[0-9a-f]{40}$"), re.compile(r"^[0-9a-f]{64}$"))
 
 SKIP_SUFFIX = {".pyc", ".log"}
 SKIP_DIRS = {".git", "__pycache__", "data/runs", "data/experiments"}
+#: Its OWN regression test necessarily contains the needles; skipping it
+#: follows the same rule as citation audit's self-referential list.
+SKIP_FILES = {"tests/test_secret_scan.py"}
 
 
 def tracked_files() -> list[str]:
@@ -96,6 +99,8 @@ def scan_files(files: list[str] | None = None) -> list[tuple[str, str, str]]:
     """(file, rule, snippet) triples for anything credential-shaped."""
     hits: list[tuple[str, str, str]] = []
     for f in (files if files is not None else tracked_files()):
+        if f in SKIP_FILES:
+            continue
         if f.lower().endswith(".pdf"):     # binary: strings-scan, not file.read
             continue
         try:

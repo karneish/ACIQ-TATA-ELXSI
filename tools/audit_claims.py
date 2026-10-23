@@ -245,6 +245,7 @@ def scan_path_citations() -> list[dict]:
         "data/experiments/classifier_corpus/corpus.jsonl",
         "data/experiments/s5/s5_summary.json",
         "data/experiments/dashboard",
+        "testbed/logs/dashboard-evidence.log",
     }
     # Paths that exist only inside a test's own fixture or a doctest-style
     # example, where the whole point is that the file is absent.
@@ -292,7 +293,11 @@ def scan_path_citations() -> list[dict]:
     # member of the family, and a missing family is a different defect.
     PREFIX_FAMILIES = ("docs/evidence/gate-", "docs/evidence/rollback-live-",
                         "testbed/logs/gate-", "testbed/logs/rollback-live-",
-                        "tests/test_")
+                        "tests/test_",
+                        "testbed/logs/demo-", "testbed/logs/dashboard-",
+                        "testbed/logs/corpus-",
+                        # Shell globs over run dirs: a family, not a file.
+                        "data/runs/s2_wan_drop__aciq__adaptive__seed")
 
     # A path that a document says is NOT YET WRITTEN is a documented gap, not
     # a broken citation: the whole point of the sentence is that the file does
