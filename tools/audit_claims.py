@@ -246,6 +246,7 @@ def scan_path_citations() -> list[dict]:
         "data/experiments/s5/s5_summary.json",
         "data/experiments/dashboard",
         "testbed/logs/dashboard-evidence.log",
+        "data/live_status",
     }
     # Paths that exist only inside a test's own fixture or a doctest-style
     # example, where the whole point is that the file is absent.

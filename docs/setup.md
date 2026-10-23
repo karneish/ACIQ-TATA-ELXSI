@@ -119,7 +119,7 @@ written to `data/REPORT.md`.
 | Flag | Meaning |
 |---|---|
 | `--scenario` | repeatable; `s1_iso_during_call`, `s2_wan_drop`, `s3_tv_and_gaming` |
-| `--system` | `b0_fifo`, `b1_cake95`, `aciq` |
+| `--system` | `b0_fifo`, `b1_cake95`, `b1_cake_oracle`, `aciq` |
 | `--mode` | `static`, `informed`, `adaptive` (baselines always run static) |
 | `--drop-at` | seconds into the run at which capacity drops |
 | `--settle` | seconds of interactive-only warmup before measurement begins |
@@ -167,3 +167,20 @@ sudo ./testbed/cleanup.sh
 Idempotent. Removes the namespaces, which removes the veth pairs and `tc` rules
 with them. Note it also runs `pkill -x iperf3`, which will kill any `iperf3` you
 started yourself.
+## Fix round (2026-10-23) — actual environment of the verified host
+
+Verified by the audit against the machine this repository was measured on:
+
+| Component | Version | Note |
+|---|---|---|
+| Kernel | `7.1.5-76070105-generic` | all qdisc modules load (`sch_htb`, `sch_cake`, `sch_netem`, `sch_fq_codel`, `act_mirred`, `ifb`, `cls_fw`, `cls_u32`, `matchall`)
+| `iproute2` | 6.1.0 | `tc -j` output is the contract of `parse_class_json` |
+| `nftables` | 1.0.9 | `runner` verification paths |
+| `iperf3` | 3.16 | unused by the shipped workloads; kept for manual ad-hoc measurement |
+| Python | 3.12.3 (host venv `~/aciq-venv`) | stdlib only; `pyroute2` 0.9.6 present |
+
+`--system` accepts four values since the oracle arm landed:
+`b0_fifo`, `b1_cake95`, `b1_cake_oracle`, `aciq`. The oracle arm is an
+UPPER BOUND ONLY: it sets CAKE's rate to the post-drop link from t=0, which
+no operator planning a live link can know. Its runs must never be reported
+next to operator-real baselines without that label.

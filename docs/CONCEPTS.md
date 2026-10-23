@@ -379,3 +379,14 @@ This is a reference prototype. A real product would need:
 
 Those will be documented in `docs/LIMITATIONS.md` (to be written) in a later phase. Do not present
 the emulation as production evidence.
+
+### Fix-round note (2026-10-23): which FSM the CODE actually has
+
+The state table above is the CONCEPT document's design ideal. The measured
+implementation a reader must reconcile with `docs/modules.md` is SMALLER:
+the measurement controller has 4 states (`STABLE/ARMED/COOLDOWN/SLEEPING`)
+and the safety shield has 3 (`MONITOR/FAULT_PENDING/SAFE_HELD`). Capacity
+adaptation, congestion reshaping and safe-mode force are performed by the
+same `TransactionManager.apply/force_safe` path rather than by dedicated
+policy states. Any doc claims naming 7+ policy states as the shipped FSM
+are stale; the unit-tested truth is in `docs/modules.md`.

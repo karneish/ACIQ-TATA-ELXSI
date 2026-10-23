@@ -1035,3 +1035,27 @@ The other renderer defects found at the same time:
   line to its right-hand end.
 
 All covered by tests over a recorded run, not a synthetic one.
+
+## Fix-round additions (2026-10-23)
+
+**CAKE-static does not adapt because it is built not to.** The
+`b1_cake95` arm sets one rate (95% of the pre-drop link) at run start and
+touched it never again: the kernel state proves it. Treating "CAKE did not
+adapt" as a defect-found is wrong; it is the arm's design. What this round
+added is the ORACLE arm (`b1_cake_oracle`): the SAME tree, applied from t=0
+at the post-drop rate. It is the honest way to answer "how much of CAKE's
+lead is just knowing the rate in advance?" — and it must be labelled as an
+oracle, because no operator can set a rate they have not yet learned.
+
+**Cross-mode Jain is defined on generator per-flow rates, not per-tick
+orchestrator counters** (aciq/fairness.py). Single-class trees mislabel an
+aggregate counter as every class, producing a trivial 1.0; the fix-round
+metric sidesteps the label entirely. The ORCHESTRATOR-VANTAGE per-class
+series remain available as additional reporting, never as a comparison
+across modes.
+
+**The S3 seed-42 ACIQ run directory is incomplete** (no result.json /
+samples.jsonl; a leftover note could not be written because the directory
+is owned by root-created artifacts). Every S3 number above it came from the
+other two arms or from later seeds; nothing cites this directory's absent
+artefacts.
