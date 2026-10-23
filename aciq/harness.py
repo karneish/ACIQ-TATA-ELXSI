@@ -58,6 +58,8 @@ from .metrics import ClassCounters, MetricsCollector
 from .model import Lease, RatePlan, TrafficClass
 from .policy import build_plan
 from .shield import Shield
+from .verifier import bound_rate_change
+from .controller import Controller
 from .tc import BARE_CLASS_ID, ROOT_CLASS_ID, render
 from .txn import Runner, TransactionManager
 
@@ -397,6 +399,20 @@ class Harness:
         self._estimator = CapacityEstimator()
         self._collector: MetricsCollector | None = None
         self.policy_changes = 0
+        #: Phase-3 law: tick of the last committed policy change (for the
+        #: controller's dwell window), and the last bound reason recorded.
+        self._last_policy_change_t: float | None = None
+        self._bound_reason: str | None = None
+        #: Law events (dwell skips, clamps, floors) — evidence-only record.
+        self.law_events: list[dict] = []
+        #: The verification half of the closed loop. Opt-in like enforcement:
+        #: reporting-only runs stay byte-identical to their previous shape.
+        self._controller: Controller | None = None
+        #: Verification events (verdicts, rollbacks) appended by the rollback
+        #: hook — the audit trail for a verification that acted.
+        self.controller_events: list[dict] = []
+        #: Optional merged flow source (tap + conntrack): attach_flow_source.
+        self._flow_source = None
         #: The last Measurement handed to the estimator, kept so per-sample
         #: evidence can record what the estimator actually saw.
         self.last_measurement = None
@@ -464,6 +480,49 @@ class Harness:
     @property
     def leases(self):
         return self._lease_book
+
+    # ---------------- verification half of the closed loop ----------------
+    def enable_controller(self, rollback: bool = True,
+                          window: int = 4, cooldown_s: float = 2.0):
+        """Opt in the verify/rollback FSM (aciq.controller).
+
+        Without it, adapt_step still enforces the LAW before applying, but
+        nothing watches the aftermath. `rollback=True` wires the verdict into
+        the txn's verified last-good restore; `False` renders verdicts and
+        logs them without actuating, for first-contact observation.
+        """
+        if self._controller is not None:
+            return self._controller
+        hook = None
+        if rollback:
+            def hook(verdict):
+                res = self.txn.rollback()
+                self.controller_events.append({
+                    "t": round(self.clock(), 3),
+                    "verdict": verdict.outcome,
+                    "reasons": list(verdict.reasons),
+                    "rollback_committed": bool(res),
+                })
+        self._controller = Controller(rollback_fn=hook, window=window,
+                                      cooldown_s=cooldown_s)
+        return self._controller
+
+    @property
+    def controller(self):
+        return self._controller
+
+    def attach_flow_source(self, source) -> None:
+        """Bind a merged flow source (aciq.tap.TapSource). Idempotent: the
+        last attach wins; calling twice with the same object is a no-op."""
+        self._flow_source = source
+
+    def observe_flows(self, pump: float = 0.0) -> list:
+        """Merged features from the attached source. No source: empty list,
+        not a fake one."""
+        if self._flow_source is None:
+            return []
+        self._flow_source.pump(pump)
+        return self._flow_source.refresh()
 
     def disable_enforcement(self) -> None:
         """Remove every filter and go back to reporting-only.
@@ -861,7 +920,6 @@ class Harness:
         self._prev_link = link
 
         from .capacity import Measurement
-        # The shaper queues live in the children: the parent's own backlog reads
         # 0 throughout a congested run. Summed here rather than in the reader so
         # the saturation test sees one number and the raw counters stay raw.
         backlog = sum(counters[k].backlog_bytes for k in counters if k in prev)
@@ -876,13 +934,44 @@ class Harness:
         #: so the per-sample evidence explains the verdict instead of being
         #: gathered separately and occasionally disagreeing with it.
         self.last_measurement = measurement
+        if self._controller is not None:
+            # verification windows live on the SAME measurement stream the
+            # estimator reads, so a verdict compares like with like
+            self._controller.on_measurement(measurement, now)
         cap = self._estimator.observe(measurement)
         if not cap.changed:
             return None, False
 
-        plan = build_plan(cap.mbps, self._lease)
+        # THE LAW, from aciq.verifier: nothing reaches the tree until the
+        # dwell and step bounds clear it. Standing behaviour when a bound
+        # refuses: return (None, False) -- no rate moves, nothing is logged
+        # as a change, the estimator's evidence pool is simply held until
+        # dwell/step permit an application.
+        prev_rate = (self._current_plan.capacity_mbps
+                     if self._current_plan is not None else None)
+        bound = bound_rate_change(prev_rate, cap.mbps, now,
+                                  self._last_policy_change_t,
+                                  drop_rate_per_s=measurement.drop_rate_per_s)
+        if not bound:
+            return None, False
+        # The estimator's OBJECT stays untouched: `cap` is what was estimated.
+        # `applied` is what the law permitted to reach the tree. Every log
+        # entry below records BOTH, so an evidence file can show a clamped
+        # step as clamped, never as the estimator's own figure.
+        applied = bound.rate
+        plan = build_plan(applied, self._lease)
         self._current_plan = plan
-        self.txn.remember_capacity(cap.mbps)
+        self._last_policy_change_t = now
+        self._bound_reason = bound.reason
+        if bound.emergency:
+            self.law_events.append({
+                "t": round(now, 2), "wanted": round(cap.mbps, 3),
+                "allowed": round(applied, 3), "note": "emergency dwell skip"})
+        # The estimator's record stays untouched: `cap` is what was estimated,
+        # `applied` is what the law permitted. Every log entry below records
+        # BOTH, so a clamped step appears as clamped in the evidence.
+
+        self.txn.remember_capacity(applied)
         # same timeline as the estimator, or the dwell window is measured wrong
         txr = self.txn.apply(plan, now=now)
         # Record what the KERNEL actually has, not just what was asked for.
@@ -897,6 +986,7 @@ class Harness:
             "t": round(now, 2),
             "intended_capacity_mbps": round(cap.mbps, 3),
             "intended_parent_rate_mbps": round(plan.capacity_mbps, 3),
+            "law_bound_reason": bound.reason,
             "committed": bool(txr.committed),
             "ok": bool(txr.ok),
             "rolled_back": bool(txr.rolled_back),
@@ -910,6 +1000,8 @@ class Harness:
         })
         if txr.committed:
             self.policy_changes += 1
+            if self._controller is not None:
+                self._controller.notify_change(now)
         # Same rule as sync_lease: a rebuild attempt destroys every per-flow
         # flower filter whether or not the commit succeeded — a rolled-back
         # apply replays last-good, which has no filters either. Invalidating
@@ -918,8 +1010,8 @@ class Harness:
         if txr.committed or txr.kernel_touched:
             self._invalidate_enforcer_filters()
         if txr.committed:
-            return cap.mbps, True
-        return cap.mbps, False
+            return applied, True
+        return applied, False
 
     _prev_counters = None
     _prev_link = None

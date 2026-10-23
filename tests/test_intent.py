@@ -424,7 +424,7 @@ class TestLeaseReachesTheKernel(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "c.jsonl")
             cs = CorrectionStore(path=p)
-            cs.record(flow(ip="10.0.1.2"), TrafficClass.INTERACTIVE, reason="test")
+            cs.record(flow(ip="10.0.1.2"), TrafficClass.VIDEO_CALL, reason="test")
             cs.reload()
 
             c = Clock()
@@ -440,7 +440,7 @@ class TestLeaseReachesTheKernel(unittest.TestCase):
             c.advance(31)
             after = loop.apply(self._features())
             self.assertFalse(after.leased)
-            self.assertEqual(after.cls, TrafficClass.INTERACTIVE,
+            self.assertEqual(after.cls, TrafficClass.VIDEO_CALL,
                              "the correction should resurface")
 
 
@@ -617,7 +617,7 @@ class TestOverRealSocket(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         rows = [{"t": i,
-                 "per_class": {"adaptive_video": {"rtt_p95": 1.0 + i * 0.01,
+                 "per_class": {"adaptive_video_streaming": {"rtt_p95": 1.0 + i * 0.01,
                                                  "goodput_mbps": 5.0,
                                                  "jitter_ms": 0.1,
                                                  "loss_ratio": 0.0,
@@ -717,20 +717,20 @@ class TestDashboardIsReadOnly(unittest.TestCase):
 
 
 SAMPLES = [
-    {"t": 0.0, "per_class": {"adaptive_video": {"rtt_p95": 1.0, "jitter_ms": 0.1,
+    {"t": 0.0, "per_class": {"adaptive_video_streaming": {"rtt_p95": 1.0, "jitter_ms": 0.1,
                                                 "loss_ratio": 0.0,
                                                 "backlog_bytes": 0,
                                                 "goodput_mbps": 0.0},
-                             "bulk_transfer": {"rtt_p95": 40.0, "jitter_ms": 3.0,
+                             "bulk_download": {"rtt_p95": 40.0, "jitter_ms": 3.0,
                                                "loss_ratio": 0.01,
                                                "backlog_bytes": 9000,
                                                "goodput_mbps": 90.0}},
      "link": {"rx_bytes": 1000, "tx_bytes": 1000}, "fairness": 0.33},
-    {"t": 1.0, "per_class": {"adaptive_video": {"rtt_p95": 1.2, "jitter_ms": 0.1,
+    {"t": 1.0, "per_class": {"adaptive_video_streaming": {"rtt_p95": 1.2, "jitter_ms": 0.1,
                                                 "loss_ratio": 0.0,
                                                 "backlog_bytes": 10,
                                                 "goodput_mbps": 5.0},
-                             "bulk_transfer": {"rtt_p95": 38.0, "jitter_ms": 2.5,
+                             "bulk_download": {"rtt_p95": 38.0, "jitter_ms": 2.5,
                                                "loss_ratio": 0.005,
                                                "backlog_bytes": 8000,
                                                "goodput_mbps": 88.0}},
@@ -753,11 +753,11 @@ class TestDashboardPanels(unittest.TestCase):
     def test_each_class_gets_its_own_series(self):
         p = panels_from_samples(SAMPLES)
         labels = {s.label for s in p["throughput"]}
-        self.assertEqual(labels, {"adaptive_video", "bulk_transfer"})
+        self.assertEqual(labels, {"adaptive_video_streaming", "bulk_download"})
 
     def test_points_keep_their_timestamps(self):
         p = panels_from_samples(SAMPLES)
-        pts = next(s for s in p["throughput"] if s.label == "adaptive_video").points
+        pts = next(s for s in p["throughput"] if s.label == "adaptive_video_streaming").points
         self.assertEqual([t for t, _ in pts], [0.0, 1.0])
 
     def test_fairness_is_plotted_as_a_link_property(self):
@@ -801,7 +801,7 @@ class TestDashboardPanels(unittest.TestCase):
 
 class TestDashboardRendering(unittest.TestCase):
     def test_a_flat_zero_series_does_not_divide_by_zero(self):
-        rows = [{"t": i, "per_class": {"bulk_transfer": {"goodput_mbps": 0.0}},
+        rows = [{"t": i, "per_class": {"bulk_download": {"goodput_mbps": 0.0}},
                  "link": {}, "fairness": 0.0} for i in range(5)]
         html = build_from_samples(rows)
         self.assertIn("<svg", html)

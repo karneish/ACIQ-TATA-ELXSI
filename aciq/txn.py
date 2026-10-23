@@ -536,6 +536,16 @@ class TransactionManager:
         with self._lock:
             return self._rollback_locked()
 
+    def rollback(self) -> RollbackResult:
+        """Public name for the verified restore, for the controller hook.
+
+        Same lock, same path, same read-back as `_rollback`; a public twin
+        exists because the verification layer must not reach into private
+        state to perform an actuation it was promised.
+        """
+        with self._lock:
+            return self._rollback_locked()
+
     def _rollback_locked(self) -> RollbackResult:
         """Restore the last known-good tree and **verify it was restored**.
 

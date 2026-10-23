@@ -1,0 +1,34 @@
+digraph datapath {
+  rankdir=LR;
+  node [shape=box, fontname="Helvetica"];
+
+  traffic [label="traffic\n(wan → client)", shape=rectangle];
+  tap [label="KernelTap\n(header only,\nsnaplen 96)", shape=rectangle];
+  ct [label="ConntrackSource\n(cumulative counters)", shape=rectangle];
+  observer [label="HeaderObserver\n(rings, median/p95,\nIAT regularity)", shape=rectangle];
+  merge [label="merge_features\n(field-owner rules)", shape=rectangle];
+  feats [label="FlowFeatures", shape=ellipse];
+  classify [label="classify()\n(7 classes, abstains)", shape=rectangle];
+  closedloop [label="ClosedLoop\n(trust, leases)", shape=rectangle];
+  bridge [label="Bridge\n(nft mark + tc filter)", shape=rectangle];
+  htb [label="HTB tree\n(7 classes + leased + default)", shape=rectangle];
+  adapt [label="adapt_step\n(estimator + LAW)", shape=rectangle];
+  controller [label="Controller FSM\n(verify → rollback → standdown)", shape=rectangle];
+  txn [label="TransactionManager\n(apply + verified rollback)", shape=rectangle];
+
+  traffic -> tap [label="frames"];
+  traffic -> ct [label="conntrack -L"];
+  tap -> observer;
+  observer -> merge [label="dynamics"];
+  ct -> merge [label="totals / burstiness"];
+  merge -> feats;
+  feats -> classify;
+  classify -> closedloop;
+  closedloop -> bridge -> htb;
+
+  htb -> adapt [label="counters", dir=back];
+  adapt -> controller [label="measurements"];
+  controller -> txn [label="rollback\n(if worse)"];
+  adapt -> txn [label="bounded rate"];
+  txn -> htb [label="tc change"];
+}

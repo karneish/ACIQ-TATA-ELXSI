@@ -10,9 +10,10 @@ from __future__ import annotations
 import unittest
 
 from aciq.marks import (
-    CLASS_ADAPTIVE,
-    CLASS_BULK,
-    CLASS_INTERACTIVE,
+    CLASS_STREAMING,
+    CLASS_BULK_DOWNLOAD,
+    CLASS_VIDEO_CALL,
+    CLASS_GAMING,
     CLASS_LEASED,
     CLASS_MASK,
     CLASS_UNCLASSIFIED,
@@ -55,8 +56,8 @@ class TestLayout(unittest.TestCase):
         self.assertEqual(d.lease_id, 7)
 
     def test_reserved_bits_are_always_zero(self):
-        for cid in (CLASS_UNCLASSIFIED, CLASS_INTERACTIVE, CLASS_ADAPTIVE,
-                    CLASS_BULK, CLASS_LEASED):
+        for cid in (CLASS_UNCLASSIFIED, CLASS_VIDEO_CALL, CLASS_STREAMING,
+                    CLASS_BULK_DOWNLOAD, CLASS_LEASED):
             for conf in (0.0, 0.55, 0.79, 0.95):
                 for rsn in (REASON_NONE, REASON_DSCP, REASON_BEHAVIOUR,
                             REASON_CORRECTION):
@@ -72,7 +73,7 @@ class TestLayout(unittest.TestCase):
 
     def test_class_id_fits_four_bits(self):
         self.assertEqual(CLASS_MASK, 0xF)
-        self.assertEqual(CLASS_LEASED, 4)
+        self.assertEqual(CLASS_LEASED, 8)
 
 
 class TestSeenBit(unittest.TestCase):
@@ -98,13 +99,13 @@ class TestSeenBit(unittest.TestCase):
         self.assertFalse(is_untouched(examined))
 
     def test_unseen_encodes_to_zero(self):
-        self.assertEqual(encode(CLASS_INTERACTIVE, seen=False), 0)
+        self.assertEqual(encode(CLASS_VIDEO_CALL, seen=False), 0)
 
     def test_unseen_discards_confidence_and_reason(self):
         """Confidence describes a decision never made. Encoding it anyway would
         set those bits on a flow nothing knows about, and is_untouched() would
         disagree with the caller."""
-        m = encode(CLASS_INTERACTIVE, seen=False, confidence=0.95,
+        m = encode(CLASS_VIDEO_CALL, seen=False, confidence=0.95,
                    reason=REASON_DSCP)
         self.assertEqual(m, 0)
         self.assertTrue(is_untouched(m))
@@ -140,11 +141,11 @@ class TestConfidenceBuckets(unittest.TestCase):
 
     def test_all_buckets_round_trip(self):
         for conf in (0.0, 0.3, 0.65, 0.99):
-            m = encode(CLASS_ADAPTIVE, confidence=conf)
+            m = encode(CLASS_STREAMING, confidence=conf)
             self.assertEqual(decode(m).confidence, bucket_confidence(conf))
 
     def test_confidence_survives_with_a_reason(self):
-        m = encode(CLASS_BULK, confidence=0.95, reason=REASON_BEHAVIOUR)
+        m = encode(CLASS_BULK_DOWNLOAD, confidence=0.95, reason=REASON_BEHAVIOUR)
         self.assertEqual(decode(m).confidence, CONF_HIGH)
         self.assertEqual(decode(m).reason, REASON_BEHAVIOUR)
 
@@ -161,7 +162,7 @@ class TestReasons(unittest.TestCase):
             self.assertIn(tier, REASON_BY_TIER)
 
     def test_reason_names(self):
-        m = encode(CLASS_INTERACTIVE, reason=REASON_DSCP)
+        m = encode(CLASS_VIDEO_CALL, reason=REASON_DSCP)
         self.assertEqual(decode(m).reason_name, "dscp")
 
 
@@ -170,7 +171,7 @@ class TestValidation(unittest.TestCase):
     to a class nobody configured and nothing notices."""
 
     def test_reserved_class_id_rejected(self):
-        for cid in (5, 9, 15):
+        for cid in (9, 10, 15):
             with self.assertRaises(MarkEncodingError):
                 encode(cid)
 
@@ -182,7 +183,7 @@ class TestValidation(unittest.TestCase):
 
     def test_reason_out_of_range_rejected(self):
         with self.assertRaises(MarkEncodingError):
-            encode(CLASS_BULK, reason=4)
+            encode(CLASS_BULK_DOWNLOAD, reason=4)
 
     def test_lease_id_out_of_range_rejected(self):
         with self.assertRaises(MarkEncodingError):
@@ -192,7 +193,7 @@ class TestValidation(unittest.TestCase):
 
     def test_lease_on_a_non_lease_class_rejected(self):
         with self.assertRaises(MarkEncodingError):
-            encode(CLASS_INTERACTIVE, lease_id=3)
+            encode(CLASS_VIDEO_CALL, lease_id=3)
 
     def test_decode_out_of_range_rejected(self):
         for bad in (-1, 1 << 32):
@@ -220,38 +221,40 @@ class TestTrafficClassMapping(unittest.TestCase):
     def test_distinct_class_ids(self):
         ids = {decode(encode_for_traffic(tc)).class_id
                for tc in TrafficClass if tc is not None}
-        self.assertEqual(len(ids), 4, "all four TrafficClass values including LEASED must have distinct ids")
+        self.assertEqual(len(ids), 8, "all eight TrafficClass values including LEASED must have distinct ids")
 
 
 class TestClassHandle(unittest.TestCase):
     """`tc fw` must match the class field alone."""
 
     def test_handle_masks_to_class_bits(self):
-        self.assertEqual(class_handle(CLASS_INTERACTIVE), "0x01/0x0f")
-        self.assertEqual(class_handle(CLASS_BULK), "0x03/0x0f")
+        self.assertEqual(class_handle(CLASS_VIDEO_CALL), "0x01/0x0f")
+        self.assertEqual(class_handle(CLASS_BULK_DOWNLOAD), "0x04/0x0f")
+        self.assertEqual(class_handle(CLASS_STREAMING), "0x03/0x0f")
+        self.assertEqual(class_handle(CLASS_GAMING), "0x02/0x0f")
         self.assertEqual(class_handle(CLASS_UNCLASSIFIED), "0x00/0x0f")
 
     def test_handle_ignores_confidence_reason_and_lease(self):
         """Two marks differing only in confidence/reason/lease must produce the
         SAME handle, or each combination needs its own filter."""
-        a = class_handle(CLASS_INTERACTIVE)
+        a = class_handle(CLASS_VIDEO_CALL)
         for conf, rsn, lease in ((0.95, REASON_DSCP, 0),
                                  (0.30, REASON_BEHAVIOUR, 0),
                                  (0.70, REASON_CORRECTION, 0)):
-            m = encode(CLASS_INTERACTIVE, confidence=conf, reason=rsn,
+            m = encode(CLASS_VIDEO_CALL, confidence=conf, reason=rsn,
                        lease_id=lease)
-            self.assertEqual(m & CLASS_MASK, CLASS_INTERACTIVE)
+            self.assertEqual(m & CLASS_MASK, CLASS_VIDEO_CALL)
             self.assertEqual(a, "0x01/0x0f")
 
     def test_reserved_class_has_no_handle(self):
         with self.assertRaises(MarkEncodingError):
-            class_handle(7)
+            class_handle(9)
 
 
 class TestRoundTrip(unittest.TestCase):
     def test_exhaustive_over_defined_fields(self):
-        for cid in (CLASS_UNCLASSIFIED, CLASS_INTERACTIVE, CLASS_ADAPTIVE,
-                    CLASS_BULK, CLASS_LEASED):
+        for cid in (CLASS_UNCLASSIFIED, CLASS_VIDEO_CALL, CLASS_STREAMING,
+                    CLASS_BULK_DOWNLOAD, CLASS_LEASED):
             for seen in (True, False):
                 for conf in (0.0, 0.55, 0.9):
                     for rsn in (REASON_NONE, REASON_DSCP, REASON_BEHAVIOUR,

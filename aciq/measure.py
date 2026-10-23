@@ -11,7 +11,7 @@ project ever produced. Two independent causes, both upstream of any arithmetic:
 
 * `MetricsCollector.ingest` stored evaluation data keyed by **workload label**
   (`call`, `tv1`) while `poll` read it back by **class value**
-  (`adaptive_video`). The lookup never matched, so the evaluation branch was
+  (the class value of the day). The lookup never matched, so the evaluation branch was
   dead code and the `0.0` defaults survived.
 * the generators only wrote their summary once, at the end of the run, so there
   was no per-tick series to report even if the lookup had worked.

@@ -851,7 +851,7 @@ class TestComparisonNeedsMeasurements(unittest.TestCase):
         d = _P(tempfile.mkdtemp())
         (d / "s__aciq__adaptive__seed42").mkdir()
         (d / "s__aciq__adaptive__seed42" / "result.json").write_text(
-            '{"samples": [{"per_class": {"realtime_interactive": '
+            '{"samples": [{"per_class": {"video_call_voice": '
             '{"rtt_p95": null}}}]}')
         saved = A.ROOT
         try:

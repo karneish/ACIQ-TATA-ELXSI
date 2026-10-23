@@ -97,11 +97,15 @@ import zlib
 from dataclasses import dataclass, field
 
 from .marks import (
-    CLASS_ADAPTIVE,
-    CLASS_BULK,
-    CLASS_INTERACTIVE,
+    CLASS_BULK_DOWNLOAD,
+    CLASS_CLOUD_BACKUP,
+    CLASS_GAMING,
     CLASS_LEASED,
+    CLASS_SOFTWARE_UPDATE,
+    CLASS_STREAMING,
+    CLASS_UNKNOWN,
     CLASS_UNCLASSIFIED,
+    CLASS_VIDEO_CALL,
     encode,
 )
 from . import tc
@@ -121,8 +125,9 @@ NFT_ELEMENT_TIMEOUT = "120s"
 
 #: Classes that get a steering filter, in priority order. This tuple IS the
 #: ordering, so it must be declared before steer_prio() uses .index().
-MARKED_CLASSES = (CLASS_UNCLASSIFIED, CLASS_INTERACTIVE, CLASS_ADAPTIVE,
-                  CLASS_BULK, CLASS_LEASED)
+MARKED_CLASSES = (CLASS_UNCLASSIFIED, CLASS_VIDEO_CALL, CLASS_GAMING,
+                  CLASS_STREAMING, CLASS_BULK_DOWNLOAD, CLASS_SOFTWARE_UPDATE,
+                  CLASS_CLOUD_BACKUP, CLASS_UNKNOWN, CLASS_LEASED)
 
 #: Steer-filter priority blocks. `tc` evaluates ascending, so these precede the
 #: DSCP-EF fallback at prio 30-31.
@@ -197,9 +202,13 @@ DSCP_FILTER_PRIO = tc.DSCP_FILTER_PRIO
 #: Set name per class id. The unclassified set is what blocks EF promotion.
 SET_NAMES = {
     CLASS_UNCLASSIFIED: "unclassified",
-    CLASS_INTERACTIVE: "interactive",
-    CLASS_ADAPTIVE: "adaptive",
-    CLASS_BULK: "bulk",
+    CLASS_VIDEO_CALL: "video_call",
+    CLASS_GAMING: "gaming",
+    CLASS_STREAMING: "streaming",
+    CLASS_BULK_DOWNLOAD: "bulk_download",
+    CLASS_SOFTWARE_UPDATE: "software_update",
+    CLASS_CLOUD_BACKUP: "cloud_backup",
+    CLASS_UNKNOWN: "unknown",
     CLASS_LEASED: "leased",
 }
 
@@ -208,9 +217,13 @@ SET_NAMES = {
 #: matched first in the nft chain, and nft takes the first match.
 CLASS_PRECEDENCE = (
     CLASS_LEASED,
-    CLASS_INTERACTIVE,
-    CLASS_ADAPTIVE,
-    CLASS_BULK,
+    CLASS_VIDEO_CALL,
+    CLASS_GAMING,
+    CLASS_STREAMING,
+    CLASS_BULK_DOWNLOAD,
+    CLASS_SOFTWARE_UPDATE,
+    CLASS_CLOUD_BACKUP,
+    CLASS_UNKNOWN,
     CLASS_UNCLASSIFIED,
 )
 
@@ -232,20 +245,28 @@ CLASS_PRECEDENCE = (
 #: decided this is unclassified" from "the bridge never touched it". Starting at
 #: CS1 means a matching filter always implies a steering decision.
 CS_DSCP_VALUES = {
-    CLASS_UNCLASSIFIED: 0x08,   # CS1
-    CLASS_INTERACTIVE: 0x10,    # CS2
-    CLASS_ADAPTIVE: 0x18,       # CS3
-    CLASS_BULK: 0x20,           # CS4
-    CLASS_LEASED: 0x28,         # CS5
+    CLASS_UNCLASSIFIED: 0x08,       # CS1
+    CLASS_VIDEO_CALL: 0x10,         # CS2
+    CLASS_GAMING: 0x18,             # CS3
+    CLASS_STREAMING: 0x20,          # CS4
+    CLASS_BULK_DOWNLOAD: 0x28,      # CS5
+    CLASS_SOFTWARE_UPDATE: 0x30,    # CS6
+    CLASS_CLOUD_BACKUP: 0x38,       # CS7
+    CLASS_UNKNOWN: 0x08,            # CS1 (same bucket as unclassified)
+    CLASS_LEASED: 0x10,             # CS2 (same bucket as video_call)
 }
 
 #: DSCP names, for readable command lines. nftables and tc both accept these.
 CS_DSCP_NAMES = {
     CLASS_UNCLASSIFIED: "cs1",
-    CLASS_INTERACTIVE: "cs2",
-    CLASS_ADAPTIVE: "cs3",
-    CLASS_BULK: "cs4",
-    CLASS_LEASED: "cs5",
+    CLASS_VIDEO_CALL: "cs2",
+    CLASS_GAMING: "cs3",
+    CLASS_STREAMING: "cs4",
+    CLASS_BULK_DOWNLOAD: "cs5",
+    CLASS_SOFTWARE_UPDATE: "cs6",
+    CLASS_CLOUD_BACKUP: "cs7",
+    CLASS_UNKNOWN: "cs1",
+    CLASS_LEASED: "cs2",
 }
 
 #: DSCP occupies the top 6 bits of the TOS byte; the low 2 are ECN and must not
@@ -257,9 +278,13 @@ SUPPORTED_PROTOS = frozenset({"tcp", "udp"})
 
 def _traffic_by_class() -> dict:
     return {
-        CLASS_INTERACTIVE: TrafficClass.INTERACTIVE,
-        CLASS_ADAPTIVE: TrafficClass.ADAPTIVE,
-        CLASS_BULK: TrafficClass.BULK,
+        CLASS_VIDEO_CALL: TrafficClass.VIDEO_CALL,
+        CLASS_GAMING: TrafficClass.GAMING,
+        CLASS_STREAMING: TrafficClass.STREAMING,
+        CLASS_BULK_DOWNLOAD: TrafficClass.BULK_DOWNLOAD,
+        CLASS_SOFTWARE_UPDATE: TrafficClass.SOFTWARE_UPDATE,
+        CLASS_CLOUD_BACKUP: TrafficClass.CLOUD_BACKUP,
+        CLASS_UNKNOWN: TrafficClass.UNKNOWN,
         CLASS_LEASED: TrafficClass.LEASED,
     }
 
@@ -587,10 +612,10 @@ def _flowid(class_id: int) -> str:
     eventually disagree after a one-line change to one copy only.
     """
     if class_id == CLASS_UNCLASSIFIED:
-        # Deliberately the DEFAULT class, not a class of its own: the point is
-        # that this flow stops being eligible for EF priority, and 1:30 is
-        # already where all non-EF traffic lands.
-        return tc.CLASS_IDS[TrafficClass.BULK]
+        # Deliberately the DEFAULT class (unknown), not a class of its own:
+        # the point is that this flow stops being eligible for EF priority,
+        # and 1:70 is already where all non-EF, non-steered traffic lands.
+        return tc.CLASS_IDS[TrafficClass.UNKNOWN]
     return tc.CLASS_IDS[_TRAFFIC_BY_CLASS[class_id]]
 
 

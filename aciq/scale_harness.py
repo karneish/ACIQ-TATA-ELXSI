@@ -37,11 +37,11 @@ class ScaleCase:
 
 CASES = [
     ScaleCase("interactive_call", 50, Flow("10.0.1.2", 40000, "203.0.113.9", 5001, "udp"),
-              10, 800, 960000, 960000, 1200, TrafficClass.INTERACTIVE),
+              10, 800, 960000, 960000, 1200, TrafficClass.VIDEO_CALL),
     ScaleCase("video_stream", 100, Flow("10.0.1.10", 0, "198.51.100.5", 443, "tcp"),
-              30, 6000, 18000000, 900000, 3150, TrafficClass.ADAPTIVE),
-    ScaleCase("bulk_transfer", 500, Flow("10.0.2.3", 0, "203.0.113.50", 873, "tcp"),
-              60, 200000, 3000000000, 400000, 15000, TrafficClass.BULK),
+              30, 6000, 18000000, 900000, 3150, TrafficClass.STREAMING),
+    ScaleCase("bulk_download", 500, Flow("10.0.2.3", 0, "203.0.113.50", 873, "tcp"),
+              60, 200000, 3000000000, 400000, 15000, TrafficClass.BULK_DOWNLOAD),
 ]
 
 

@@ -325,11 +325,15 @@ bmark () {  # bmark <src> <dst> <proto> <dport> <class>
 import sys
 sys.path.insert(0, "..")
 from aciq.bridge import Bridge, FlowKey
-from aciq.marks import (CLASS_UNCLASSIFIED, CLASS_INTERACTIVE, CLASS_ADAPTIVE,
-                        CLASS_BULK, CLASS_LEASED)
+from aciq.marks import (CLASS_UNCLASSIFIED, CLASS_VIDEO_CALL, CLASS_GAMING,
+                        CLASS_STREAMING, CLASS_BULK_DOWNLOAD, CLASS_LEASED)
 src, dst, proto, dport, cls = sys.argv[1:6]
-ids = {"unclassified": CLASS_UNCLASSIFIED, "interactive": CLASS_INTERACTIVE,
-       "adaptive": CLASS_ADAPTIVE, "bulk": CLASS_BULK, "leased": CLASS_LEASED}
+# Class names follow the 7-class TrafficClass enum. 1:20 in this gate's
+# hand-rolled tree now corresponds to CLASS_GAMING (mark id 2 -> flowid 1:20,
+# the same kernel path the legacy ADAPTIVE marks exercised).
+ids = {"unclassified": CLASS_UNCLASSIFIED, "video_call": CLASS_VIDEO_CALL,
+       "gaming": CLASS_GAMING, "streaming": CLASS_STREAMING,
+       "bulk": CLASS_BULK_DOWNLOAD, "leased": CLASS_LEASED}
 b = Bridge(dev="veth-lan", in_if="veth-wan", ns="router")
 b.mark(FlowKey(src, dst, proto, int(dport)), ids[cls])
 print("steered", src, dst, proto, dport, "->", cls)
@@ -434,7 +438,7 @@ ok "check 15: per-flow flower filters install"
 # transmitted carrying it; a per-flow filter matches the flow key directly.
 # See testbed/bridge_isolate.sh tests J and K.
 A20=$(cbytes 1:20); A30=$(cbytes 1:30)
-bmark 203.0.113.2 10.0.1.2 udp 7001 adaptive || die "check 16: steering failed"
+bmark 203.0.113.2 10.0.1.2 udp 7001 gaming || die "check 16: steering failed"
 send 10.0.1.2 7001 1000 0 60 203.0.113.2
 sleep 1
 B20=$(cbytes 1:20); B30=$(cbytes 1:30)
@@ -443,10 +447,10 @@ echo "--- the filter that was installed ---"
 $R tc filter show dev "$EGR_IF" parent 1: | grep -E 'pref 5 |src_ip|dst_ip|dst_port' \
   | sed 's/^/  /'
 awk -v a="$A20" -v b="$B20" 'BEGIN{exit !(b+0 > a+0 + 20000)}' \
-  && ok "check 16: steered IPv4 flow routed to 1:20 -- ADAPTIVE receives traffic" \
+  && ok "check 16: steered IPv4 flow routed to 1:20 -- GAMING receives traffic" \
   || die "check 16: 1:20 did not grow ($A20 -> $B20). This is the first check that
-ADAPTIVE has ever received anything: adaptive_video reported goodput 0.0 in every
-v0 sample because nothing routed to class 1:20."
+the 1:20 class ever receives anything: in v0, class 1:20 came up empty in every
+sample because nothing routed there."
 
 # ---------- 17 a rejected EF-claiming flow does not reach 1:10 ----------
 # The classifier must be able to deny EF priority to a flow that claims it. The
@@ -464,7 +468,7 @@ awk -v a="$C10" -v b="$D10" 'BEGIN{exit !(b+0 <= a+0 + 2000)}' \
 
 # ---------- 18 steered IPv6 flow reaches its class ----------
 A20=$(cbytes 1:20)
-bmark fd00:2::2 fd00:1::2 udp 7003 adaptive || die "check 18: steering failed"
+bmark fd00:2::2 fd00:1::2 udp 7003 gaming || die "check 18: steering failed"
 send6 fd00:1::2 7003 1000 60 fd00:2::2
 sleep 1
 B20=$(cbytes 1:20)

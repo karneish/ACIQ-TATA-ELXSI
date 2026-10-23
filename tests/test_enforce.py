@@ -102,7 +102,7 @@ class TestTreeRendering(unittest.TestCase):
 
     def test_no_filters_without_interactive(self):
         tree = build_tree(RatePlan(capacity_mbps=CAP,
-                                   rates={TrafficClass.BULK: 10.0}))
+                                   rates={TrafficClass.BULK_DOWNLOAD: 10.0}))
         self.assertEqual(tree.filters, ())
 
     def test_leaf_args_accepts_string_or_tuple(self):
@@ -171,7 +171,9 @@ class TestVerification(unittest.TestCase):
         """A reader that cannot see rates is a weaker guarantee, not a wrong
         rate. It must not veto, and it must not read as a clean pass."""
         tree = build_tree(plan())
-        state = {c: ClassState(classid=c) for c in ("1:1", "1:10", "1:20", "1:30")}
+        state = {c: ClassState(classid=c) for c in
+                 ("1:1", "1:10", "1:20", "1:25", "1:30", "1:50", "1:60",
+                  "1:70", "1:80")}
         parsed = parse_class_state(state)
         unverifiable = unverified_fields(tree, parsed)
         self.assertEqual(verify(tree, parsed, unverifiable), [])
@@ -185,7 +187,7 @@ class TestVerification(unittest.TestCase):
 class TestShieldVetoes(unittest.TestCase):
     def test_oversubscribed_plan_vetoed(self):
         bad = RatePlan(capacity_mbps=10.0,
-                       rates={TrafficClass.INTERACTIVE: 8.0, TrafficClass.BULK: 8.0})
+                       rates={TrafficClass.VIDEO_CALL: 8.0, TrafficClass.BULK_DOWNLOAD: 8.0})
         codes = [v.code for v in Shield().veto_plan(bad)]
         self.assertIn("child_sum_exceeds_capacity", codes)
 
@@ -193,7 +195,7 @@ class TestShieldVetoes(unittest.TestCase):
         self.assertEqual(Shield().veto_plan(plan()), [])
 
     def test_below_floor_vetoed(self):
-        bad = RatePlan(capacity_mbps=100.0, rates={TrafficClass.BULK: 0.1})
+        bad = RatePlan(capacity_mbps=100.0, rates={TrafficClass.BULK_DOWNLOAD: 0.1})
         self.assertIn("below_floor", [v.code for v in Shield().veto_plan(bad)])
 
     def test_degraded_plan_is_not_vetoed_forever(self):
@@ -436,7 +438,7 @@ class TestTransaction(unittest.TestCase):
 
     def test_vetoed_plan_never_touches_the_kernel(self):
         bad = RatePlan(capacity_mbps=10.0,
-                       rates={TrafficClass.INTERACTIVE: 8.0, TrafficClass.BULK: 8.0})
+                       rates={TrafficClass.VIDEO_CALL: 8.0, TrafficClass.BULK_DOWNLOAD: 8.0})
         r = FakeRunner()
         out = self._tm(r).apply(bad)
         self.assertFalse(out.ok)
@@ -450,7 +452,7 @@ class TestTransaction(unittest.TestCase):
 
     def test_audit_records_veto(self):
         bad = RatePlan(capacity_mbps=10.0,
-                       rates={TrafficClass.INTERACTIVE: 8.0, TrafficClass.BULK: 8.0})
+                       rates={TrafficClass.VIDEO_CALL: 8.0, TrafficClass.BULK_DOWNLOAD: 8.0})
         tm = self._tm(FakeRunner())
         tm.apply(bad)
         self.assertEqual(tm.audit[-1]["event"], "vetoed")

@@ -59,7 +59,7 @@ class Case:
 
 def _f(src="203.0.113.4", sport=5000, dport=443, proto="udp",
        dscp=None, rx=0, tx=0, pkts=0, age=5.0, avg=0.0,
-       burst=0.0, duty=0.0, correction=None) -> FlowFeatures:
+       burst=None, duty=0.0, correction=None) -> FlowFeatures:
     return FlowFeatures(Flow(src, sport, "10.0.1.2", dport, proto),
                         dscp=dscp, rx_bytes=rx, tx_bytes=tx, packets=pkts,
                         age_s=age, avg_packet_bytes=avg, burstiness=burst,
@@ -79,48 +79,56 @@ def cases() -> list[Case]:
     # the port-path cases never exercised the port path, and the call cases
     # matched no generator in the project.
     A(Case("call: EF, small, frequent, bidirectional",
-           TrafficClass.INTERACTIVE,
+           TrafficClass.VIDEO_CALL,
            _f(sport=40000, dport=5001, dscp=46, rx=240_000, tx=240_000,
               pkts=200, age=5, avg=1200, burst=0.05, duty=0.5),
            "the case the rules were written for; dport 5001 is call.py"))
     A(Case("call: EF, steady, one-way-heavy",
-           TrafficClass.INTERACTIVE,
+           TrafficClass.VIDEO_CALL,
            _f(sport=40000, dport=5001, dscp=46, rx=600_000, tx=180_000,
               pkts=500, age=8, avg=1200, burst=0.02, duty=0.3),
            "interactive does not need equal directions"))
     A(Case("interactive: RTP ports, no EF claim",
-           TrafficClass.INTERACTIVE,
+           TrafficClass.VIDEO_CALL,
            _f(sport=40000, dport=3478, rx=300_000, tx=300_000,
               pkts=250, age=6, avg=1200, burst=0.05, duty=0.5),
            "well-known signalling port as dport, no DSCP"))
     A(Case("interactive: STUN 3478, unidirectional",
-           TrafficClass.INTERACTIVE,
+           TrafficClass.VIDEO_CALL,
            _f(sport=40001, dport=3478, rx=90_000, tx=10_000,
               pkts=90, age=6, avg=1000, burst=0.3, duty=0.2),
            "must classify on the port, not on symmetry"))
     # game.py: 30 pps * 128 B payload -> 156 B IP datagrams, 0.075 Mbps. Low
     # rate and small packets, exactly the shape the interactive rule is for.
     A(Case("game: 30 pps, 128-byte datagrams, bidirectional",
-           TrafficClass.INTERACTIVE,
+           TrafficClass.VIDEO_CALL,
            _f(sport=40002, dport=5002, rx=23_400, tx=23_400,
               pkts=150, age=5, avg=156, burst=0.1, duty=1.0),
            "generator that had no case at all; dport 5002 is game.py"))
 
     # ---- true adaptive video --------------------------------------------
     A(Case("video: sustained, large, few bytes per packet",
-           TrafficClass.ADAPTIVE,
+           TrafficClass.STREAMING,
            _f(sport=0, dport=443, proto="tcp", rx=9_000_000, tx=400_000,
-              pkts=3000, age=20, avg=3000, burst=0.1, duty=0.9),
-           "high rate, low interactivity"))
+              pkts=3000, age=20, avg=3000, burst=0.47, duty=0.9),
+           "high rate, low interactivity; 0.47 is the video generator's "
+           "measured chunkiness, which is what separates a stream from a "
+           "smooth constant-rate update"))
+    A(Case("software_update: smooth constant-rate tcp, mid rate",
+           TrafficClass.SOFTWARE_UPDATE,
+           _f(sport=0, dport=873, proto="tcp", rx=6_000_000, tx=90_000,
+              pkts=2600, age=20, avg=2100, burst=0.08, duty=1.0),
+           "known-smooth mid-rate upload: an update or OS patch shape, "
+           "NOT streaming, so this asserts the burstiness split"))
     A(Case("video: over TLS port, no marks",
-           TrafficClass.ADAPTIVE,
+           TrafficClass.STREAMING,
            _f(sport=0, dport=443, proto="tcp", rx=14_000_000, tx=500_000,
-              pkts=4000, age=25, avg=3500, burst=0.15, duty=0.85),
+              pkts=4000, age=25, avg=3500, burst=0.47, duty=0.85),
            "443 is not identity, but it is not nothing either"))
     A(Case("video: ramping (ABR ladder)",
-           TrafficClass.ADAPTIVE,
+           TrafficClass.STREAMING,
            _f(sport=0, dport=443, proto="tcp", rx=4_000_000, tx=150_000,
-              pkts=1400, age=15, avg=2800, burst=0.2, duty=0.7),
+              pkts=1400, age=15, avg=2800, burst=0.42, duty=0.7),
            "mid-ramp rate, still clearly a stream"))
 
     # ---- true bulk -------------------------------------------------------
@@ -131,29 +139,30 @@ def cases() -> list[Case]:
     # correctly called it adaptive. The "failure" was the fixture, not the rule;
     # a bulk case at a stated capacity must actually hog that capacity.
     A(Case("bulk: sustained one-way, very large packets",
-           TrafficClass.BULK,
+           TrafficClass.BULK_DOWNLOAD,
            _f(sport=0, dport=873, proto="tcp", rx=300_000_000, tx=200_000,
               pkts=60_000, age=30, avg=15000, burst=0.05, duty=0.99),
            "classic bulk: 300 MB/30 s = 80 Mbps, bulk at 100 and 10 Mbps"))
     A(Case("bulk: large on an encrypted port, no marks",
-           TrafficClass.BULK,
+           TrafficClass.BULK_DOWNLOAD,
            _f(sport=0, dport=443, proto="tcp", rx=400_000_000, tx=100_000,
               pkts=80_000, age=30, avg=15000, burst=0.02, duty=0.99),
            "must use rate, not the port table"))
 
     # ---- adversarial: misleading signals ---------------------------------
     A(Case("ADVERSARIAL bulk claiming EF",
-           TrafficClass.BULK,
+           TrafficClass.BULK_DOWNLOAD,
            _f(sport=0, dport=443, proto="tcp", dscp=46, rx=350_000_000,
               tx=120_000, pkts=70_000, age=30, avg=15000, burst=0.02, duty=0.99),
            "the EF claim must lose to the behaviour"))
     A(Case("ADVERSARIAL video claiming EF on a small pipe",
-           TrafficClass.ADAPTIVE,
+           TrafficClass.STREAMING,
            _f(sport=0, dport=443, proto="tcp", dscp=46, rx=6_000_000,
-              tx=200_000, pkts=2000, age=20, avg=3000, burst=0.15, duty=0.8),
-           "EF but video-shaped"))
+              tx=200_000, pkts=2000, age=20, avg=3000, burst=0.45, duty=0.8),
+           "a chunky stream whose mark was refused: it must still land in "
+           "streaming on its rate/burst behaviour, NOT be demoted"))
     A(Case("ADVERSARIAL interactive on a bulk port",
-           TrafficClass.INTERACTIVE,
+           TrafficClass.VIDEO_CALL,
            _f(sport=40000, dport=873, rx=120_000, tx=120_000,
               pkts=120, age=5, avg=1000, burst=0.4, duty=0.4),
            "port table must not override behaviour; 40000 is the client side"))
@@ -177,9 +186,9 @@ def cases() -> list[Case]:
     # precisely to override what the rate would have said. An earlier version of
     # this file labelled it BULK and then counted the override as an error.
     A(Case("correction overrides what the rate would say",
-           TrafficClass.ADAPTIVE,
+           TrafficClass.STREAMING,
            _f(sport=0, dport=443, proto="tcp", rx=90_000_000, tx=100_000,
-              pkts=25_000, age=30, avg=15000, correction=TrafficClass.ADAPTIVE),
+              pkts=25_000, age=30, avg=15000, correction=TrafficClass.STREAMING),
            "an operator correction must win, and be marked tier X"))
     return c
 
@@ -207,38 +216,38 @@ def independent_cases() -> list[Case]:
 
     # --- protocol x port coverage, IPv4 ---
     A(Case("dns: udp/53, tiny query, bidirectional",
-           TrafficClass.INTERACTIVE,
+           TrafficClass.VIDEO_CALL,
            _f(sport=53000, dport=53, proto="udp", rx=4_000, tx=4_000,
               pkts=40, age=4, avg=100, duty=0.3),
            "DNS is small and bursty; must not be forced to bulk"))
     A(Case("https: tcp/443 sustained, mid rate",
-           TrafficClass.ADAPTIVE,
+           TrafficClass.STREAMING,
            _f(sport=44000, dport=443, proto="tcp", rx=5_000_000, tx=300_000,
               pkts=1600, age=18, avg=3300, duty=0.8),
            "https range, steady"))
     A(Case("nonstandard port: bulk by behaviour, not by port",
-           TrafficClass.BULK,
+           TrafficClass.BULK_DOWNLOAD,
            _f(sport=55000, dport=6000, proto="tcp", rx=300_000_000, tx=150_000,
               pkts=60_000, age=30, avg=15000, duty=0.99),
            "port 6000 is in no table; the rate must decide. 300 MB over 30 s "
            "is 80 Mbps, which is >=0.5 of a 100 Mbps link AND >=0.5 of a "
            "10 Mbps link, so it is bulk at either capacity"))
     A(Case("nonstandard port: call by behaviour, not by port",
-           TrafficClass.INTERACTIVE,
+           TrafficClass.VIDEO_CALL,
            _f(sport=40000, dport=7000, proto="udp", rx=200_000, tx=200_000,
               pkts=180, age=5, avg=1200, duty=0.5),
            "must classify on shape, not on a known port"))
 
     # --- address family: IPv6 uses the same rules, different literal ---
     A(Case("ipv6 call: EF, small, bidirectional",
-           TrafficClass.INTERACTIVE,
+           TrafficClass.VIDEO_CALL,
            FlowFeatures(Flow("fd00::9", 40000, V6, 5001, "udp"),
                         dscp=46, rx_bytes=240_000, tx_bytes=240_000,
                         packets=200, age_s=5, avg_packet_bytes=1200,
                         duty_cycle=0.5),
            "address family must not change the verdict"))
     A(Case("ipv6 video: sustained tcp/443",
-           TrafficClass.ADAPTIVE,
+           TrafficClass.STREAMING,
            FlowFeatures(Flow("fd00::9", 0, V6, 443, "tcp"),
                         rx_bytes=8_000_000, tx_bytes=350_000, packets=2600,
                         age_s=20, avg_packet_bytes=3000, duty_cycle=0.85),
@@ -246,7 +255,7 @@ def independent_cases() -> list[Case]:
 
     # --- concurrent flows are evaluated one at a time; identity must not merge ---
     A(Case("concurrent: one of two distinct bulk flows",
-           TrafficClass.BULK,
+           TrafficClass.BULK_DOWNLOAD,
            _f(sport=56000, dport=7001, proto="tcp", rx=250_000_000, tx=100_000,
               pkts=50_000, age=25, avg=15000, duty=0.99),
            "two flows on the same class must be scored separately"))
@@ -271,13 +280,13 @@ def independent_cases() -> list[Case]:
     # capacity this label is asserted at, and `evaluate()` compares it only
     # there. At the other capacity the case is skipped, not failed.
     A(Case("capacity-relative: 16 Mbps sustained TCP is bulk at 10 Mbps",
-           TrafficClass.BULK,
+           TrafficClass.BULK_DOWNLOAD,
            _f(sport=57000, dport=6100, proto="tcp", rx=60_000_000, tx=100_000,
               pkts=45_000, age=30, avg=1300, duty=0.9),
            "16 Mbps is >=0.5 of 10 Mbps but <0.5 of 100 Mbps",
            rate_relative_to=10.0))
     A(Case("capacity-relative: 16 Mbps sustained TCP is adaptive at 100 Mbps",
-           TrafficClass.ADAPTIVE,
+           TrafficClass.STREAMING,
            _f(sport=57000, dport=6100, proto="tcp", rx=60_000_000, tx=100_000,
               pkts=45_000, age=30, avg=1300, duty=0.9),
            "the same volume, a wider link",
@@ -285,7 +294,7 @@ def independent_cases() -> list[Case]:
 
     # --- address family, bulk shape over IPv6 ---
     A(Case("ipv6 bulk: sustained, unidirectional",
-           TrafficClass.BULK,
+           TrafficClass.BULK_DOWNLOAD,
            FlowFeatures(Flow("fd00::9", 58000, V6, 6200, "tcp"),
                         rx_bytes=250_000_000, tx_bytes=120_000, packets=60_000,
                         age_s=30, avg_packet_bytes=4000, duty_cycle=0.98),
@@ -296,7 +305,7 @@ def independent_cases() -> list[Case]:
     # acceptable: the case is scored as correct if it abstains OR says
     # interactive, and only a confident non-interactive verdict fails.
     A(Case("dns/tcp: tiny query must not be confidently bulk",
-           TrafficClass.INTERACTIVE,
+           TrafficClass.VIDEO_CALL,
            _f(sport=53001, dport=53, proto="tcp", rx=6_000, tx=6_000,
               pkts=40, age=4, avg=150, duty=0.3),
            "truth accepts abstention; a confident bulk verdict is the error",
@@ -379,7 +388,8 @@ def evaluate(corpus: str = "constructed", capacity_mbps: float = 100.0) -> dict:
     # off TrafficClass would include a class no case exercises; driving it off
     # the truth labels keeps the matrix to what was actually tested.
     classes = sorted({r["truth"] for r in labelled})
-    pred_labels = sorted(classes + [ABSTAIN])
+    got_labels = {r["got"] for r in labelled if r["got"] is not None}
+    pred_labels = sorted(set(classes) | got_labels | {ABSTAIN})
 
     # Confusion matrix: truth (rows) x prediction (cols), with "abstain" as a
     # column so a case that should have been classed but was not is visible

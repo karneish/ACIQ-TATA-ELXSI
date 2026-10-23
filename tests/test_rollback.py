@@ -460,7 +460,9 @@ class TestVacuousVerification(unittest.TestCase):
     """
 
     NO_RATE_READBACK = json.dumps(
-        [{"kind": "htb", "handle": h} for h in ("1:1", "1:10", "1:20", "1:30")])
+        [{"kind": "htb", "handle": h} for h in ("1:1", "1:10", "1:20", "1:25",
+                                               "1:30", "1:50", "1:60", "1:70",
+                                               "1:80")])
 
     def _refused_apply(self):
         """Apply a plan under a reader that shows classes but no rates."""

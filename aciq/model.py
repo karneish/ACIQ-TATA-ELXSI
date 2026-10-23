@@ -11,20 +11,40 @@ from enum import Enum
 
 
 class TrafficClass(str, Enum):
-    """The three traffic classes. Mapped onto HTB classes in the testbed."""
+    """The seven traffic classes plus the leased overlay.
 
-    INTERACTIVE = "realtime_interactive"
-    ADAPTIVE = "adaptive_video"
-    BULK = "bulk_transfer"
-    #: created on demand, one per active lease
+    Values are the class names used in policies, correction records, dashboards
+    and reports. Mapped onto HTB classes in `aciq.tc.CLASS_IDS`.
+    """
+
+    VIDEO_CALL = "video_call_voice"
+    GAMING = "interactive_gaming"
+    STREAMING = "adaptive_video_streaming"
+    BULK_DOWNLOAD = "bulk_download"
+    SOFTWARE_UPDATE = "software_update"
+    CLOUD_BACKUP = "cloud_backup"
+    UNKNOWN = "unknown"
+    #: policy overlay only, never a classifier outcome
     LEASED = "leased_flow"
 
 
+#: Classes a user may correct a flow into (everything except the overlay).
+CORRECTABLE_CLASSES = tuple(
+    c for c in TrafficClass if c is not TrafficClass.LEASED
+)
+
+#: Classes whose flows a classifier can produce (not the overlay either).
+CLASSIFIER_CLASSES = CORRECTABLE_CLASSES
+
 #: Base weights from the plan. A lease borrows a bounded slice of these.
 BASE_WEIGHTS: dict[TrafficClass, float] = {
-    TrafficClass.INTERACTIVE: 8.0,
-    TrafficClass.ADAPTIVE: 4.0,
-    TrafficClass.BULK: 2.0,
+    TrafficClass.VIDEO_CALL: 9.0,
+    TrafficClass.GAMING: 8.0,
+    TrafficClass.STREAMING: 4.0,
+    TrafficClass.BULK_DOWNLOAD: 3.0,
+    TrafficClass.SOFTWARE_UPDATE: 2.0,
+    TrafficClass.CLOUD_BACKUP: 1.5,
+    TrafficClass.UNKNOWN: 1.0,
 }
 
 

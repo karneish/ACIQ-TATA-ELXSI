@@ -83,9 +83,9 @@ class TestMeasuredBasis(unittest.TestCase):
                                  flow=Flow("10.0.1.2", 1, "1.1.1.1", 443, "tcp")))
         bulks = classify(mature(mbps=88.14,
                                 flow=Flow("10.0.1.2", 1, "1.1.1.1", 443, "tcp")))
-        self.assertEqual(calls.cls, TrafficClass.INTERACTIVE)
-        self.assertEqual(videos.cls, TrafficClass.ADAPTIVE)
-        self.assertEqual(bulks.cls, TrafficClass.BULK)
+        self.assertEqual(calls.cls, TrafficClass.VIDEO_CALL)
+        self.assertEqual(videos.cls, TrafficClass.STREAMING)
+        self.assertEqual(bulks.cls, TrafficClass.BULK_DOWNLOAD)
 
 
 class TestAdaptiveIsNowEmitted(unittest.TestCase):
@@ -94,17 +94,17 @@ class TestAdaptiveIsNowEmitted(unittest.TestCase):
     def test_steady_tcp_below_bulk_threshold_is_adaptive(self):
         f = mature(mbps=4.69, flow=Flow("10.0.1.2", 1, "1.1.1.1", 443, "tcp"))
         c = classify(f)
-        self.assertEqual(c.cls, TrafficClass.ADAPTIVE)
+        self.assertEqual(c.cls, TrafficClass.STREAMING)
         self.assertEqual(c.tier, "B")
 
     def test_saturating_flow_is_bulk_not_adaptive(self):
         f = mature(mbps=88.14, flow=Flow("10.0.1.2", 1, "1.1.1.1", 443, "tcp"))
-        self.assertEqual(classify(f).cls, TrafficClass.BULK)
+        self.assertEqual(classify(f).cls, TrafficClass.BULK_DOWNLOAD)
 
     def test_very_low_rate_tcp_is_not_adaptive(self):
         """Below the absolute floor: too small to be a stream."""
         f = mature(mbps=0.4, flow=Flow("10.0.1.2", 1, "1.1.1.1", 443, "tcp"))
-        self.assertNotEqual(classify(f).cls, TrafficClass.ADAPTIVE)
+        self.assertNotEqual(classify(f).cls, TrafficClass.STREAMING)
 
 
 class TestCapacityRelativeThresholds(unittest.TestCase):
@@ -115,19 +115,19 @@ class TestCapacityRelativeThresholds(unittest.TestCase):
         # 30 Mbps is bulk on a 40 Mbps link, adaptive on a 100 Mbps link
         self.assertEqual(
             classify(mature(mbps=30, flow=flow), capacity_mbps=40.0).cls,
-            TrafficClass.BULK)
+            TrafficClass.BULK_DOWNLOAD)
         self.assertEqual(
             classify(mature(mbps=30, flow=flow), capacity_mbps=100.0).cls,
-            TrafficClass.ADAPTIVE)
+            TrafficClass.STREAMING)
 
     def test_fraction_boundaries(self):
         flow = Flow("10.0.1.2", 1, "1.1.1.1", 443, "tcp")
         at_bulk = BULK_MIN_CAPACITY_FRAC * CAP
         self.assertEqual(classify(mature(mbps=at_bulk, flow=flow)).cls,
-                         TrafficClass.BULK)
+                         TrafficClass.BULK_DOWNLOAD)
         just_under = BULK_MIN_CAPACITY_FRAC * CAP - 0.01
         self.assertEqual(classify(mature(mbps=just_under, flow=flow)).cls,
-                         TrafficClass.ADAPTIVE)
+                         TrafficClass.STREAMING)
 
     def test_zero_capacity_does_not_crash(self):
         f = mature(mbps=10, flow=Flow("10.0.1.2", 1, "1.1.1.1", 443, "tcp"))
@@ -142,8 +142,8 @@ class TestCapacityRelativeThresholds(unittest.TestCase):
         speed.
         """
         cases = [
-            ("call", 0.09, "udp", 3478, TrafficClass.INTERACTIVE),
-            ("video", 4.69, "tcp", 443, TrafficClass.ADAPTIVE),
+            ("call", 0.09, "udp", 3478, TrafficClass.VIDEO_CALL),
+            ("video", 4.69, "tcp", 443, TrafficClass.STREAMING),
         ]
         for name, mbps, proto, dport, expect in cases:
             for cap in (10.0, 100.0, 1000.0):
@@ -159,24 +159,24 @@ class TestCapacityRelativeThresholds(unittest.TestCase):
         flow = Flow("10.0.1.2", 50000, "203.0.113.2", 443, "tcp")
         self.assertEqual(classify(mature(mbps=88.14, flow=flow),
                                   capacity_mbps=100.0).cls,
-                         TrafficClass.BULK)
+                         TrafficClass.BULK_DOWNLOAD)
         self.assertEqual(classify(mature(mbps=88.14, flow=flow),
                                   capacity_mbps=1000.0).cls,
-                         TrafficClass.ADAPTIVE)
+                         TrafficClass.STREAMING)
 
     def test_bulk_threshold_is_relative_adaptive_is_absolute(self):
         flow = Flow("10.0.1.2", 1, "1.1.1.1", 443, "tcp")
         # 300 Mbps: adaptive on 1 Gbps, bulk on a 1 Gbps->no, on 500 Mbps link
         self.assertEqual(classify(mature(mbps=300, flow=flow),
                                   capacity_mbps=1000.0).cls,
-                         TrafficClass.ADAPTIVE)
+                         TrafficClass.STREAMING)
         self.assertEqual(classify(mature(mbps=300, flow=flow),
                                   capacity_mbps=500.0).cls,
-                         TrafficClass.BULK)
+                         TrafficClass.BULK_DOWNLOAD)
         # a 0.4 Mbps stream is below the absolute floor at any capacity
         self.assertNotEqual(classify(mature(mbps=0.4, flow=flow),
                                      capacity_mbps=1000.0).cls,
-                            TrafficClass.ADAPTIVE)
+                            TrafficClass.STREAMING)
 
 
 class TestVideoCallNotBroken(unittest.TestCase):
@@ -186,12 +186,12 @@ class TestVideoCallNotBroken(unittest.TestCase):
     def test_large_packet_video_call_is_interactive_when_marked(self):
         f = mature(dscp=DSCP_EF, avg_packet_bytes=1400, mbps=2.0)
         c = classify(f)
-        self.assertEqual(c.cls, TrafficClass.INTERACTIVE)
+        self.assertEqual(c.cls, TrafficClass.VIDEO_CALL)
 
     def test_large_packet_interactive_udp_qualifies(self):
         f = mature(flow=Flow("10.0.1.2", 1, "1.1.1.1", 40000, "udp"),
                    avg_packet_bytes=1400, mbps=2.0)
-        self.assertEqual(classify(f).cls, TrafficClass.INTERACTIVE)
+        self.assertEqual(classify(f).cls, TrafficClass.VIDEO_CALL)
 
     def test_upper_bound_is_mtu_sized_not_600(self):
         self.assertGreater(INTERACTIVE_MAX_AVG_PACKET, 1300)
@@ -210,7 +210,7 @@ class TestDscpConflictJudgedOnRate(unittest.TestCase):
         """The actual evasion: set one DSCP byte on a torrent and inherit
         interactive weight. Must NOT come back INTERACTIVE."""
         c = classify(mature(dscp=DSCP_EF, avg_packet_bytes=1400, mbps=90.0))
-        self.assertEqual(c.cls, TrafficClass.BULK)
+        self.assertEqual(c.cls, TrafficClass.BULK_DOWNLOAD)
         self.assertIn("conflict", c.evidence)
 
     def test_fast_conflict_survives_finalise(self):
@@ -219,7 +219,7 @@ class TestDscpConflictJudgedOnRate(unittest.TestCase):
         not decay to UNCLASSIFIED and lose its class."""
         c = finalise(classify(mature(dscp=DSCP_EF, avg_packet_bytes=1400,
                                       mbps=90.0)))
-        self.assertEqual(c.cls, TrafficClass.BULK)
+        self.assertEqual(c.cls, TrafficClass.BULK_DOWNLOAD)
 
     def test_fast_conflict_still_decays_trust(self):
         """Even though confidence holds, the source is believed less next time."""
@@ -232,29 +232,29 @@ class TestDscpConflictJudgedOnRate(unittest.TestCase):
         """Regression guard for the measured 0.09 Mbps call. An earlier 2%-of-
         capacity rule wrongly flagged this as a conflict."""
         c = classify(mature(dscp=DSCP_EF, avg_packet_bytes=200, mbps=0.09))
-        self.assertEqual(c.cls, TrafficClass.INTERACTIVE)
+        self.assertEqual(c.cls, TrafficClass.VIDEO_CALL)
 
     def test_legitimate_video_call_rate_is_interactive(self):
         c = classify(mature(dscp=DSCP_EF, avg_packet_bytes=1400, mbps=2.0))
-        self.assertEqual(c.cls, TrafficClass.INTERACTIVE)
+        self.assertEqual(c.cls, TrafficClass.VIDEO_CALL)
 
     def test_slow_floor_is_absolute_not_capacity_relative(self):
         """A call's rate does not scale with link speed, so neither may the floor."""
         slow = mature(dscp=DSCP_EF, avg_packet_bytes=200, mbps=0.09)
         self.assertEqual(classify(slow, capacity_mbps=100.0).cls,
-                         TrafficClass.INTERACTIVE)
+                         TrafficClass.VIDEO_CALL)
         self.assertEqual(classify(slow, capacity_mbps=1000.0).cls,
-                         TrafficClass.INTERACTIVE)
+                         TrafficClass.VIDEO_CALL)
         self.assertEqual(classify(slow, capacity_mbps=10.0).cls,
-                         TrafficClass.INTERACTIVE)
+                         TrafficClass.VIDEO_CALL)
 
     def test_fast_conflict_is_capacity_relative(self):
         """Saturation IS relative: 90 Mbps is fine on a gigabit link."""
         f = mature(dscp=DSCP_EF, avg_packet_bytes=1400, mbps=90.0)
         self.assertEqual(classify(f, capacity_mbps=100.0).cls,
-                         TrafficClass.BULK)
+                         TrafficClass.BULK_DOWNLOAD)
         self.assertEqual(classify(f, capacity_mbps=1000.0).cls,
-                         TrafficClass.INTERACTIVE)
+                         TrafficClass.VIDEO_CALL)
 
     def test_conflict_thresholds(self):
         self.assertAlmostEqual(EF_SLOW_CONFLICT_MBPS, 0.010)
@@ -267,7 +267,7 @@ class TestDscpConflictJudgedOnRate(unittest.TestCase):
         f = feats(dscp=DSCP_EF, avg_packet_bytes=200, packets=2, age_s=0.1,
                   rx_bytes=100)
         c = classify(f)
-        self.assertEqual(c.cls, TrafficClass.INTERACTIVE)
+        self.assertEqual(c.cls, TrafficClass.VIDEO_CALL)
 
 
 class TestTrustDecay(unittest.TestCase):
@@ -331,16 +331,16 @@ class TestUserCorrection(unittest.TestCase):
 
     def test_correction_overrides_inference(self):
         f = mature(mbps=88.14, flow=Flow("10.0.1.2", 1, "1.1.1.1", 443, "tcp"),
-                   correction=TrafficClass.INTERACTIVE)
+                   correction=TrafficClass.VIDEO_CALL)
         c = classify(f)
-        self.assertEqual(c.cls, TrafficClass.INTERACTIVE)
+        self.assertEqual(c.cls, TrafficClass.VIDEO_CALL)
         self.assertEqual(c.confidence, 1.0)
         self.assertEqual(c.tier, "X")
 
     def test_correction_overrides_a_udf443_guess(self):
         f = mature(flow=Flow("10.0.1.2", 1, "1.1.1.1", 443, "udp"),
-                   correction=TrafficClass.INTERACTIVE, avg_packet_bytes=800)
-        self.assertEqual(classify(f).cls, TrafficClass.INTERACTIVE)
+                   correction=TrafficClass.VIDEO_CALL, avg_packet_bytes=800)
+        self.assertEqual(classify(f).cls, TrafficClass.VIDEO_CALL)
 
 
 class TestImmatureFlows(unittest.TestCase):
@@ -380,19 +380,19 @@ class TestHonestGaps(unittest.TestCase):
         """RTP media is what the heuristic is actually for."""
         f = mature(flow=Flow("10.0.1.2", 1, "1.1.1.1", 5004, "udp"),
                    avg_packet_bytes=800, mbps=2.0)
-        self.assertEqual(classify(f).cls, TrafficClass.INTERACTIVE)
+        self.assertEqual(classify(f).cls, TrafficClass.VIDEO_CALL)
 
     def test_finalise_demotes_below_threshold(self):
         """A class below MIN_CONFIDENCE must never reach enforcement."""
-        c = Classification(flow=CALL, cls=TrafficClass.INTERACTIVE,
+        c = Classification(flow=CALL, cls=TrafficClass.VIDEO_CALL,
                            confidence=0.3, tier="B", evidence="weak")
-        self.assertIsNone(finalise(c).cls)
+        self.assertEqual(finalise(c).cls, TrafficClass.UNKNOWN)
         self.assertIn(f"below {MIN_CONFIDENCE}", finalise(c).evidence)
 
     def test_finalise_keeps_a_confident_class(self):
-        c = Classification(flow=CALL, cls=TrafficClass.BULK,
+        c = Classification(flow=CALL, cls=TrafficClass.BULK_DOWNLOAD,
                            confidence=0.9, tier="B", evidence="saturating")
-        self.assertEqual(finalise(c).cls, TrafficClass.BULK)
+        self.assertEqual(finalise(c).cls, TrafficClass.BULK_DOWNLOAD)
 
 
 class TestNoGeneratorPorts(unittest.TestCase):
@@ -431,7 +431,7 @@ class TestEFIsAnInputSignalNotProof(unittest.TestCase):
         f = self._flow(21.3, rx_ratio=0.9987, avg_packet_bytes=15000)
         for cap in (100.0, 10.0):
             c = classify(f, capacity_mbps=cap)
-            self.assertNotEqual(c.cls, TrafficClass.INTERACTIVE,
+            self.assertNotEqual(c.cls, TrafficClass.VIDEO_CALL,
                                 f"EF abuse at {cap} Mbps: {c.evidence}")
 
     def test_it_still_cannot_obtain_interactive_by_repeating(self):
@@ -450,7 +450,7 @@ class TestEFIsAnInputSignalNotProof(unittest.TestCase):
         f = mature(dscp=DSCP_EF, mbps=0.09, rx_bytes=b, tx_bytes=b,
                    avg_packet_bytes=1200)
         self.assertEqual(classify(f, capacity_mbps=100.0).cls,
-                         TrafficClass.INTERACTIVE)
+                         TrafficClass.VIDEO_CALL)
 
     def test_a_bursty_interactive_flow_keeps_its_ef(self):
         age = MIN_AGE_S + 1
@@ -459,7 +459,7 @@ class TestEFIsAnInputSignalNotProof(unittest.TestCase):
         f = mature(dscp=DSCP_EF, mbps=2.0, rx_bytes=rx, tx_bytes=tx,
                    avg_packet_bytes=1200, burstiness=0.4)
         self.assertEqual(classify(f, capacity_mbps=100.0).cls,
-                         TrafficClass.INTERACTIVE)
+                         TrafficClass.VIDEO_CALL)
 
     def test_a_high_throughput_latency_sensitive_flow_is_not_called_bulk(self):
         """5 Mbps both ways, small packets: media at volume, not a transfer."""
@@ -468,7 +468,7 @@ class TestEFIsAnInputSignalNotProof(unittest.TestCase):
         f = mature(dscp=DSCP_EF, mbps=5.0, rx_bytes=b, tx_bytes=b,
                    avg_packet_bytes=1200)
         self.assertEqual(classify(f, capacity_mbps=100.0).cls,
-                         TrafficClass.INTERACTIVE)
+                         TrafficClass.VIDEO_CALL)
 
     def test_asymmetry_is_the_separator_not_duty_cycle(self):
         """Duty cycle is measured 1.00 for every generator and separates
@@ -496,7 +496,7 @@ class TestAPortMayNotDemote(unittest.TestCase):
         f = mature(mbps=0.19, rx_bytes=b, tx_bytes=b, avg_packet_bytes=1000,
                    flow=Flow("10.0.1.2", 873, "203.0.113.2", 873, "udp"))
         c = classify(f, capacity_mbps=100.0)
-        self.assertNotEqual(c.cls, TrafficClass.BULK,
+        self.assertNotEqual(c.cls, TrafficClass.BULK_DOWNLOAD,
                             f"port alone demoted a small flow: {c.evidence}")
 
     def test_rate_evidence_outranks_the_port_hint(self):
@@ -510,10 +510,10 @@ class TestAPortMayNotDemote(unittest.TestCase):
         f = mature(mbps=30, rx_bytes=rx, tx_bytes=tx,
                    flow=Flow("10.0.1.2", 873, "203.0.113.2", 873, "tcp"))
         self.assertEqual(classify(f, capacity_mbps=100.0).cls,
-                         TrafficClass.ADAPTIVE)
+                         TrafficClass.STREAMING)
         # ...and on a link where 30 Mbps really is hogging, it is bulk.
         self.assertEqual(classify(f, capacity_mbps=50.0).cls,
-                         TrafficClass.BULK)
+                         TrafficClass.BULK_DOWNLOAD)
 
     def test_an_interactive_port_may_still_raise_priority(self):
         """A port may *raise* priority for small latency-sensitive traffic; only
@@ -523,7 +523,7 @@ class TestAPortMayNotDemote(unittest.TestCase):
         f = mature(mbps=0.09, rx_bytes=b, tx_bytes=b, avg_packet_bytes=1200,
                    flow=Flow("10.0.1.2", 3478, "203.0.113.2", 3478, "udp"))
         self.assertEqual(classify(f, capacity_mbps=100.0).cls,
-                         TrafficClass.INTERACTIVE)
+                         TrafficClass.VIDEO_CALL)
 
 
 class TestBulkStaysCapacityRelative(unittest.TestCase):
@@ -545,7 +545,7 @@ class TestBulkStaysCapacityRelative(unittest.TestCase):
         f = mature(mbps=21, rx_bytes=rx, tx_bytes=tx,
                    flow=Flow("10.0.1.2", 1, "203.0.113.2", 443, "tcp"))
         self.assertEqual(classify(f, capacity_mbps=100.0).cls,
-                         TrafficClass.ADAPTIVE,
+                         TrafficClass.STREAMING,
                          "the absolute floor leaked back into the bulk rule")
 
     def test_the_same_transfer_on_a_narrow_link_is_bulk(self):
@@ -555,7 +555,7 @@ class TestBulkStaysCapacityRelative(unittest.TestCase):
         f = mature(mbps=21, rx_bytes=rx, tx_bytes=tx,
                    flow=Flow("10.0.1.2", 1, "203.0.113.2", 443, "tcp"))
         self.assertEqual(classify(f, capacity_mbps=30.0).cls,
-                         TrafficClass.BULK)
+                         TrafficClass.BULK_DOWNLOAD)
 
 
 class TestTrustStoreIsBounded(unittest.TestCase):

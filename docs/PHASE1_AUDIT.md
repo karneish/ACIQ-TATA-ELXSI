@@ -31,7 +31,7 @@ Evidence: `docs/evidence/phase1/environment-20261023.log` (generated 2026-10-23)
 **What it is.** Raw artifacts of live runs the user performed with root on this
 host, on 2026-10-07 through 2026-10-21:
 
-- `testbed/logs/gate-YYYYmmdd-HHMMSS.log` - 74 gate transcripts from
+- `testbed/logs` (timestamps like `gate-20261021-213009.log`) - 74 gate transcripts from
   `testbed/gate.sh` (which re-creates the testbed itself). The most recent,
   `gate-20261021-213009.log`, ran ALL 20 checks to PASS on kernel
   `7.1.5-76070105-generic`: HTB 100->20 Mbps shaping + measurement, netem delay,
@@ -98,7 +98,7 @@ part of the unittest count.
 | FSM | aciq/shield.py only | **keep shield + new state machine** | shield is a good internal veto/latch; required 7-state FSM is a new module that will drive shield. |
 | Enforcer | aciq/tc.py, qdisc.py, bridge.py, marks.py, txn.py | **keep + repair** | live-verified HTB/CAKE/flower path; add per-cycle rate-change magnitude bound, ifb ingress path, nftables marking brought out of dormancy OR documented flower-only reliance, and signal/watchdog safe path. |
 | Verifier | none | **new** | verdict logic + worse->rollback is absent. |
-| Controller loop | aciq/harness.adapt_step + experiment driver only | **keep + wrap** | the tick loop exists and is live-proven; a controller module will formalise FSM+verifier around it. |
+| Controller loop | `adapt_step` in aciq/harness.py + experiment driver only | **keep + wrap** | the tick loop exists and is live-proven; a controller module will formalise FSM+verifier around it. |
 | Watchdog | none | **new** | SIGTERM/SIGINT/timeout -> force_safe. |
 | Intent | aciq/intent.py, api.py | **keep + repair** | leases real (live run evidence data/ab_lease_42/); add class target, conflict rules, audit log wiring for intent lifecycle. |
 | Dashboard | aciq/dashboard.py | **keep + repair** | six panels + policy tiles real; add FSM state panel, per-class confidence, intent/correction controls. |

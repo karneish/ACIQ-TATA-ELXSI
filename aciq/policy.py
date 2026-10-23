@@ -75,7 +75,7 @@ def effective_weights(lease: Lease | None) -> dict[TrafficClass, float]:
     if lease is None:
         return w
     weight = min(max(lease.weight, WEIGHT_MIN), WEIGHT_MAX)
-    w[TrafficClass.LEASED] = BASE_WEIGHTS[TrafficClass.INTERACTIVE] * (1.0 + LAMBDA * weight)
+    w[TrafficClass.LEASED] = BASE_WEIGHTS[TrafficClass.VIDEO_CALL] * (1.0 + LAMBDA * weight)
     return w
 
 
@@ -129,7 +129,7 @@ def build_plan(
         ceils={
             c: min(capacity_mbps,
                    max(rates[c], BULK_CEIL_FRACTION * capacity_mbps)
-                   if c is TrafficClass.BULK else capacity_mbps)
+                   if c is TrafficClass.BULK_DOWNLOAD else capacity_mbps)
             for c in classes
         },
         lease_id=lease.id if lease is not None else None,

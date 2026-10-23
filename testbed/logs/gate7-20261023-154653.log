@@ -1,0 +1,57 @@
+[PASS] p1: tooling
+[PASS] p2: testbed up
+applied 18 commands, 8 classes
+class 1:1   rate= 20.000 ceil= 20.000 (root)
+class 1:10  rate=  3.895 ceil= 20.000 video_call_voice
+class 1:20  rate=  3.684 ceil= 20.000 interactive_gaming
+class 1:25  rate=  2.842 ceil= 20.000 adaptive_video_streaming
+class 1:30  rate=  2.632 ceil= 17.000 bulk_download
+class 1:50  rate=  2.421 ceil= 20.000 software_update
+class 1:60  rate=  2.316 ceil= 20.000 cloud_backup
+class 1:70  rate=  2.211 ceil= 20.000 unknown
+verify: 8 classes read back, mismatches=0
+invariant: sum(child rate)=20.000 <= 20.000 -> HOLDS
+[PASS] p3: real 7-class tree built from aciq.policy/aciq.tc and verified in-kernel
+steered 203.0.113.2 udp 7001 -> gaming
+gaming 1:20: 0 -> 62520
+[PASS] p5a: v4 flow steered into GAMING 1:20
+steered 203.0.113.2 udp 7002 -> bulk
+bulk 1:30: 0 -> 115360
+[PASS] p5b: v4 flow steered into BULK_DOWNLOAD 1:30
+steered fd00:2::2 udp 7003 -> update
+update 1:50: 0 -> 75720
+[PASS] p5c: IPv6 flow steered into SOFTWARE_UPDATE 1:50
+steered 203.0.113.2 udp 7002 -> unclassified
+unclassified -> default 1:70: 770 -> 63290
+[PASS] p5d: unclassified mark lands in DEFAULT class 1:70
+ifb tx: 0 -> 144200
+[PASS] p6: ifb ingress redirect captured forwarded UDP traffic
+[PASS] p7: ifb mirror torn down
+installed 2 tc commands
+[PASS] p8a: probe filter installed before termination
+[watchdog] sigterm: force-safe path engaged
+[PASS] p8b: SIGTERM -> watchdog force-safe teardown removed the filter
+qdisc htb 1: root refcnt 5 r2q 10 default 0x70 direct_packets_stat 0 direct_qlen 1000
+qdisc fq_codel 30: parent 1:30 limit 10240p flows 1024 quantum 1514 target 5ms interval 100ms memory_limit 32Mb ecn drop_batch 64 
+qdisc fq_codel 60: parent 1:60 limit 10240p flows 1024 quantum 1514 target 5ms interval 100ms memory_limit 32Mb ecn drop_batch 64 
+qdisc fq_codel 25: parent 1:25 limit 10240p flows 1024 quantum 1514 target 5ms interval 100ms memory_limit 32Mb ecn drop_batch 64 
+qdisc fq_codel 10: parent 1:10 limit 10240p flows 1024 quantum 1514 target 5ms interval 100ms memory_limit 32Mb ecn drop_batch 64 
+qdisc fq_codel 70: parent 1:70 limit 10240p flows 1024 quantum 1514 target 5ms interval 100ms memory_limit 32Mb ecn drop_batch 64 
+qdisc fq_codel 20: parent 1:20 limit 10240p flows 1024 quantum 1514 target 5ms interval 100ms memory_limit 32Mb ecn drop_batch 64 
+qdisc fq_codel 50: parent 1:50 limit 10240p flows 1024 quantum 1514 target 5ms interval 100ms memory_limit 32Mb ecn drop_batch 64
+htb residue after teardown
+[FAIL] p9: teardown did not empty the tree
+
+=== gate7 SUMMARY ===
+PASS      p1: tooling
+PASS      p2: testbed up
+PASS      p3: real 7-class tree built from aciq.policy/aciq.tc and verified in-kernel
+PASS      p5a: v4 flow steered into GAMING 1:20
+PASS      p5b: v4 flow steered into BULK_DOWNLOAD 1:30
+PASS      p5c: IPv6 flow steered into SOFTWARE_UPDATE 1:50
+PASS      p5d: unclassified mark lands in DEFAULT class 1:70
+PASS      p6: ifb ingress redirect captured forwarded UDP traffic
+PASS      p7: ifb mirror torn down
+PASS      p8a: probe filter installed before termination
+PASS      p8b: SIGTERM -> watchdog force-safe teardown removed the filter
+FAIL      p9: teardown did not empty the tree

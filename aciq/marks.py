@@ -32,8 +32,10 @@ Fields are packed from the least significant bit. The layout is deliberately
 byte-tolerant: the class id occupies the low nibble so a `tc fw` filter can mask
 on it alone.
 
-    bits  0-3   class id      0=unclassified 1=interactive 2=adaptive
-                               3=bulk 4=leased 5-15 reserved for sub-classes
+    bits  0-3   class id      0=unclassified 1=video_call 2=gaming
+                               3=streaming 4=bulk_download 5=software_update
+                               6=cloud_backup 7=unknown 8=leased
+                               9-15 reserved for sub-classes
     bit   4     seen          1 = the bridge examined this flow
     bits  5-6   confidence    0=none 1=low 2=medium 3=high
     bits  7-8   reason        0=none 1=dscp 2=behaviour 3=correction
@@ -72,23 +74,33 @@ from .model import TrafficClass
 
 #: Class ids, as stored in mark bits 0-3.
 CLASS_UNCLASSIFIED = 0
-CLASS_INTERACTIVE = 1
-CLASS_ADAPTIVE = 2
-CLASS_BULK = 3
-CLASS_LEASED = 4
+CLASS_VIDEO_CALL = 1
+CLASS_GAMING = 2
+CLASS_STREAMING = 3
+CLASS_BULK_DOWNLOAD = 4
+CLASS_SOFTWARE_UPDATE = 5
+CLASS_CLOUD_BACKUP = 6
+CLASS_UNKNOWN = 7
+CLASS_LEASED = 8
 
 CLASS_BY_TRAFFIC = {
-    TrafficClass.INTERACTIVE: CLASS_INTERACTIVE,
-    TrafficClass.ADAPTIVE: CLASS_ADAPTIVE,
-    TrafficClass.BULK: CLASS_BULK,
-    # LEASED exists in the model but had no mapping, so encode_for_traffic()
-    # raised KeyError on the one class the lease feature needs to produce.
+    TrafficClass.VIDEO_CALL: CLASS_VIDEO_CALL,
+    TrafficClass.GAMING: CLASS_GAMING,
+    TrafficClass.STREAMING: CLASS_STREAMING,
+    TrafficClass.BULK_DOWNLOAD: CLASS_BULK_DOWNLOAD,
+    TrafficClass.SOFTWARE_UPDATE: CLASS_SOFTWARE_UPDATE,
+    TrafficClass.CLOUD_BACKUP: CLASS_CLOUD_BACKUP,
+    TrafficClass.UNKNOWN: CLASS_UNKNOWN,
     TrafficClass.LEASED: CLASS_LEASED,
 }
 
-#: Defined only up to LEASED; 5-15 are reserved for sub-classes.
-DEFINED_CLASS_IDS = frozenset({CLASS_UNCLASSIFIED, CLASS_INTERACTIVE,
-                               CLASS_ADAPTIVE, CLASS_BULK, CLASS_LEASED})
+#: Defined class ids (the seven classes plus unknown, plus the leased overlay).
+#: The low nibble leaves room for reserved ids 9-15 for sub-classes.
+DEFINED_CLASS_IDS = frozenset((CLASS_UNCLASSIFIED, CLASS_VIDEO_CALL,
+                               CLASS_GAMING, CLASS_STREAMING,
+                               CLASS_BULK_DOWNLOAD, CLASS_SOFTWARE_UPDATE,
+                               CLASS_CLOUD_BACKUP, CLASS_UNKNOWN,
+                               CLASS_LEASED))
 
 # ---- bit positions -------------------------------------------------------
 CLASS_SHIFT = 0

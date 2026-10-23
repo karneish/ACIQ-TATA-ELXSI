@@ -357,18 +357,18 @@ class TestApplySystem(unittest.TestCase):
 
 def counters(rx=0, drops=0, overlimits=0, backlog=0):
     return {
-        TrafficClass.INTERACTIVE: ClassCounters(
-            cls=TrafficClass.INTERACTIVE, rx_bytes=rx, drops=drops,
+        TrafficClass.VIDEO_CALL: ClassCounters(
+            cls=TrafficClass.VIDEO_CALL, rx_bytes=rx, drops=drops,
             overlimits=overlimits, backlog_bytes=backlog),
-        TrafficClass.BULK: ClassCounters(
-            cls=TrafficClass.BULK, rx_bytes=rx, drops=drops,
+        TrafficClass.BULK_DOWNLOAD: ClassCounters(
+            cls=TrafficClass.BULK_DOWNLOAD, rx_bytes=rx, drops=drops,
             overlimits=overlimits, backlog_bytes=backlog),
     }
 
 
 def link(rx=0, drops=0, overlimits=0):
     """Parent-class counters. Only these decide saturation."""
-    return ClassCounters(cls=TrafficClass.INTERACTIVE, rx_bytes=rx,
+    return ClassCounters(cls=TrafficClass.VIDEO_CALL, rx_bytes=rx,
                          drops=drops, overlimits=overlimits)
 
 
@@ -684,7 +684,9 @@ class TestTheAuditRecordsWhatWasApplied(unittest.TestCase):
     def test_every_class_is_recorded_with_its_rate_and_ceiling(self):
         h = self._lease_after_drop()
         applied = [e for e in h.txn.audit if e["event"] == "committed"][-1]["applied"]
-        self.assertEqual(set(applied), {"1:1", "1:10", "1:20", "1:30", "1:40"})
+        self.assertEqual(set(applied), {"1:1", "1:10", "1:20", "1:25",
+                                "1:30", "1:50", "1:60", "1:70",
+                                "1:80"})
         for classid, (rate, ceil_m) in applied.items():
             self.assertLessEqual(ceil_m, 10.0,
                                  f"{classid} ceiling exceeds the link")

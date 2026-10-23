@@ -24,7 +24,7 @@ from aciq.metrics import EvaluationData, MetricsCollector      # noqa: E402
 from aciq.model import TrafficClass                            # noqa: E402
 from udpx import EchoSink, UdpProbe                            # noqa: E402
 
-I = TrafficClass.INTERACTIVE
+I = TrafficClass.VIDEO_CALL
 
 
 class _Source:

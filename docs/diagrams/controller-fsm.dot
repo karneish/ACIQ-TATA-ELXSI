@@ -1,0 +1,12 @@
+digraph fsm {
+  rankdir=LR;
+  node [shape=circle, fontname="Helvetica", width=1.5];
+  STABLE -> ARMED      [label="change applied\n(notify_change)"];
+  ARMED -> ARMED       [label="samples < window"];
+  ARMED -> STABLE      [label="verdict KEEP"];
+  ARMED -> COOLDOWN    [label="verdict ROLLBACK\n(txn.verified restore)"];
+  COOLDOWN -> STABLE   [label="cooldown_s elapsed"];
+  COOLDOWN -> SLEEPING [label="3 rollbacks in a row"];
+  SLEEPING -> STABLE   [label="STANDBY_S served"];
+  SLEEPING -> SLEEPING [label="refuses to act"];
+}

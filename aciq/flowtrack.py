@@ -193,9 +193,12 @@ class FlowTracker:
         mean = (sum(incs) / len(incs)) if incs else 0.0
         if mean > 0 and len(incs) >= 2:
             var = sum((x - mean) ** 2 for x in incs) / len(incs)
-            burstiness = (var ** 0.5) / mean
+            burstiness: float | None = (var ** 0.5) / mean
         else:
-            burstiness = 0.0
+            # Not enough increments to speak honestly about variability: leave
+            # the hint unset rather than defaulting to "perfectly smooth", which
+            # the rate rules in classify.py would read as a software update.
+            burstiness = None
         duty = (s.moving_samples / s.total_samples) if s.total_samples else 0.0
         # Average packet size over the flow's life. This is the signal that
         # separates a large-packet bulk transfer from a small-packet call; it

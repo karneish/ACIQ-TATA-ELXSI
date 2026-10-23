@@ -60,7 +60,7 @@ class TestCorrectionAPI(ServiceCase):
     def test_a_correction_is_recorded_and_listed(self):
         st, body, _ = self.post(self.correction(reason="git clone"))
         self.assertEqual(st, 201)
-        self.assertEqual(body["class"], "bulk_transfer")
+        self.assertEqual(body["class"], "bulk_download")
         self.assertEqual(body["scope"], "port")
         st, listing, _ = self.svc.handle("GET", "/corrections")
         self.assertEqual(st, 200)
@@ -70,7 +70,7 @@ class TestCorrectionAPI(ServiceCase):
     def test_the_correction_changes_the_store_lookup(self):
         self.post(self.correction())
         flow = Flow("10.0.1.2", 40000, "203.0.113.9", 22, "tcp")
-        self.assertEqual(self.store.lookup(flow).cls, TrafficClass.BULK)
+        self.assertEqual(self.store.lookup(flow).cls, TrafficClass.BULK_DOWNLOAD)
 
     def test_a_host_scope_correction_omits_the_port(self):
         st, body, _ = self.post(self.correction(scope="host", dport=None))
@@ -88,7 +88,7 @@ class TestCorrectionAPI(ServiceCase):
     def test_a_bad_class_is_refused(self):
         st, body, _ = self.post(self.correction(**{"class": "banana"}))
         self.assertEqual(st, 400)
-        self.assertIn("bulk_transfer", body["error"])
+        self.assertIn("bulk_download", body["error"])
 
     def test_a_bad_address_is_refused_before_the_store(self):
         for field in ("src", "dst"):

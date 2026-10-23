@@ -152,8 +152,8 @@ class TestDecisionReachesTheKernel(unittest.TestCase):
     def test_adaptive_installs_a_flower_filter_at_our_priority(self):
         e, exec_ = enforcer()
         v = e.apply(mature())
-        self.assertEqual(v.cls, TrafficClass.ADAPTIVE)
-        self.assertEqual(v.label, "adaptive")
+        self.assertEqual(v.cls, TrafficClass.STREAMING)
+        self.assertEqual(v.label, "streaming")
         got = adds(exec_)
         self.assertEqual(len(got), 1, got)
         self.assertEqual(arg(got[0], "prio"), "5", "IPv4 flower filters live at prio 5")
@@ -180,8 +180,8 @@ class TestDecisionReachesTheKernel(unittest.TestCase):
         not mean "point it somewhere plausible"."""
         e, exec_ = enforcer()
         v = e.apply(tiny())
-        self.assertIsNone(v.cls)
-        self.assertEqual(v.label, "unclassified")
+        self.assertEqual(v.cls, TrafficClass.UNKNOWN)
+        self.assertEqual(v.label, "unknown")
         self.assertEqual(adds(exec_), [])
 
     def test_reclassifying_repoints_the_same_filter(self):
@@ -216,15 +216,15 @@ class TestCorrectionsReachTheKernel(unittest.TestCase):
             # BULK, not LEASED: a correction may not mint lease capacity,
             # so the class a user can actually correct with is the honest
             # way to prove a correction reaches the kernel.
-            store.record(target, TrafficClass.BULK, reason="user asked")
+            store.record(target, TrafficClass.BULK_DOWNLOAD, reason="user asked")
             store.reload()
             e, exec_ = enforcer()
             e.corrections = CorrectionStore(path=p)
             e.corrections.reload()
             v = e.apply(mature(flow=target))
-            self.assertEqual(v.cls, TrafficClass.BULK)
+            self.assertEqual(v.cls, TrafficClass.BULK_DOWNLOAD)
             self.assertTrue(v.corrected)
-            self.assertEqual(arg(adds(exec_)[0], "flowid"), tc.CLASS_IDS[TrafficClass.BULK])
+            self.assertEqual(arg(adds(exec_)[0], "flowid"), tc.CLASS_IDS[TrafficClass.BULK_DOWNLOAD])
 
     def test_an_expired_correction_stops_applying(self):
         import tempfile
@@ -233,7 +233,7 @@ class TestCorrectionsReachTheKernel(unittest.TestCase):
             p = os.path.join(d, "c.jsonl")
             store = CorrectionStore(path=p, ttl_s=60)
             store.record(Flow("10.0.1.2", 1, "1.1.1.1", 443, "tcp"),
-                         TrafficClass.BULK, reason="user asked")
+                         TrafficClass.BULK_DOWNLOAD, reason="user asked")
             e, exec_ = enforcer()
             e.corrections = CorrectionStore(path=p, ttl_s=60)
             e.corrections.reload()
@@ -241,7 +241,7 @@ class TestCorrectionsReachTheKernel(unittest.TestCase):
             # past leaves now - created_at negative, which is not "expired".
             v = e.apply(mature(), now=time.time() + 3600)
             self.assertFalse(v.corrected, "a correction past its TTL still applied")
-            self.assertNotEqual(v.cls, TrafficClass.BULK)
+            self.assertNotEqual(v.cls, TrafficClass.BULK_DOWNLOAD)
 
 
 class TestCapacityIsMeasured(unittest.TestCase):
@@ -325,7 +325,7 @@ class TestKeys(unittest.TestCase):
 class TestVerdictReport(unittest.TestCase):
     def test_str_names_the_tier_that_decided(self):
         e, _ = enforcer()
-        self.assertIn("adaptive", str(e.apply(mature())))
+        self.assertIn("streaming", str(e.apply(mature())))
 
     def test_a_declined_verdict_for_a_never_steered_flow_runs_nothing(self):
         """`forget` deliberately issues a delete even with no local slot, so a

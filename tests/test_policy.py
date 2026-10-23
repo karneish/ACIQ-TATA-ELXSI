@@ -54,7 +54,7 @@ class TestInvariant(unittest.TestCase):
         """
         before = build_plan(100.0)
         after = build_plan(20.0)
-        self.assertGreater(before.rates[TrafficClass.BULK], after.rates[TrafficClass.BULK])
+        self.assertGreater(before.rates[TrafficClass.BULK_DOWNLOAD], after.rates[TrafficClass.BULK_DOWNLOAD])
         self.assertLessEqual(after.total(), 20.0 + 1e-9)
 
     def test_ceil_never_exceeds_capacity(self):
@@ -83,7 +83,7 @@ class TestInvariant(unittest.TestCase):
         """
         plan = build_plan(20.0)
         for c, ceil in plan.ceils.items():
-            if c is TrafficClass.BULK:
+            if c is TrafficClass.BULK_DOWNLOAD:
                 continue
             self.assertAlmostEqual(ceil, 20.0, places=9)
 
@@ -95,20 +95,20 @@ class TestInvariant(unittest.TestCase):
         for FIFO, CAKE and ACIQ -- measured, not assumed.
         """
         plan = build_plan(20.0)
-        self.assertLess(plan.ceils[TrafficClass.BULK], 20.0)
-        self.assertAlmostEqual(plan.ceils[TrafficClass.BULK], 17.0, places=9)
+        self.assertLess(plan.ceils[TrafficClass.BULK_DOWNLOAD], 20.0)
+        self.assertAlmostEqual(plan.ceils[TrafficClass.BULK_DOWNLOAD], 17.0, places=9)
 
     def test_bulk_still_borrows_up_to_its_ceiling_when_alone(self):
         """The ceiling is a limit, not a downgrade: bulk keeps its guarantee and
         still uses far more than it when it is the only sender."""
         plan = build_plan(20.0)
-        self.assertGreater(plan.ceils[TrafficClass.BULK], plan.rates[TrafficClass.BULK])
+        self.assertGreater(plan.ceils[TrafficClass.BULK_DOWNLOAD], plan.rates[TrafficClass.BULK_DOWNLOAD])
 
     def test_headroom_is_retained_for_latency_sensitive_traffic(self):
         """Whatever bulk gives up, something else must be able to use."""
         for cap in (20.0, 100.0):
             plan = build_plan(cap)
-            headroom = cap - plan.ceils[TrafficClass.BULK]
+            headroom = cap - plan.ceils[TrafficClass.BULK_DOWNLOAD]
             self.assertGreater(headroom, 0.0, f"no headroom left at {cap} Mbps")
 
     def test_ceil_never_below_rate(self):
@@ -149,7 +149,7 @@ class TestAntiStarvation(unittest.TestCase):
         cap = 20.0
         leased = build_plan(cap, lease())
         fl = floor_mbps(cap)
-        for cls in (TrafficClass.INTERACTIVE, TrafficClass.ADAPTIVE, TrafficClass.BULK):
+        for cls in (TrafficClass.VIDEO_CALL, TrafficClass.STREAMING, TrafficClass.BULK_DOWNLOAD):
             self.assertGreaterEqual(leased.rates[cls], fl - 1e-9)
 
     def test_lease_cost_to_others_is_bounded(self):
@@ -161,14 +161,14 @@ class TestAntiStarvation(unittest.TestCase):
         fl = floor_mbps(cap)
         headroom = cap - fl * 3  # what was available to divide in the unleased case
         loss = sum(plain.rates[c] - leased.rates[c] for c in
-                   (TrafficClass.INTERACTIVE, TrafficClass.ADAPTIVE, TrafficClass.BULK))
+                   (TrafficClass.VIDEO_CALL, TrafficClass.STREAMING, TrafficClass.BULK_DOWNLOAD))
         self.assertGreaterEqual(loss, -1e-9)          # nobody gains
         self.assertLessEqual(loss, headroom + 1e-9)   # and cannot lose more than the pool
 
     def test_bulk_never_drops_to_zero(self):
         for cap in [100.0, 20.0, 10.0]:
             with self.subTest(capacity=cap):
-                self.assertGreater(build_plan(cap).rates[TrafficClass.BULK], 0.0)
+                self.assertGreater(build_plan(cap).rates[TrafficClass.BULK_DOWNLOAD], 0.0)
 
 
 class TestLease(unittest.TestCase):
@@ -182,7 +182,7 @@ class TestLease(unittest.TestCase):
         """Absurd input must be clamped, not trusted. Even weight=100 cannot
         make the leased class outrank the whole rest of the household."""
         w = effective_weights(lease(weight=100.0))
-        cap = BASE_WEIGHTS[TrafficClass.INTERACTIVE] * (1.0 + LAMBDA * WEIGHT_MAX)
+        cap = BASE_WEIGHTS[TrafficClass.VIDEO_CALL] * (1.0 + LAMBDA * WEIGHT_MAX)
         self.assertAlmostEqual(w[TrafficClass.LEASED], cap, places=6)
         self.assertLess(w[TrafficClass.LEASED], sum(BASE_WEIGHTS.values()))
 
@@ -202,7 +202,7 @@ class TestLease(unittest.TestCase):
     def test_leased_class_beats_bulk(self):
         plan = build_plan(20.0, lease())
         self.assertGreater(
-            plan.rates[TrafficClass.LEASED], plan.rates[TrafficClass.BULK]
+            plan.rates[TrafficClass.LEASED], plan.rates[TrafficClass.BULK_DOWNLOAD]
         )
 
     def test_lease_id_is_recorded(self):
@@ -222,10 +222,10 @@ class TestOrdering(unittest.TestCase):
     def test_interactive_ge_adaptive_ge_bulk(self):
         plan = build_plan(100.0)
         self.assertGreater(
-            plan.rates[TrafficClass.INTERACTIVE], plan.rates[TrafficClass.ADAPTIVE]
+            plan.rates[TrafficClass.VIDEO_CALL], plan.rates[TrafficClass.STREAMING]
         )
         self.assertGreater(
-            plan.rates[TrafficClass.ADAPTIVE], plan.rates[TrafficClass.BULK]
+            plan.rates[TrafficClass.STREAMING], plan.rates[TrafficClass.BULK_DOWNLOAD]
         )
 
 
@@ -261,7 +261,7 @@ class TestPlanSurvivesRendering(unittest.TestCase):
     def test_rendered_bulk_ceil_is_below_capacity(self):
         for cap in (20.0, 100.0):
             tree = self._tree(cap)
-            bulk = next(c for c in tree.classes if c.cls is TrafficClass.BULK)
+            bulk = next(c for c in tree.classes if c.cls is TrafficClass.BULK_DOWNLOAD)
             with self.subTest(cap=cap):
                 self.assertLess(bulk.ceil_mbps, cap)
 
@@ -332,5 +332,11 @@ class TestDegradedModeIsReportedNotHidden(unittest.TestCase):
             self.assertLessEqual(r, cap / n + 1e-9)
 
     def test_ordinary_capacity_is_not_marked_degraded(self):
-        for cap in (100.0, 20.0, 10.0):
+        # Floors are 2.0 Mbps x 8 classes = 16 Mbps of reservation, so the
+        # break-even sits between 10 and 20 Mbps. Ten megabits with seven
+        # QoS classes genuinely cannot hold every floor, and degraded=True is
+        # the honest answer, not a defect.
+        for cap in (100.0, 50.0, 20.0):
             self.assertFalse(build_plan(cap).degraded, f"{cap} Mbps is not tight")
+        self.assertTrue(build_plan(10.0).degraded,
+                        "10 Mbps cannot hold 8 x 2.0 Mbps floors")

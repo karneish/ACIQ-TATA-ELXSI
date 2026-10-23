@@ -472,7 +472,7 @@ class TestProbeIngestionLandsInAClass(unittest.TestCase):
         from aciq.model import TrafficClass
         snap = CounterSnapshot(
             t=0.0,
-            by_class={TrafficClass.INTERACTIVE: ClassCounters(rx_bytes=14000)})
+            by_class={TrafficClass.VIDEO_CALL: ClassCounters(rx_bytes=14000)})
         return StaticSource([snap for _ in range(40)])
 
     def _paths(self, d):
@@ -492,13 +492,13 @@ class TestProbeIngestionLandsInAClass(unittest.TestCase):
 
         r = ExperimentRunner(launcher=None, harness=None,
                              results_dir=None, real_time=False)
-        r._last_verdicts = [{"call": {"class": "realtime_interactive"}}]
+        r._last_verdicts = [{"call": {"class": "video_call_voice"}}]
         collector = MetricsCollector(source=self._source())
         r._ingest_probes(collector, self._paths(d),
                          [("call", 5001, 46)], "s2_wan_drop")
         frame = collector.poll()
         m = frame.per_class.get(__import__("aciq.model", fromlist=["x"])
-                                .TrafficClass("realtime_interactive"))
+                                .TrafficClass("video_call_voice"))
         self.assertIsNotNone(m, "latency did not reach the interactive class")
         self.assertEqual(m.metric_status, "valid")
         self.assertAlmostEqual(m.rtt_p95, 0.9, places=6)

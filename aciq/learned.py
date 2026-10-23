@@ -110,15 +110,15 @@ def _synthetic() -> list[tuple[dict[str, float], TrafficClass, float]]:
     for _ in range(80):
         data.append(({"bias": 1.0, "dscp_ef": 1.0, "is_udp": 1.0, "is_rtp": 1.0,
                       "pps": 0.3, "bpp": 0.08, "duty": 0.5, "burst": 0.1,
-                      "rel": 0.01, "bulk_like": 0.0}, TrafficClass.INTERACTIVE, 1.0))
+                      "rel": 0.01, "bulk_like": 0.0}, TrafficClass.VIDEO_CALL, 1.0))
     for _ in range(80):
         data.append(({"bias": 1.0, "dscp_ef": 0.0, "is_udp": 0.0, "is_tcp": 1.0,
                       "pps": 0.05, "bpp": 1.8, "duty": 0.8, "burst": 0.15,
-                      "rel": 0.2, "bulk_like": 0.0}, TrafficClass.ADAPTIVE, 1.0))
+                      "rel": 0.2, "bulk_like": 0.0}, TrafficClass.STREAMING, 1.0))
     for _ in range(80):
         data.append(({"bias": 1.0, "dscp_ef": 0.0, "is_udp": 0.0, "is_tcp": 1.0,
                       "pps": 0.002, "bpp": 8.0, "duty": 0.99, "burst": 0.02,
-                      "rel": 0.8, "bulk_like": 1.0}, TrafficClass.BULK, 1.0))
+                      "rel": 0.8, "bulk_like": 1.0}, TrafficClass.BULK_DOWNLOAD, 1.0))
     return data
 
 

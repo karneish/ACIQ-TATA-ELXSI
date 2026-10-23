@@ -358,10 +358,14 @@ def jitter_from_samples(xs: list[float]) -> float:
 # --------------------------------------------------------------------------
 #: how `tc` class handles map onto our traffic classes
 DEFAULT_HANDLE_MAP: dict[str, TrafficClass] = {
-    "1:10": TrafficClass.INTERACTIVE,
-    "1:20": TrafficClass.ADAPTIVE,
-    "1:30": TrafficClass.BULK,
-    "1:40": TrafficClass.LEASED,
+    "1:10": TrafficClass.VIDEO_CALL,
+    "1:20": TrafficClass.GAMING,
+    "1:25": TrafficClass.STREAMING,
+    "1:30": TrafficClass.BULK_DOWNLOAD,
+    "1:50": TrafficClass.SOFTWARE_UPDATE,
+    "1:60": TrafficClass.CLOUD_BACKUP,
+    "1:70": TrafficClass.UNKNOWN,
+    "1:80": TrafficClass.LEASED,
 }
 
 
@@ -452,10 +456,11 @@ class TextClassSource:
         link = None
         for cid, cs in parsed.items():
             if cid == LINK_HANDLE:
-                # cls=None on purpose. It was TrafficClass.INTERACTIVE with a
+                # cls=None on purpose. It was TrafficClass.VIDEO_CALL (then named
+                # INTERACTIVE) with a
                 # comment saying "never used as a class" -- and then every sample
                 # serialised it, so the parent counter was reported as
-                # link.cls="realtime_interactive" in all three systems. M2 reads
+                # link.cls set to a stale class label in all three systems. M2 reads
                 # only the numbers so no measurement was wrong, but the artefact
                 # named the wrong class on every line. `handle` says which class
                 # it actually is.
@@ -576,7 +581,7 @@ class MetricsCollector:
     # --- evaluation-side input -------------------------------------------
     #
     # `ingest` keys by workload label ("call", "tv1") while `poll` reads back by
-    # class value ("adaptive_video"). Those are different namespaces, the lookup
+    # the class value of the day). Those are different namespaces, the lookup
     # never matched, and the entire evaluation branch was dead code -- which is
     # why rtt/jitter/loss reported 0.0 in every run this project ever produced.
     # `_by_class` is populated by the caller, which is the only party that knows

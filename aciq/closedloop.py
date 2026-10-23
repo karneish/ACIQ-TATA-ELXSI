@@ -3,7 +3,7 @@
 Three components existed and none of them were connected: `classify` decided a
 class, `Corrections` carried user overrides, and `Bridge` installed a per-flow
 tc filter. Nothing called them in sequence, so a run produced classifications
-that were never enforced and `adaptive_video` reported goodput 0.0 while
+that were never enforced and the streaming class reported goodput 0.0 while
 labelled as steered.
 
 This module owns the join. It is deliberately free of `tc` calls of its own --
@@ -32,10 +32,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 
 from .bridge import (
-    CLASS_ADAPTIVE,
-    CLASS_BULK,
-    CLASS_INTERACTIVE,
+    CLASS_BULK_DOWNLOAD,
+    CLASS_CLOUD_BACKUP,
+    CLASS_GAMING,
     CLASS_LEASED,
+    CLASS_SOFTWARE_UPDATE,
+    CLASS_STREAMING,
+    CLASS_UNKNOWN,
+    CLASS_VIDEO_CALL,
     Bridge,
     FlowKey,
 )
@@ -46,15 +50,22 @@ from .model import TrafficClass
 #: TrafficClass -> the bridge's class constant. Read from one table rather than
 #: restated: the classifier and the enforcer must never disagree about which id
 #: means what, and a duplicated table is a table that will eventually disagree.
-#: Note there is no UNCLASSIFIED entry, and that is deliberate: `Classification
-#: .cls` is `TrafficClass | None`, and None is how the classifier says "no
-#: verdict" -- confidence below 0.5 means UNCLASSIFIED, never guessed. The
-#: bridge's own CLASS_UNCLASSIFIED exists to block EF promotion in the nft set
-#: and is not a steering destination, so mapping it here would have been wrong.
+#: Note that UNKNOWN is deliberately not steered here either: after
+#: `finalise()` every abstaining verdict IS `TrafficClass.UNKNOWN`, and routing
+#: it anywhere other than "nowhere" would leave a filter to expire per immature
+#: flow — the bridge's classify_flow models "no filter" as traffic falling into
+#: the HTB default class (1:70), which is exactly the safe-minimum queue the
+#: UNKNOWN class exists to name. The bridge's own CLASS_UNCLASSIFIED exists to
+#: block EF promotion in the nft set and is not a steering destination, so
+#: mapping it here would have been wrong.
 CLASS_ID_OF = {
-    TrafficClass.INTERACTIVE: CLASS_INTERACTIVE,
-    TrafficClass.ADAPTIVE: CLASS_ADAPTIVE,
-    TrafficClass.BULK: CLASS_BULK,
+    TrafficClass.VIDEO_CALL: CLASS_VIDEO_CALL,
+    TrafficClass.GAMING: CLASS_GAMING,
+    TrafficClass.STREAMING: CLASS_STREAMING,
+    TrafficClass.BULK_DOWNLOAD: CLASS_BULK_DOWNLOAD,
+    TrafficClass.SOFTWARE_UPDATE: CLASS_SOFTWARE_UPDATE,
+    TrafficClass.CLOUD_BACKUP: CLASS_CLOUD_BACKUP,
+    TrafficClass.UNKNOWN: CLASS_UNKNOWN,
     TrafficClass.LEASED: CLASS_LEASED,
 }
 
@@ -194,15 +205,22 @@ class ClosedLoop:
                                evidence=f"M7 lease {lease.id} on "
                                         f"{lease.ip or lease.flow}")
 
-        # A None verdict removes the filter rather than pointing it somewhere.
-        # Routing to the HTB default and routing to nowhere are the same outcome
-        # for the packet, but the second leaves no state to expire, and the
-        # bridge's classify_flow already models it that way.
-        class_id = CLASS_ID_OF.get(decision.cls) if decision.cls is not None else None
-        # .name.lower(), not .value: the enum's values are the long form
-        # ("adaptive_video"), which is right in a report and wrong as a tc/diag
-        # label. Kept as one expression so no caller re-derives it.
-        label = decision.cls.name.lower() if decision.cls is not None else "unclassified"
+        # A None (abstained) or UNKNOWN verdict removes the filter rather than
+        # pointing it somewhere. Routing to the HTB default and routing to
+        # nowhere are the same outcome for the packet, but the second leaves no
+        # state to expire, and the bridge's classify_flow already models it
+        # that way.
+        cls = decision.cls
+        if cls is None or cls is TrafficClass.UNKNOWN:
+            class_id = None
+            label = "unknown"
+        else:
+            class_id = CLASS_ID_OF.get(cls)
+            # .name.lower(), not .value: the enum's values are the long form
+            # ("adaptive_video_streaming"), which is right in a report and
+            # wrong as a tc/diag label. Kept as one expression so no caller
+            # re-derives it.
+            label = cls.name.lower()
 
         key = key_of(f)
         # A declined verdict for a flow that was never steered is a no-op on the

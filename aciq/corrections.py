@@ -91,17 +91,30 @@ RELOAD_CHECK_S = 1.0
 _PROTO_RE = re.compile(r"[a-z0-9]{1,16}")
 
 
-#: Friendly aliases for the enum values. `TrafficClass` values are verbose
-#: (`realtime_interactive`, `adaptive_video`); an operator reaching for
-#: `--as interactive` should not be punished with a usage error for it. The
-#: canonical value is what gets written to disk, so the file stays unambiguous.
+#: Friendly aliases for the enum values. `TrafficClass` names are verbose
+#: (`adaptive_video_streaming`); an operator reaching for `--as video`
+#: should not be punished with a usage error for it. The canonical value is
+#: what gets written to disk, so the file stays unambiguous.
 CLASS_ALIASES: dict[str, str] = {
-    "interactive": "realtime_interactive",
-    "realtime": "realtime_interactive",
-    "adaptive": "adaptive_video",
-    "video": "adaptive_video",
-    "bulk": "bulk_transfer",
-    "transfer": "bulk_transfer",
+    "interactive": "video_call_voice",
+    "realtime": "video_call_voice",
+    "call": "video_call_voice",
+    "video_call": "video_call_voice",
+    "voice": "video_call_voice",
+    "gaming": "interactive_gaming",
+    "game": "interactive_gaming",
+    "adaptive": "adaptive_video_streaming",
+    "video": "adaptive_video_streaming",
+    "streaming": "adaptive_video_streaming",
+    "tv": "adaptive_video_streaming",
+    "bulk": "bulk_download",
+    "download": "bulk_download",
+    "transfer": "bulk_download",
+    "update": "software_update",
+    "software_update": "software_update",
+    "backup": "cloud_backup",
+    "cloud_backup": "cloud_backup",
+    "unknown": "unknown",
     # deliberately no "leased"/"lease" alias: see _reject_leased.
 }
 

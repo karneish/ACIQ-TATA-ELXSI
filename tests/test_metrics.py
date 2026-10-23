@@ -21,8 +21,8 @@ from aciq.metrics import (
 )
 from aciq.model import TrafficClass
 
-B = TrafficClass.BULK
-I = TrafficClass.INTERACTIVE
+B = TrafficClass.BULK_DOWNLOAD
+I = TrafficClass.VIDEO_CALL
 
 
 def snap(t, **kw):
@@ -106,7 +106,7 @@ class TestUnmappedClassesAreVisible(unittest.TestCase):
     # wrong rather than the parser. Recorded as a known sharp edge below.
     TEXT = ("class htb 1:1 root prio 0 rate 100Mbit ceil 100Mbit burst 15Kb\n"
             "  Sent 4000000 bytes 4000 pkt (dropped 0, overlimits 3 requeues 0)\n"
-            "class htb 1:50 parent 1:1 leaf pfifo prio 0 rate 100Mbit ceil 100Mbit\n"
+            "class htb 1:90 parent 1:1 leaf pfifo prio 0 rate 100Mbit ceil 100Mbit\n"
             "  Sent 4000000 bytes 4000 pkt (dropped 0, overlimits 0 requeues 0)")
 
     def test_an_unnamed_class_is_kept_under_its_classid(self):
@@ -114,13 +114,13 @@ class TestUnmappedClassesAreVisible(unittest.TestCase):
         src = TextClassSource(runner=lambda *a, **k: type(
             "R", (), {"returncode": 0, "stdout": self.TEXT})())
         snap = src.snapshot()
-        self.assertIn("1:50", snap.unmapped)
-        self.assertEqual(snap.unmapped["1:50"].rx_bytes, 4000000)
+        self.assertIn("1:90", snap.unmapped)
+        self.assertEqual(snap.unmapped["1:90"].rx_bytes, 4000000)
 
     def test_it_is_not_silently_folded_into_an_aciq_class(self):
-        """Mapping 1:50 onto BULK would have been wrong: BULK means "the class
-        that deliberately gets the leftovers", and a baseline's single class is
-        not that."""
+        """A handle with no TrafficClass mapping stays out of by_class: nobody
+        here can say what that class means, and guessing would put foreign
+        counters under a named class."""
         from aciq.metrics import TextClassSource
         src = TextClassSource(runner=lambda *a, **k: type(
             "R", (), {"returncode": 0, "stdout": self.TEXT})())
@@ -395,13 +395,13 @@ class TestTextClassSource(unittest.TestCase):
     def test_reads_counters_per_class(self):
         s = self._src(self.SAMPLE).snapshot()
         self.assertEqual(len(s.by_class), 2)
-        self.assertEqual(s.by_class[TrafficClass.BULK].rx_bytes, 9000000)
-        self.assertEqual(s.by_class[TrafficClass.BULK].overlimits, 4200)
-        self.assertEqual(s.by_class[TrafficClass.BULK].drops, 12)
+        self.assertEqual(s.by_class[TrafficClass.BULK_DOWNLOAD].rx_bytes, 9000000)
+        self.assertEqual(s.by_class[TrafficClass.BULK_DOWNLOAD].overlimits, 4200)
+        self.assertEqual(s.by_class[TrafficClass.BULK_DOWNLOAD].drops, 12)
 
     def test_maps_interactive_class(self):
         s = self._src(self.SAMPLE).snapshot()
-        self.assertEqual(s.by_class[TrafficClass.INTERACTIVE].rx_bytes, 4000000)
+        self.assertEqual(s.by_class[TrafficClass.VIDEO_CALL].rx_bytes, 4000000)
 
     def test_reader_asks_for_statistics(self):
         """`tc class show` without -s prints only configuration and no `Sent`

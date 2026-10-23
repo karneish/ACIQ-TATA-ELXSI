@@ -41,15 +41,15 @@ class StoreCase(unittest.TestCase):
 class TestRecording(StoreCase):
     def test_records_a_port_scoped_correction(self):
         s = self.store()
-        c = s.record(SSH, TrafficClass.BULK, reason="git clone", by="me")
-        self.assertEqual(c.cls, TrafficClass.BULK)
+        c = s.record(SSH, TrafficClass.BULK_DOWNLOAD, reason="git clone", by="me")
+        self.assertEqual(c.cls, TrafficClass.BULK_DOWNLOAD)
         self.assertEqual(c.dport, 22)
         self.assertEqual(c.scope, "port")
         self.assertEqual(c.recorded_by, "me")
 
     def test_records_host_scope_when_dport_is_none(self):
         s = self.store()
-        c = s.record(SSH, TrafficClass.INTERACTIVE, dport=None)
+        c = s.record(SSH, TrafficClass.VIDEO_CALL, dport=None)
         self.assertIsNone(c.dport)
         self.assertEqual(c.scope, "host")
 
@@ -58,19 +58,19 @@ class TestRecording(StoreCase):
         Overwriting would destroy the record an accuracy claim is audited
         against."""
         s = self.store()
-        s.record(SSH, TrafficClass.BULK)
-        s.record(CALL, TrafficClass.INTERACTIVE)
-        s.record(SSH, TrafficClass.ADAPTIVE, dport=None)
+        s.record(SSH, TrafficClass.BULK_DOWNLOAD)
+        s.record(CALL, TrafficClass.VIDEO_CALL)
+        s.record(SSH, TrafficClass.STREAMING, dport=None)
         lines = [l for l in self.path.read_text().splitlines() if l.strip()]
         self.assertEqual(len(lines), 3)
 
     def test_recorrecting_the_same_key_appends_and_last_wins(self):
         s = self.store(now=1000.0)
-        s.record(SSH, TrafficClass.BULK, reason="first")
+        s.record(SSH, TrafficClass.BULK_DOWNLOAD, reason="first")
         s2 = self.store(now=1001.0)
-        s2.record(SSH, TrafficClass.ADAPTIVE, reason="second")
+        s2.record(SSH, TrafficClass.STREAMING, reason="second")
         c = s2.lookup(SSH)
-        self.assertEqual(c.cls, TrafficClass.ADAPTIVE)
+        self.assertEqual(c.cls, TrafficClass.STREAMING)
         self.assertEqual(c.reason, "second")
         # and the original statement is still on disk
         lines = [l for l in self.path.read_text().splitlines() if l.strip()]
@@ -78,7 +78,7 @@ class TestRecording(StoreCase):
 
     def test_creates_the_directory(self):
         deep = self.path.parent / "a" / "b" / "corrections.jsonl"
-        CorrectionStore(deep).record(SSH, TrafficClass.BULK)
+        CorrectionStore(deep).record(SSH, TrafficClass.BULK_DOWNLOAD)
         self.assertTrue(deep.exists())
 
     def test_refuses_a_correction_with_no_class(self):
@@ -87,58 +87,58 @@ class TestRecording(StoreCase):
 
     def test_ttl_is_applied(self):
         s = self.store(now=1000.0)
-        c = s.record(SSH, TrafficClass.BULK, ttl_s=60)
+        c = s.record(SSH, TrafficClass.BULK_DOWNLOAD, ttl_s=60)
         self.assertEqual(c.expires_at, 1060.0)
 
     def test_ttl_none_never_expires(self):
-        c = self.store(now=1000.0).record(SSH, TrafficClass.BULK, ttl_s=None)
+        c = self.store(now=1000.0).record(SSH, TrafficClass.BULK_DOWNLOAD, ttl_s=None)
         self.assertIsNone(c.expires_at)
 
 
 class TestLookup(StoreCase):
     def test_port_scoped_match(self):
         s = self.store()
-        s.record(SSH, TrafficClass.BULK)
-        self.assertEqual(s.lookup(SSH).cls, TrafficClass.BULK)
+        s.record(SSH, TrafficClass.BULK_DOWNLOAD)
+        self.assertEqual(s.lookup(SSH).cls, TrafficClass.BULK_DOWNLOAD)
 
     def test_host_scoped_matches_any_port(self):
         """A host-scoped correction must not compare the port, or it stops
         applying the moment the source port changes -- which is every reconnect.
         """
         s = self.store()
-        s.record(SSH, TrafficClass.INTERACTIVE, dport=None)
+        s.record(SSH, TrafficClass.VIDEO_CALL, dport=None)
         for dport in (22, 443, 8080):
             f = Flow("10.0.1.2", 5000, "203.0.113.9", dport, "tcp")
             self.assertIsNotNone(s.lookup(f), f"port {dport} should match")
 
     def test_port_scoped_does_not_leak_to_other_ports(self):
         s = self.store()
-        s.record(SSH, TrafficClass.BULK)
+        s.record(SSH, TrafficClass.BULK_DOWNLOAD)
         other = Flow("10.0.1.2", 5000, "203.0.113.9", 23, "tcp")
         self.assertIsNone(s.lookup(other))
 
     def test_no_match_returns_none(self):
         s = self.store()
-        s.record(SSH, TrafficClass.BULK)
+        s.record(SSH, TrafficClass.BULK_DOWNLOAD)
         self.assertIsNone(s.lookup(CALL))
 
     def test_source_port_is_never_part_of_the_key(self):
         """Two connections to the same service differ only in sport."""
         s = self.store()
-        s.record(SSH, TrafficClass.BULK)
+        s.record(SSH, TrafficClass.BULK_DOWNLOAD)
         reconnect = Flow("10.0.1.2", 99999, "203.0.113.9", 22, "tcp")
-        self.assertEqual(s.lookup(reconnect).cls, TrafficClass.BULK)
+        self.assertEqual(s.lookup(reconnect).cls, TrafficClass.BULK_DOWNLOAD)
 
     def test_proto_must_match(self):
         s = self.store()
         s.record(Flow("10.0.1.2", 1, "203.0.113.9", 22, "tcp"),
-                 TrafficClass.BULK)
+                 TrafficClass.BULK_DOWNLOAD)
         udp = Flow("10.0.1.2", 1, "203.0.113.9", 22, "udp")
         self.assertIsNone(s.lookup(udp))
 
     def test_hits_and_misses_counted(self):
         s = self.store()
-        s.record(SSH, TrafficClass.BULK)
+        s.record(SSH, TrafficClass.BULK_DOWNLOAD)
         s.lookup(SSH)
         s.lookup(CALL)
         self.assertEqual(s.stats.hits, 1)
@@ -147,21 +147,21 @@ class TestLookup(StoreCase):
     def test_specific_beats_host_when_equally_recent(self):
         """An exact port correction is the more deliberate statement."""
         s = self.store(now=1000.0)
-        s.record(SSH, TrafficClass.BULK, dport=None, reason="host-wide")
-        s.record(SSH, TrafficClass.INTERACTIVE, dport=22, reason="just ssh")
+        s.record(SSH, TrafficClass.BULK_DOWNLOAD, dport=None, reason="host-wide")
+        s.record(SSH, TrafficClass.VIDEO_CALL, dport=22, reason="just ssh")
         c = s.lookup(SSH)
-        self.assertEqual(c.cls, TrafficClass.INTERACTIVE)
+        self.assertEqual(c.cls, TrafficClass.VIDEO_CALL)
         self.assertEqual(c.reason, "just ssh")
 
     def test_newer_host_correction_beats_older_port_correction(self):
         """Re-correcting the whole host is a deliberate new intent, so the later
         statement wins even though it is less specific."""
         s = self.store(now=1000.0)
-        s.record(SSH, TrafficClass.INTERACTIVE, dport=22, reason="just ssh")
+        s.record(SSH, TrafficClass.VIDEO_CALL, dport=22, reason="just ssh")
         s2 = self.store(now=2000.0)
-        s2.record(SSH, TrafficClass.BULK, dport=None, reason="host-wide, all bulk")
+        s2.record(SSH, TrafficClass.BULK_DOWNLOAD, dport=None, reason="host-wide, all bulk")
         c = s2.lookup(SSH)
-        self.assertEqual(c.cls, TrafficClass.BULK)
+        self.assertEqual(c.cls, TrafficClass.BULK_DOWNLOAD)
         self.assertEqual(c.reason, "host-wide, all bulk")
 
 
@@ -170,7 +170,7 @@ class TestExpiry(StoreCase):
         """A correction describes a hypothesis about traffic that will change.
         One that outlives its flow is worse than none."""
         s = self.store(now=1000.0)
-        s.record(SSH, TrafficClass.BULK, ttl_s=60)
+        s.record(SSH, TrafficClass.BULK_DOWNLOAD, ttl_s=60)
         live = self.store(now=1050.0)
         self.assertIsNotNone(live.lookup(SSH))
         dead = self.store(now=1100.0)
@@ -179,7 +179,7 @@ class TestExpiry(StoreCase):
     def test_expiry_is_counted(self):
         """So a stale correction is visible rather than merely gone."""
         s = self.store(now=1000.0)
-        s.record(SSH, TrafficClass.BULK, ttl_s=60)
+        s.record(SSH, TrafficClass.BULK_DOWNLOAD, ttl_s=60)
         later = self.store(now=2000.0)
         later.lookup(SSH)
         self.assertEqual(later.stats.expired, 1)
@@ -187,7 +187,7 @@ class TestExpiry(StoreCase):
 
     def test_exactly_at_expiry_is_expired(self):
         s = self.store(now=1000.0)
-        s.record(SSH, TrafficClass.BULK, ttl_s=60)
+        s.record(SSH, TrafficClass.BULK_DOWNLOAD, ttl_s=60)
         self.assertIsNone(self.store(now=1060.0).lookup(SSH))
 
 
@@ -202,7 +202,7 @@ class TestMalformed(StoreCase):
         self._write("{not json",
                     json.dumps({"src": "10.0.1.2", "dst": "203.0.113.9",
                                 "proto": "tcp", "dport": 22,
-                                "cls": "bulk_transfer"}))
+                                "cls": "bulk_download"}))
         s = self.store()
         self.assertEqual(len(s), 1)
         self.assertEqual(s.stats.skipped_malformed, 1)
@@ -224,13 +224,13 @@ class TestMalformed(StoreCase):
 
     def test_out_of_range_port_is_skipped(self):
         self._write(json.dumps({"src": "a", "dst": "b", "proto": "tcp",
-                                "dport": 70000, "cls": "bulk_transfer"}))
+                                "dport": 70000, "cls": "bulk_download"}))
         s = self.store()
         self.assertEqual(len(s), 0)
 
     def test_bad_schema_version_is_skipped(self):
         self._write(json.dumps({"src": "a", "dst": "b", "proto": "tcp",
-                                "dport": 22, "cls": "bulk_transfer",
+                                "dport": 22, "cls": "bulk_download",
                                 "schema": 999}))
         s = self.store()
         self.assertEqual(len(s), 0)
@@ -240,7 +240,7 @@ class TestMalformed(StoreCase):
         self._write("", "# a note", "   ",
                     json.dumps({"src": "10.0.1.2", "dst": "203.0.113.9",
                                 "proto": "tcp", "dport": 22,
-                                "cls": "bulk_transfer"}))
+                                "cls": "bulk_download"}))
         s = self.store()
         self.assertEqual(len(s), 1)
         self.assertEqual(s.stats.skipped_malformed, 0)
@@ -258,13 +258,13 @@ class TestMalformed(StoreCase):
 class TestValidation(unittest.TestCase):
     def _line(self, **kw):
         base = {"src": "10.0.1.2", "dst": "203.0.113.9", "proto": "tcp",
-                "dport": 22, "cls": "bulk_transfer"}
+                "dport": 22, "cls": "bulk_download"}
         base.update(kw)
         return json.dumps(base)
 
     def test_valid_line_parses(self):
         c = parse_correction(self._line())
-        self.assertEqual(c.cls, TrafficClass.BULK)
+        self.assertEqual(c.cls, TrafficClass.BULK_DOWNLOAD)
         self.assertEqual(c.schema, SCHEMA_VERSION)
 
     def test_all_classes_except_leased_accepted(self):
@@ -319,7 +319,7 @@ class TestValidation(unittest.TestCase):
     def test_error_lists_the_valid_classes(self):
         with self.assertRaises(CorrectionError) as cm:
             parse_correction(self._line(cls="nope"))
-        self.assertIn("bulk_transfer", str(cm.exception))
+        self.assertIn("bulk_download", str(cm.exception))
 
 
 class TestCorrectionChangesADecision(unittest.TestCase):
@@ -335,7 +335,7 @@ class TestCorrectionChangesADecision(unittest.TestCase):
 
     def test_inference_alone_puts_a_saturating_flow_in_bulk(self):
         f = self._features(SSH)
-        self.assertEqual(finalise(classify(f, 100.0)).cls, TrafficClass.BULK)
+        self.assertEqual(finalise(classify(f, 100.0)).cls, TrafficClass.BULK_DOWNLOAD)
 
     def test_correction_overrides_it_and_survives_finalise(self):
         """finalise() demotes anything below MIN_CONFIDENCE. A user correction
@@ -343,12 +343,12 @@ class TestCorrectionChangesADecision(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "c.jsonl"
             store = CorrectionStore(path)
-            store.record(SSH, TrafficClass.INTERACTIVE, reason="latency-critical")
+            store.record(SSH, TrafficClass.VIDEO_CALL, reason="latency-critical")
 
             c = store.lookup(SSH)
             f = self._features(SSH, correction=c.cls)
             result = finalise(classify(f, 100.0))
-            self.assertEqual(result.cls, TrafficClass.INTERACTIVE)
+            self.assertEqual(result.cls, TrafficClass.VIDEO_CALL)
             self.assertEqual(result.confidence, 1.0)
             self.assertEqual(result.tier, "X")
 
@@ -357,43 +357,43 @@ class TestCorrectionChangesADecision(unittest.TestCase):
         user's statement must win either way."""
         with tempfile.TemporaryDirectory() as d:
             store = CorrectionStore(Path(d) / "c.jsonl")
-            store.record(SSH, TrafficClass.BULK)
+            store.record(SSH, TrafficClass.BULK_DOWNLOAD)
             f = self._features(SSH, dscp=46, correction=store.lookup(SSH).cls)
-            self.assertEqual(finalise(classify(f, 100.0)).cls, TrafficClass.BULK)
+            self.assertEqual(finalise(classify(f, 100.0)).cls, TrafficClass.BULK_DOWNLOAD)
 
     def test_without_a_correction_the_decision_is_unchanged(self):
         """Control: the override must come from the correction, not from the
         feature construction above."""
         f = self._features(SSH)
-        self.assertEqual(finalise(classify(f, 100.0)).cls, TrafficClass.BULK)
+        self.assertEqual(finalise(classify(f, 100.0)).cls, TrafficClass.BULK_DOWNLOAD)
 
     def test_expired_correction_no_longer_changes_the_decision(self):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "c.jsonl"
             CorrectionStore(path, now=1000.0).record(
-                SSH, TrafficClass.INTERACTIVE, ttl_s=60)
+                SSH, TrafficClass.VIDEO_CALL, ttl_s=60)
             live = CorrectionStore(path, now=1050.0)
             f = self._features(SSH, correction=live.lookup(SSH).cls)
             self.assertEqual(finalise(classify(f, 100.0)).cls,
-                             TrafficClass.INTERACTIVE)
+                             TrafficClass.VIDEO_CALL)
             dead = CorrectionStore(path, now=2000.0)
             gone = dead.lookup(SSH)
             self.assertIsNone(gone, "expired correction must not apply")
             f2 = self._features(SSH, correction=gone.cls if gone else None)
             self.assertEqual(finalise(classify(f2, 100.0)).cls,
-                             TrafficClass.BULK)
+                             TrafficClass.BULK_DOWNLOAD)
 
     def test_host_scoped_correction_survives_a_reconnect(self):
         """The flow that matters: a corrected service must stay corrected after
         the client reconnects on a new source port."""
         with tempfile.TemporaryDirectory() as d:
             store = CorrectionStore(Path(d) / "c.jsonl")
-            store.record(SSH, TrafficClass.INTERACTIVE, dport=None)
+            store.record(SSH, TrafficClass.VIDEO_CALL, dport=None)
             for sport in (1, 40000, 65535):
                 f = Flow("10.0.1.2", sport, "203.0.113.9", 22, "tcp")
                 c = store.lookup(f)
                 self.assertIsNotNone(c, f"sport {sport} lost its correction")
-                self.assertEqual(c.cls, TrafficClass.INTERACTIVE)
+                self.assertEqual(c.cls, TrafficClass.VIDEO_CALL)
 
 
 if __name__ == "__main__":
@@ -402,7 +402,7 @@ if __name__ == "__main__":
 class TestClassAliases(unittest.TestCase):
     """An operator reaching for `--as interactive` should not get a usage error.
 
-    TrafficClass values are verbose (`realtime_interactive`), and a correction
+    TrafficClass values are verbose (`video_call_voice`), and a correction
     typo that reaches enforcement would route traffic to the wrong class.
     """
 
@@ -413,9 +413,9 @@ class TestClassAliases(unittest.TestCase):
 
     def test_aliases_map_to_the_intended_class(self):
         from aciq.corrections import parse_class
-        self.assertEqual(parse_class("interactive"), TrafficClass.INTERACTIVE)
-        self.assertEqual(parse_class("adaptive"), TrafficClass.ADAPTIVE)
-        self.assertEqual(parse_class("bulk"), TrafficClass.BULK)
+        self.assertEqual(parse_class("interactive"), TrafficClass.VIDEO_CALL)
+        self.assertEqual(parse_class("adaptive"), TrafficClass.STREAMING)
+        self.assertEqual(parse_class("bulk"), TrafficClass.BULK_DOWNLOAD)
 
     def test_leased_alias_is_rejected(self):
         """A correction must not mint lease capacity (see _reject_leased)."""
@@ -435,18 +435,18 @@ class TestClassAliases(unittest.TestCase):
 
     def test_case_insensitive(self):
         from aciq.corrections import parse_class
-        self.assertEqual(parse_class("INTERACTIVE"), TrafficClass.INTERACTIVE)
+        self.assertEqual(parse_class("INTERACTIVE"), TrafficClass.VIDEO_CALL)
 
     def test_whitespace_tolerated(self):
         from aciq.corrections import parse_class
-        self.assertEqual(parse_class("  bulk  "), TrafficClass.BULK)
+        self.assertEqual(parse_class("  bulk  "), TrafficClass.BULK_DOWNLOAD)
 
     def test_unknown_class_raises_and_lists_options(self):
         from aciq.corrections import parse_class
         with self.assertRaises(CorrectionError) as cm:
             parse_class("nonsense")
         msg = str(cm.exception)
-        self.assertIn("bulk_transfer", msg)
+        self.assertIn("bulk_download", msg)
         self.assertIn("interactive", msg)
 
     def test_non_string_rejected(self):
@@ -458,9 +458,9 @@ class TestClassAliases(unittest.TestCase):
         """The file must stay unambiguous regardless of how it was entered."""
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "c.jsonl"
-            CorrectionStore(path).record(SSH, TrafficClass.BULK)
+            CorrectionStore(path).record(SSH, TrafficClass.BULK_DOWNLOAD)
             line = path.read_text().strip()
-            self.assertEqual(json.loads(line)["cls"], "bulk_transfer")
+            self.assertEqual(json.loads(line)["cls"], "bulk_download")
 
 
 class TestIPv6Canonicalisation(StoreCase):
@@ -469,7 +469,7 @@ class TestIPv6Canonicalisation(StoreCase):
     def test_different_spellings_of_one_address_hit(self):
         s = self.store()
         v6 = Flow("2001:DB8::1", 40000, "2001:db8:0:0:0:0:0:9", 443, "tcp")
-        s.record(v6, TrafficClass.INTERACTIVE, dport=443)
+        s.record(v6, TrafficClass.VIDEO_CALL, dport=443)
         other = Flow("2001:db8:0:0:0:0:0:1", 51000,
                      "2001:0db8::9", 443, "tcp")
         self.assertIsNotNone(s.lookup(other),
@@ -478,7 +478,7 @@ class TestIPv6Canonicalisation(StoreCase):
     def test_distinct_addresses_still_miss(self):
         s = self.store()
         v6 = Flow("2001:db8::1", 40000, "2001:db8::9", 443, "tcp")
-        s.record(v6, TrafficClass.INTERACTIVE, dport=443)
+        s.record(v6, TrafficClass.VIDEO_CALL, dport=443)
         other = Flow("2001:db8::2", 40000, "2001:db8::9", 443, "tcp")
         self.assertIsNone(s.lookup(other))
 
@@ -486,12 +486,12 @@ class TestIPv6Canonicalisation(StoreCase):
         s = self.store()
         c = s.record(Flow("2001:DB8:0:0:0:0:0:1", 1,
                           "2001:db8::9", 443, "tcp"),
-                     TrafficClass.INTERACTIVE, dport=443)
+                     TrafficClass.VIDEO_CALL, dport=443)
         self.assertEqual(c.src, "2001:db8::1")
 
     def test_unparseable_flow_address_misses_without_raising(self):
         s = self.store()
-        s.record(SSH, TrafficClass.BULK)
+        s.record(SSH, TrafficClass.BULK_DOWNLOAD)
         weird = Flow("definitely-not-an-ip", 1, "10.0.1.9", 22, "tcp")
         self.assertIsNone(s.lookup(weird))
 
@@ -504,7 +504,7 @@ class TestLiveReload(StoreCase):
         self.assertIsNone(s.lookup(SSH))
         # the CLI appends, bypassing this store's in-memory copy
         s2 = CorrectionStore(self.path, now=1000.0)
-        s2.record(SSH, TrafficClass.BULK)
+        s2.record(SSH, TrafficClass.BULK_DOWNLOAD)
         # past the throttle window; the mtime has changed
         self.assertIsNotNone(s.lookup(SSH, now=1001.0),
                              "a correction recorded while running must apply")
@@ -514,7 +514,7 @@ class TestLiveReload(StoreCase):
         s = self.store(now=1000.0)
         s.lookup(CALL, now=1000.0)          # first check arms the throttle
         s2 = CorrectionStore(self.path, now=1000.0)
-        s2.record(SSH, TrafficClass.BULK)   # external write, mtime changed
+        s2.record(SSH, TrafficClass.BULK_DOWNLOAD)   # external write, mtime changed
         self.assertIsNone(s.lookup(SSH, now=1000.0 + RELOAD_CHECK_S - 0.1),
                           "inside the window the store must not re-stat")
         self.assertIsNotNone(s.lookup(SSH, now=1000.0 + RELOAD_CHECK_S + 0.1),
@@ -522,7 +522,7 @@ class TestLiveReload(StoreCase):
 
     def test_reload_preserves_hit_and_miss_counters(self):
         s = self.store(now=1000.0)
-        s.record(SSH, TrafficClass.BULK)
+        s.record(SSH, TrafficClass.BULK_DOWNLOAD)
         s.lookup(SSH)                       # hit
         s.lookup(CALL)                      # miss
         before = (s.stats.hits, s.stats.misses)
@@ -533,7 +533,7 @@ class TestLiveReload(StoreCase):
 
     def test_our_own_write_does_not_trigger_a_reload(self):
         s = self.store(now=1000.0)
-        s.record(SSH, TrafficClass.BULK)
+        s.record(SSH, TrafficClass.BULK_DOWNLOAD)
         hits_before = s.stats.hits
         s.lookup(SSH, now=1001.0)           # mtime unchanged by our write
         self.assertEqual(s.stats.hits, hits_before + 1)

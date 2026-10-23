@@ -23,17 +23,23 @@ from dataclasses import dataclass
 
 from .model import RatePlan, TrafficClass
 
-#: root qdisc handle and the class HTB sends unclassified traffic to
+#: root qdisc handle and the class HTB sends unclassified traffic to.
+#: The default class is `unknown`: a flow the classifier abstains on still has
+#: its own HTB class with a guaranteed floor (best-effort with a minimum share).
 ROOT_HANDLE = "1:"
-DEFAULT_CLASS = "30"
+DEFAULT_CLASS = "70"
 
 #: HTB class ids. The leased flow gets its own so a lease can be measured
 #: separately from the class it resembles.
 CLASS_IDS: dict[TrafficClass, str] = {
-    TrafficClass.INTERACTIVE: "1:10",
-    TrafficClass.ADAPTIVE: "1:20",
-    TrafficClass.BULK: "1:30",
-    TrafficClass.LEASED: "1:40",
+    TrafficClass.VIDEO_CALL: "1:10",
+    TrafficClass.GAMING: "1:20",
+    TrafficClass.STREAMING: "1:25",
+    TrafficClass.BULK_DOWNLOAD: "1:30",
+    TrafficClass.SOFTWARE_UPDATE: "1:50",
+    TrafficClass.CLOUD_BACKUP: "1:60",
+    TrafficClass.UNKNOWN: "1:70",
+    TrafficClass.LEASED: "1:80",
 }
 ROOT_CLASS_ID = "1:1"
 BARE_CLASS_ID = "1:"
@@ -164,11 +170,11 @@ def build_tree(
         )
 
     filters: list[TcFilter] = []
-    if with_filters and TrafficClass.INTERACTIVE in plan.rates:
+    if with_filters and TrafficClass.VIDEO_CALL in plan.rates:
         filters.append(TcFilter(DSCP_FILTER_PRIO["ip"], "ip",
-                                CLASS_IDS[TrafficClass.INTERACTIVE]))
+                                CLASS_IDS[TrafficClass.VIDEO_CALL]))
         filters.append(TcFilter(DSCP_FILTER_PRIO["ipv6"], "ipv6",
-                                CLASS_IDS[TrafficClass.INTERACTIVE]))
+                                CLASS_IDS[TrafficClass.VIDEO_CALL]))
 
     return TcTree(capacity_mbps=cap, classes=tuple(classes), filters=tuple(filters))
 

@@ -36,11 +36,15 @@ from aciq.bridge import (
     generate_teardown,
 )
 from aciq.marks import (
-    CLASS_ADAPTIVE,
-    CLASS_BULK,
-    CLASS_INTERACTIVE,
+    CLASS_STREAMING,
+    CLASS_BULK_DOWNLOAD,
+    CLASS_VIDEO_CALL,
+    CLASS_GAMING,
+    CLASS_UNKNOWN,
     CLASS_LEASED,
     CLASS_UNCLASSIFIED,
+    CLASS_SOFTWARE_UPDATE,
+    CLASS_CLOUD_BACKUP,
 )
 
 V4 = FlowKey("203.0.113.2", "10.0.1.2", "udp", 7001)
@@ -133,7 +137,7 @@ class TestFlowFilter(unittest.TestCase):
     """The command that does the enforcement."""
 
     def test_matches_all_four_key_fields(self):
-        argv = generate_flow_filter(V4, CLASS_ADAPTIVE, "veth-lan", 1)
+        argv = generate_flow_filter(V4, CLASS_STREAMING, "veth-lan", 1)
         for field in ("src_ip", "dst_ip", "ip_proto", "dst_port"):
             self.assertIn(field, argv)
         self.assertEqual(argv[argv.index("src_ip") + 1], "203.0.113.2")
@@ -142,9 +146,11 @@ class TestFlowFilter(unittest.TestCase):
         self.assertEqual(argv[argv.index("dst_port") + 1], "7001")
 
     def test_points_at_the_right_class(self):
-        for cid, flowid in ((CLASS_INTERACTIVE, "1:10"), (CLASS_ADAPTIVE, "1:20"),
-                            (CLASS_BULK, "1:30"), (CLASS_LEASED, "1:40"),
-                            (CLASS_UNCLASSIFIED, "1:30")):
+        for cid, flowid in ((CLASS_VIDEO_CALL, "1:10"), (CLASS_GAMING, "1:20"),
+                            (CLASS_STREAMING, "1:25"), (CLASS_BULK_DOWNLOAD, "1:30"),
+                            (CLASS_SOFTWARE_UPDATE, "1:50"), (CLASS_CLOUD_BACKUP, "1:60"),
+                            (CLASS_UNKNOWN, "1:70"), (CLASS_LEASED, "1:80"),
+                            (CLASS_UNCLASSIFIED, "1:70")):
             argv = generate_flow_filter(V4, cid, "veth-lan", 1)
             self.assertEqual(argv[argv.index("flowid") + 1], flowid, cid)
 
@@ -152,24 +158,24 @@ class TestFlowFilter(unittest.TestCase):
         """An unclassified flow has no filter at all in normal use; when one is
         forced it lands on the default rather than a class of its own."""
         self.assertEqual(generate_flow_filter(V4, CLASS_UNCLASSIFIED, "d", 1)[-1],
-                         "1:30")
+                         "1:70")
 
     def test_ipv6_filter_uses_protocol_ipv6(self):
-        argv = generate_flow_filter(V6, CLASS_ADAPTIVE, "d", 1)
+        argv = generate_flow_filter(V6, CLASS_STREAMING, "d", 1)
         self.assertEqual(argv[argv.index("protocol") + 1], "ipv6")
 
     def test_ipv4_filter_uses_protocol_ip(self):
-        argv = generate_flow_filter(V4, CLASS_ADAPTIVE, "d", 1)
+        argv = generate_flow_filter(V4, CLASS_STREAMING, "d", 1)
         self.assertEqual(argv[argv.index("protocol") + 1], "ip")
 
     def test_handle_is_present_and_padded(self):
-        argv = generate_flow_filter(V4, CLASS_ADAPTIVE, "d", 0x2A)
+        argv = generate_flow_filter(V4, CLASS_STREAMING, "d", 0x2A)
         self.assertEqual(argv[argv.index("handle") + 1], "0x002a")
 
     def test_handle_range_enforced(self):
         for bad in (0, -1, MAX_FLOW_HANDLE + 1):
             with self.assertRaises(BridgeError):
-                generate_flow_filter(V4, CLASS_ADAPTIVE, "d", bad)
+                generate_flow_filter(V4, CLASS_STREAMING, "d", bad)
 
 
 class TestHandlesAreDerived(unittest.TestCase):
@@ -210,17 +216,17 @@ class TestHandlesAreDerived(unittest.TestCase):
         k = FlowKey("203.0.113.2", "10.0.1.2", "udp", 7001)
         b1 = Bridge("d", "e", dry_run=True)
         b2 = Bridge("d", "e", dry_run=True)
-        h1 = [c[c.index("handle") + 1] for c in b1.mark(k, CLASS_BULK)
+        h1 = [c[c.index("handle") + 1] for c in b1.mark(k, CLASS_BULK_DOWNLOAD)
               if bare(c)[2] == "add"][0]
-        h2 = [c[c.index("handle") + 1] for c in b2.mark(k, CLASS_ADAPTIVE)
+        h2 = [c[c.index("handle") + 1] for c in b2.mark(k, CLASS_STREAMING)
               if bare(c)[2] == "add"][0]
         self.assertEqual(h1, h2)
 
     def test_two_instances_on_different_flows_do_not_collide(self):
         b1 = Bridge("d", "e", dry_run=True)
         b2 = Bridge("d", "e", dry_run=True)
-        b1.mark(V4, CLASS_BULK)
-        b2.mark(V6, CLASS_ADAPTIVE)
+        b1.mark(V4, CLASS_BULK_DOWNLOAD)
+        b2.mark(V6, CLASS_STREAMING)
         self.assertNotEqual(handle_for(V4), handle_for(V6))
 
     def test_precedes_the_dscp_ef_fallback(self):
@@ -237,23 +243,23 @@ class TestHandlesAreDerived(unittest.TestCase):
     def test_no_fw_filter_is_emitted(self):
         """`tc fw` cannot read a mark on iproute2 6.1.0: only classid, indev and
         action are accepted."""
-        for argv in (generate_flow_filter(V4, CLASS_ADAPTIVE, "d", 1),
+        for argv in (generate_flow_filter(V4, CLASS_STREAMING, "d", 1),
                      generate_del_flow_filter("d", 1, "ip")):
             self.assertNotIn("fw", argv)
 
     def test_skip_hw_present(self):
-        self.assertIn("skip_hw", generate_flow_filter(V4, CLASS_ADAPTIVE, "d", 1))
+        self.assertIn("skip_hw", generate_flow_filter(V4, CLASS_STREAMING, "d", 1))
 
     def test_tokenisation(self):
         """No token may contain whitespace: a spec reaching tc as one token is
         the 'Specified qdisc kind is unknown' class of bug."""
-        for argv in (generate_flow_filter(V4, CLASS_ADAPTIVE, "d", 1),
+        for argv in (generate_flow_filter(V4, CLASS_STREAMING, "d", 1),
                      generate_del_flow_filter("d", 1, "ip")):
             for tok in argv:
                 self.assertNotIn(" ", tok, argv)
 
     def test_namespace_prefix(self):
-        argv = generate_flow_filter(V4, CLASS_ADAPTIVE, "d", 1, ns="router")
+        argv = generate_flow_filter(V4, CLASS_STREAMING, "d", 1, ns="router")
         self.assertEqual(argv[:4], ("ip", "netns", "exec", "router"))
 
 
@@ -267,7 +273,7 @@ class TestDeleteFilter(unittest.TestCase):
         self.assertEqual(bare(argv)[2], "del")
 
     def test_carries_the_same_prio_and_protocol_as_the_add(self):
-        add = generate_flow_filter(V4, CLASS_BULK, "d", 3)
+        add = generate_flow_filter(V4, CLASS_BULK_DOWNLOAD, "d", 3)
         dele = generate_del_flow_filter("d", 3, "ip")
         for field in ("protocol", "prio"):
             self.assertEqual(add[add.index(field) + 1],
@@ -283,7 +289,7 @@ class TestBridgeMarking(unittest.TestCase):
         """The delete is unconditional even with nothing to delete, so a restart
         re-adopts its own filters instead of colliding with them."""
         r = Recorder()
-        Bridge("d", "eth1", "router", executor=r).mark(V4, CLASS_ADAPTIVE)
+        Bridge("d", "eth1", "router", executor=r).mark(V4, CLASS_STREAMING)
         self.assertEqual(len(r.calls), 2)
         self.assertEqual(bare(r.calls[0])[:3], ("tc", "filter", "del"))
         self.assertEqual(bare(r.calls[1])[:3], ("tc", "filter", "add"))
@@ -293,17 +299,17 @@ class TestBridgeMarking(unittest.TestCase):
         no behavioural change."""
         r = Recorder()
         b = Bridge("d", "eth1", "router", executor=r)
-        b.mark(V4, CLASS_ADAPTIVE)
+        b.mark(V4, CLASS_STREAMING)
         self.assertEqual(len(r.calls), 2)          # del + add
         for _ in range(50):
-            self.assertEqual(b.mark(V4, CLASS_ADAPTIVE), [])
+            self.assertEqual(b.mark(V4, CLASS_STREAMING), [])
         self.assertEqual(len(r.calls), 2, "no further netlink traffic")
 
     def test_reclassification_deletes_then_adds(self):
         r = Recorder()
         b = Bridge("d", "eth1", "router", executor=r)
-        b.mark(V4, CLASS_BULK)
-        b.mark(V4, CLASS_INTERACTIVE)
+        b.mark(V4, CLASS_BULK_DOWNLOAD)
+        b.mark(V4, CLASS_VIDEO_CALL)
         # each mark is del+add
         self.assertEqual(len(r.calls), 4)
         self.assertEqual(bare(r.calls[2])[:3], ("tc", "filter", "del"))
@@ -313,10 +319,10 @@ class TestBridgeMarking(unittest.TestCase):
         """The check-17 failure, as a test: a second Bridge marking a DIFFERENT
         flow must not reuse handle 1."""
         r1 = Recorder()
-        Bridge("d", "eth1", "router", executor=r1).mark(V4, CLASS_BULK)
+        Bridge("d", "eth1", "router", executor=r1).mark(V4, CLASS_BULK_DOWNLOAD)
         r2 = Recorder()
         other = FlowKey("203.0.113.2", "10.0.1.2", "udp", 7002)
-        Bridge("d", "eth1", "router", executor=r2).mark(other, CLASS_ADAPTIVE)
+        Bridge("d", "eth1", "router", executor=r2).mark(other, CLASS_STREAMING)
         h1 = [c[c.index("handle") + 1] for c in r1.calls
               if bare(c)[2] == "add"][0]
         h2 = [c[c.index("handle") + 1] for c in r2.calls
@@ -328,8 +334,8 @@ class TestBridgeMarking(unittest.TestCase):
         filter is replaced rather than left orphaned beside the new one."""
         r = Recorder()
         b = Bridge("d", "eth1", "router", executor=r)
-        b.mark(V4, CLASS_BULK)
-        b.mark(V4, CLASS_ADAPTIVE)
+        b.mark(V4, CLASS_BULK_DOWNLOAD)
+        b.mark(V4, CLASS_STREAMING)
         handles = [c[c.index("handle") + 1] for c in r.calls
                    if bare(c)[2] == "add"]
         self.assertEqual(len(set(handles)), 1)
@@ -337,7 +343,7 @@ class TestBridgeMarking(unittest.TestCase):
     def test_handles_are_distinct_across_flows(self):
         b = Bridge("d", "eth1", "router", executor=Recorder())
         for i in range(20):
-            b.mark(FlowKey("1.1.1.1", "2.2.2.2", "tcp", 1000 + i), CLASS_BULK)
+            b.mark(FlowKey("1.1.1.1", "2.2.2.2", "tcp", 1000 + i), CLASS_BULK_DOWNLOAD)
         handles = [s.handle for s in b.state.slots.values()]
         self.assertEqual(len(set(handles)), 20)
 
@@ -346,12 +352,12 @@ class TestBridgeMarking(unittest.TestCase):
         b = Bridge("d", "eth1", "router", executor=Recorder())
         for i in range(300):
             b.mark(FlowKey(f"10.0.0.{i % 254}", "2.2.2.2", "tcp", 1 + i),
-                   CLASS_BULK)
+                   CLASS_BULK_DOWNLOAD)
 
     def test_flows_are_tracked_separately(self):
         b = Bridge("d", "eth1", "router", executor=Recorder())
-        b.mark(V4, CLASS_BULK)
-        b.mark(V6, CLASS_INTERACTIVE)
+        b.mark(V4, CLASS_BULK_DOWNLOAD)
+        b.mark(V6, CLASS_VIDEO_CALL)
         self.assertEqual(len(b.state.slots), 2)
 
     def test_forget_removes_the_filter(self):
@@ -385,7 +391,7 @@ class TestBridgeMarking(unittest.TestCase):
         b = Bridge("d", "eth1", "router", executor=r)
         b.mark(V4, CLASS_LEASED)
         b.forget(V4)
-        b.mark(V4, CLASS_BULK)
+        b.mark(V4, CLASS_BULK_DOWNLOAD)
         j = r.joined()
         self.assertIn("del", j)
         self.assertIn("1:30", j)
@@ -395,7 +401,7 @@ class TestBridgeMarking(unittest.TestCase):
         means no filter rather than one pointing at 1:30."""
         r = Recorder()
         b = Bridge("d", "eth1", "router", executor=r)
-        b.mark(V4, CLASS_ADAPTIVE)
+        b.mark(V4, CLASS_STREAMING)
         r.calls.clear()
         b.classify_flow(V4, None)
         self.assertEqual(bare(r.calls[0])[:3], ("tc", "filter", "del"))
@@ -403,14 +409,14 @@ class TestBridgeMarking(unittest.TestCase):
     def test_classify_flow_with_a_class_installs(self):
         r = Recorder()
         b = Bridge("d", "eth1", "router", executor=r)
-        b.classify_flow(V4, CLASS_INTERACTIVE)
+        b.classify_flow(V4, CLASS_VIDEO_CALL)
         # del then add; the add carries the class
         self.assertEqual(bare(r.calls[-1])[:3], ("tc", "filter", "add"))
         self.assertIn("1:10", r.calls[-1])
 
     def test_ipv6_flow_uses_the_ipv6_protocol_and_prio(self):
         r = Recorder()
-        Bridge("d", "eth1", "router", executor=r).mark(V6, CLASS_ADAPTIVE)
+        Bridge("d", "eth1", "router", executor=r).mark(V6, CLASS_STREAMING)
         argv = r.calls[0]
         self.assertEqual(argv[argv.index("protocol") + 1], "ipv6")
         self.assertEqual(argv[argv.index("prio") + 1],
@@ -419,7 +425,7 @@ class TestBridgeMarking(unittest.TestCase):
     def test_family_not_installed_is_skipped(self):
         r = Recorder()
         b = Bridge("d", "eth1", "router", families=("ip",), executor=r)
-        self.assertEqual(b.mark(V6, CLASS_BULK), [])
+        self.assertEqual(b.mark(V6, CLASS_BULK_DOWNLOAD), [])
         self.assertEqual(r.calls, [])
 
 
@@ -427,8 +433,8 @@ class TestLifecycle(unittest.TestCase):
     def test_teardown_removes_every_installed_flow(self):
         r = Recorder()
         b = Bridge("d", "eth1", "router", executor=r)
-        b.mark(V4, CLASS_BULK)
-        b.mark(V6, CLASS_ADAPTIVE)
+        b.mark(V4, CLASS_BULK_DOWNLOAD)
+        b.mark(V6, CLASS_STREAMING)
         r.calls.clear()
         b.teardown()
         dels = [c for c in r.calls if bare(c)[:3] == ("tc", "filter", "del")]
@@ -448,7 +454,7 @@ class TestLifecycle(unittest.TestCase):
         may no longer exist, and nothing else would remove it."""
         r = Recorder()
         b = Bridge("d", "eth1", "router", executor=r)
-        b.mark(V4, CLASS_BULK)
+        b.mark(V4, CLASS_BULK_DOWNLOAD)
         r.calls.clear()
         b.setup()
         dels = [c for c in r.calls if bare(c)[:3] == ("tc", "filter", "del")]
@@ -476,22 +482,22 @@ class TestLifecycle(unittest.TestCase):
     def test_state_is_cleared_by_teardown(self):
         r = Recorder()
         b = Bridge("d", "eth1", "router", executor=r)
-        b.mark(V4, CLASS_BULK)
+        b.mark(V4, CLASS_BULK_DOWNLOAD)
         b.teardown()
         self.assertEqual(b.state.slots, {})
 
     def test_dry_run_executes_nothing(self):
         r = Recorder()
         b = Bridge("d", "eth1", "router", executor=r, dry_run=True)
-        b.mark(V4, CLASS_BULK)
+        b.mark(V4, CLASS_BULK_DOWNLOAD)
         b.teardown()
         self.assertEqual(r.calls, [], "dry_run must not enumerate the tc tree")
         self.assertTrue(b.commands)
 
     def test_dry_run_plan_matches_commands(self):
         b = Bridge("d", "eth1", "router", dry_run=True)
-        b.mark(V4, CLASS_BULK)
-        b.mark(V6, CLASS_ADAPTIVE)
+        b.mark(V4, CLASS_BULK_DOWNLOAD)
+        b.mark(V6, CLASS_STREAMING)
         self.assertEqual(b.plan(), [])
 
     def test_setup_installs_no_filters(self):
@@ -509,14 +515,14 @@ class TestErrorHandling(unittest.TestCase):
         would ship traffic to a class the classifier never chose."""
         r = Recorder(fail_on="filter add")
         with self.assertRaises(BridgeError):
-            Bridge("d", "eth1", "router", executor=r).mark(V4, CLASS_BULK)
+            Bridge("d", "eth1", "router", executor=r).mark(V4, CLASS_BULK_DOWNLOAD)
 
     def test_state_is_not_updated_when_the_add_fails(self):
         """Otherwise the next tick would think the filter exists and skip it."""
         r = Recorder(fail_on="filter add")
         b = Bridge("d", "eth1", "router", executor=r)
         with self.assertRaises(BridgeError):
-            b.mark(V4, CLASS_BULK)
+            b.mark(V4, CLASS_BULK_DOWNLOAD)
         self.assertEqual(len(b.state.slots), 0)
 
     def test_delete_failure_is_tolerated(self):
@@ -524,7 +530,7 @@ class TestErrorHandling(unittest.TestCase):
         desired end state."""
         r = Recorder(fail_on="filter del")
         b = Bridge("d", "eth1", "router", executor=r)
-        b.mark(V4, CLASS_BULK)
+        b.mark(V4, CLASS_BULK_DOWNLOAD)
         r.calls.clear()
         b.teardown()          # must not raise
         self.assertEqual(b.state.slots, {})
@@ -534,8 +540,8 @@ class TestErrorHandling(unittest.TestCase):
         desired end state, and leaving the rest installed would be worse."""
         r = Recorder(fail_on="filter del")
         b = Bridge("d", "eth1", "router", executor=r)
-        b.mark(V4, CLASS_BULK)
-        b.mark(V6, CLASS_BULK)
+        b.mark(V4, CLASS_BULK_DOWNLOAD)
+        b.mark(V6, CLASS_BULK_DOWNLOAD)
         r.calls.clear()
         b.teardown()
         dels = [c for c in r.calls if bare(c)[:3] == ("tc", "filter", "del")]
