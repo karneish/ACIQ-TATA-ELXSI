@@ -377,5 +377,5 @@ This is a reference prototype. A real product would need:
 - integration with vendor firmware, TR-069/TR-369, or cloud management;
 - large-scale soak, fuzzing, and rollback drills.
 
-Those are documented in `docs/LIMITATIONS.md` in the final phase. Do not present
+Those will be documented in `docs/LIMITATIONS.md` (to be written) in a later phase. Do not present
 the emulation as production evidence.

@@ -79,7 +79,7 @@ documented in the phases listed in the traceability matrix.
 | Ingress shaping | Egress shaping; ifb path not a required deliverable in prior code | ifb ingress shaping for download direction | 4 |
 | Safe reset / Makefile | No Makefile, no `make safe-reset` | `make demo`, `make safe-reset`, `make test`, `make lint`, `make secret-scan` | 1, 8 |
 | Secret scan | `.gitignore` and `.env.example` exist; no scan step | Automated secret scan and test | 8 |
-| Required docs | Lowercase `docs/setup.md`, `docs/licenses.md`, `docs/limitations.md` | Canonical `docs/SETUP.md`, `docs/THIRD_PARTY_LICENSES.md`, `docs/LIMITATIONS.md`, plus `CONCEPTS.md`, `MODULES.md` | 8 |
+| Required docs | Lowercase `docs/setup.md`, `docs/licenses.md`, `docs/limitations.md` | Canonical `docs/SETUP.md` (to be written), `docs/THIRD_PARTY_LICENSES.md` (to be written), `docs/LIMITATIONS.md` (to be written), plus `CONCEPTS.md`, `MODULES.md` | 8 |
 | Architecture image | ASCII diagram in `docs/architecture.md` | Mermaid source plus exported image | 8 |
 | Results directory | `data/` and `artifacts/` | `results/` with raw CSV/JSON and generated report | 7 |
 | Host execution | Prior live evidence exists; this sandbox has no `tc`/`ip` and no passwordless sudo | Reproducible commands + captured evidence on the host | 1 |
@@ -173,8 +173,8 @@ later phases will be recorded from `pip freeze` and `command -V` at that time.
 ## 4. Target architecture
 
 The diagram source will be committed as
-`docs/diagrams/architecture.mmd` and exported to
-`docs/diagrams/architecture.svg` (or `.png`) in Phase 8. The export command and
+`docs/diagrams/architecture.mmd` (to be written) and exported to
+`docs/diagrams/architecture.svg` (or `.png`; the image does not exist yet) in Phase 8. The export command and
 tool version will be recorded. The current `docs/architecture.md` will be
 updated to the final diagram and contracts.
 
@@ -295,18 +295,18 @@ TATA-ELXSI/
 ├── docs/
 │   ├── CONCEPTS.md                   N  plain-language concepts (English; Thanglish in chat)
 │   ├── MODULES.md                    N  9 modules x inputs/outputs/states/failure/success
-│   ├── SETUP.md                      N  exact versions, commands, root requirements
-│   ├── THIRD_PARTY_LICENSES.md       N  license inventory and GPL/AGPL flags
-│   ├── LIMITATIONS.md                N  prototype/production boundary, scale, security
+│   ├── SETUP.md                      N  (to be written) exact versions, commands, root requirements
+│   ├── THIRD_PARTY_LICENSES.md       N  (to be written) license inventory and GPL/AGPL flags
+│   ├── LIMITATIONS.md                N  (to be written) prototype/production boundary, scale, security
 │   ├── PHASE0_PLAN.md                N  this document
 │   ├── TRACEABILITY.md               N  every requirement -> file/test/experiment
 │   ├── architecture.md               E  final Mermaid diagram + contracts
-│   ├── diagrams/architecture.mmd     N  Mermaid source
-│   ├── diagrams/architecture.svg     N  exported image (tool version recorded)
+│   ├── diagrams/architecture.mmd     N  (to be written) Mermaid source
+│   ├── diagrams/architecture.svg     N  (to be written) exported image (tool version recorded)
 │   ├── evidence/phase0/              N  Phase 0 command logs and test log
-│   ├── limitations.md                K  legacy; superseded by LIMITATIONS.md with a pointer
-│   ├── licenses.md                   K  legacy; superseded by THIRD_PARTY_LICENSES.md
-│   ├── setup.md                      K  legacy; superseded by SETUP.md with a pointer
+│   ├── limitations.md                K  legacy; superseded by LIMITATIONS.md (does not exist yet) with a pointer
+│   ├── licenses.md                   K  legacy; superseded by THIRD_PARTY_LICENSES.md (does not exist yet)
+│   ├── setup.md                      K  legacy; superseded by SETUP.md (does not exist yet) with a pointer
 │   └── gap-closure/                  K  prior evidence and audit history
 ├── aciq/
 │   ├── model.py                      E  7 classes + UNKNOWN; lease as policy overlay
@@ -438,7 +438,7 @@ observer can record Ethernet/IP/TCP/UDP headers and packet lengths without ever
 reading the payload. The observer will explicitly stop parsing at the transport
 header. Conntrack remains the accounting/fallback source. The Python observer is
 a prototype; production-scale packet rates would use eBPF or a compiled
-collector, which is documented in LIMITATIONS.md.
+collector, which is documented in the limitations section (to be written in Phase 8).
 
 ---
 
@@ -470,7 +470,8 @@ The old internal `s4_capacity_recovery` scenario is renamed to `s2b_capacity_rec
 so the required S4 name is unambiguous.
 
 Each scenario runs in BASELINE and OPTIMIZED modes with at least **10 fixed,
-logged seeds**. Seeds are `1001` through `1010`, stored in `data/seeds.json`,
+logged seeds**. Seeds are `1001` through `1010`, to be written
+as `data/seeds.json` (fixed seed list; the file does not exist yet),
 and copied into every run manifest. Reports show mean and 95% confidence
 interval. Paired comparisons use the same seed for both modes.
 
@@ -488,7 +489,7 @@ interval. Paired comparisons use the same seed for both modes.
 | Resource | Controller CPU fraction; peak RSS; decision-loop latency (p50/p95/p99) | `metrics.py`, `resource`, timestamps |
 | Reproducibility | Git revision, seed, config hash, versions, raw CSV/JSONL, manifest | `results/<run>/manifest.json` |
 
-Definitions are stated in `docs/CONCEPTS.md` and `docs/MODULES.md` so they cannot
+Definitions are stated in `docs/CONCEPTS.md` and `docs/MODULES.md` (to be written) so they cannot
 drift between baseline and optimized arms.
 
 ---
@@ -530,8 +531,8 @@ path, not with invented numbers.
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| No root/sudo in agent sandbox | Live evidence cannot be produced by the agent | User-run commands; unprivileged tests/static analysis here; evidence files committed |
-| 7-class refactor breaks prior 3-class tests/evidence | Regression, inconsistent artifacts | Keep mapping table and migration tests; re-run prior gates; label old evidence as prior |
+| No root/sudo in agent sandbox | Live evidence cannot be produced by the agent | User-run commands; unprivileged unit tests and static analysis here; evidence files committed |
+| 7-class refactor breaks prior 3-class test evidence | Regression, inconsistent artifacts | Keep mapping table and migration tests; re-run prior gates; label old evidence as prior |
 | Software update vs bulk download vs cloud backup are hard from metadata | Classifier ambiguity | Use flow shape, direction, duration, burst/periodicity, concurrency; expose confidence; user correction; document honest limits |
 | Python AF_PACKET cannot handle very high packet rates | CPU overhead at 1 Gbps | Prototype target 100/20 Mbps; measure; document eBPF production path |
 | FastAPI adds dependency/licence surface | Install/compat issues | Pin versions after install; stdlib fallback; licence audit |

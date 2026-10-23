@@ -3,5 +3,5 @@ from aciq.scale_harness import ScaleHarness
 import sys
 
 if __name__ == "__main__":
-    out = sys.argv[1] if len(sys.argv) > 1 else "artifacts/scale_simulated.json"
+    out = sys.argv[1] if len(sys.argv) > 1 else "artifacts/scale_simulated_50_100_500.json"
     print(ScaleHarness().write_report(out))
