@@ -417,11 +417,24 @@ class ExperimentRunner:
         # ---- config, written before anything runs so a crashed run is
         # ---- still reproducible from its artefacts
         ports = sc.seed_workloads(seed)
+        # CAKE-oracle is applied at the POST-DROP rate FROM THE START; compute
+        # that here so config.json can state it before any kernel call. For
+        # every other system the tree is built at the link's starting rate.
+        oracle_from_start = (system is SystemSpec.B1_ORACLE
+                             and drop_at_s is not None)
+        start_capacity = drop_mbps if oracle_from_start else link_mbps
         cfg = {
             "scenario": sc.name, "system": system.value, "mode": mode.value,
             "seed": seed, "link_mbps": link_mbps, "drop_mbps": drop_mbps,
             "drop_at_s": drop_at_s,
             "recover_at_s": recover_at_s, "recover_to_mbps": recover_to_mbps,
+            # CAKE-oracle bookkeeping, so the artefact states the arm's
+            # semantics without requiring a reader to know the code: the rate
+            # the tree was actually built with, and why.
+            "cake_rate_at_apply": (0.95 * start_capacity
+                                   if system in (SystemSpec.B1, SystemSpec.B1_ORACLE)
+                                   else None),
+            "oracle_from_start": oracle_from_start,
             "duration_s": sc.duration_s,
             "settle_s": settle,
             "workloads": [{"kind": w.kind, "label": w.label, "dscp": w.dscp}
@@ -457,7 +470,7 @@ class ExperimentRunner:
         # window, or run 2's opening policy change is vetoed as rate-limited.
         self.harness.reset_for_run()
         self.harness.set_lease(None, link_mbps)
-        if not self.harness.apply_system(system, link_mbps):
+        if not self.harness.apply_system(system, start_capacity):
             # Surface *why*. A bare "failed" is useless in a log.
             res = RunResult(sc.name, system.value, mode.value, seed,
                             link_mbps, link_mbps,

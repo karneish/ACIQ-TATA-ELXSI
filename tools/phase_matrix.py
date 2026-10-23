@@ -47,6 +47,9 @@ MATRIX_DIR = ROOT / "data" / "experiments"
 SYSTEMS = {
     "b0_fifo": (SystemSpec.B0, CapacityMode.STATIC),
     "b1_cake95": (SystemSpec.B1, CapacityMode.STATIC),
+    #: labelled UNREALISTIC UPPER BOUND: cake set to the post-drop capacity
+    #: from t=0. Never comparable as a "what a user would have" number.
+    "b1_cake_oracle": (SystemSpec.B1_ORACLE, CapacityMode.STATIC),
     "aciq": (SystemSpec.ACIQ, CapacityMode.ADAPTIVE),
 }
 

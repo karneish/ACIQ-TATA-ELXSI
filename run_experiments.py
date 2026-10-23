@@ -44,7 +44,8 @@ ALL_SCENARIOS = ["s1_iso_during_call", "s2_wan_drop", "s3_tv_and_gaming",
 #: Scenarios that only do something interesting with an explicit drop time.
 #: s4 needs it too -- there is no recovery without a drop first.
 NEEDS_DROP_AT = {"s2_wan_drop", "s4_capacity_recovery"}
-ALL_SYSTEMS = [SystemSpec.B0, SystemSpec.B1, SystemSpec.ACIQ]
+ALL_SYSTEMS = [SystemSpec.B0, SystemSpec.B1, SystemSpec.B1_ORACLE,
+               SystemSpec.ACIQ]
 
 
 def main() -> int:

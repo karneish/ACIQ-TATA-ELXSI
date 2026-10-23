@@ -70,6 +70,13 @@ class SystemSpec(str, Enum):
     B0 = "b0_fifo"          # one class, pfifo limit 1000
     B1 = "b1_cake95"        # one class, cake at 95% of link
     ACIQ = "aciq"           # four classes, fq_codel each, rate + ceil
+    #: CAKE-oracle: the same single-class CAKE tree as B1, but applied at the
+    #: POST-drop capacity FROM THE START of the run. A real user cannot set
+    #: their CAKE to the rate the link will only reach at t=10; this arm is a
+    #: labelled UNREALISTIC UPPER BOUND for "what CAKE would do once someone
+    #: has already fixed the rate", and every artefact/config carrying it must
+    #: say so. Nothing else differs from B1 -- same qdisc kind, same tree.
+    B1_ORACLE = "b1_cake_oracle"
 
 
 class CapacityMode(str, Enum):
