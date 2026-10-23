@@ -39,6 +39,9 @@ step() {  # step <id> <estimated min> <cmd...>
 echo "[run_all_v4] live fix-round pipeline, SEEDS=$SEEDS"
 
 step gate        5  ./testbed/gate.sh
+# a leftover testbed from ANY previous session makes `setup` die on
+# "namespace file exists"; clean FIRST, always (cleanup.sh is idempotent).
+step reset       2  ./testbed/cleanup.sh
 step setup       2  ./testbed/setup.sh
 
 # -- four-arm matrices ------------------------------------------------------
