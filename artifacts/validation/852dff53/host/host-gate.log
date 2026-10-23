@@ -1,0 +1,27 @@
+ACIQ host gate -- revision 852dff53
+date: 2026-10-19T13:49:27+05:30
+
+-- prerequisites --
+  [ok ] root
+  [ok ] ip -> /usr/sbin/ip
+  [ok ] tc -> /usr/sbin/tc
+  [ok ] iperf3 -> /usr/bin/iperf3
+  [ok ] network namespace support
+
+kernel: 7.1.5-76070105-generic
+iproute2: tc utility, iproute2-6.1.0, libbpf 1.3.0
+
+== gate 1: live rollback verification (real kernel) ==
+  [PASS] live rollback
+
+== gate 2: acceptance harness ==
+  [FAIL] acceptance harness exited 1
+
+== gate 3b: capacity recovery, 100 -> 20 -> 100 ==
+  ~5 min plus testbed build
+  evidence: data/host_gate_recovery
+
+== summary ==
+  evidence directory: artifacts/validation/852dff53/host
+  kernel: 7.1.5-76070105-generic
+  RESULT: one or more executed gates FAILED

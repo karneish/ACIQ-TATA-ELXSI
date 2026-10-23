@@ -1,0 +1,34 @@
+# Reconcile: congested (s2_wan_drop), n=7 seeds [42, 43, 44, 45, 46, 47, 48]
+
+| metric | b0_fifo | b1_cake95 | aciq |
+|---|---|---|---|
+| p50 | 81.137 ms | 81.097 ms | 1.197 ms |
+| p95 | 91.415 ms | 91.794 ms | 71.310 ms |
+| p99 | 99.574 ms | 105.410 ms | 97.318 ms |
+| jitter_ms | 0.905 ms | 0.862 ms | 0.725 ms |
+| loss_ratio | 0.006 | 0.004 | 0.001 |
+
+Per-seed p95 / loss:
+| seed 42 | 111.076ms/0.060 | 92.391ms/0.004 | 29.139ms/0.000 |
+| seed 43 | 91.415ms/0.004 | 95.036ms/0.004 | 77.357ms/0.002 |
+| seed 44 | 92.762ms/0.006 | 91.576ms/0.002 | 60.065ms/0.001 |
+| seed 45 | 90.414ms/0.006 | 92.362ms/0.005 | 64.234ms/0.002 |
+| seed 46 | 91.126ms/0.002 | 91.120ms/0.005 | 71.310ms/0.001 |
+| seed 47 | 92.422ms/0.003 | 91.794ms/0.004 | 80.446ms/0.001 |
+| seed 48 | 90.532ms/0.006 | 91.771ms/0.009 | 71.493ms/0.000 |
+
+Paired wins (ACIQ lower):
+  vs b0_fifo: p50 7/7, p95 7/7, p99 4/7, jitter_ms 7/7, loss_ratio 7/7
+  vs b1_cake95: p50 7/7, p95 7/7, p99 6/7, jitter_ms 7/7, loss_ratio 7/7
+
+Estimator error vs reference 20.0 Mbps (abs %):
+  seed 42: 3.10%
+  seed 43: 3.10%
+  seed 44: 3.15%
+  seed 45: 2.85%
+  seed 46: 2.90%
+  seed 47: 3.15%
+  seed 48: 3.25%
+  worst: 3.25%
+
+self-reports agree with raw .obs.jsonl

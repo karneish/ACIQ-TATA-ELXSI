@@ -1,0 +1,38 @@
+{
+  "scenario": "s1_iso_during_call",
+  "system": "b0_fifo",
+  "mode": "static",
+  "seed": 47,
+  "link_mbps": 100.0,
+  "drop_mbps": 20.0,
+  "drop_at_s": 20.0,
+  "duration_s": 30.0,
+  "settle_s": 4.0,
+  "workloads": [
+    {
+      "kind": "call",
+      "label": "call",
+      "dscp": 46
+    },
+    {
+      "kind": "bulk",
+      "label": "bulk",
+      "dscp": null
+    }
+  ],
+  "ports": [
+    {
+      "label": "call",
+      "port": 5280,
+      "dscp": 46
+    },
+    {
+      "label": "bulk",
+      "port": 5132,
+      "dscp": null
+    }
+  ],
+  "floor_mbps": 5.0,
+  "enforce_requested": true,
+  "enforcement_note": "b0_fifo is a baseline, not ACIQ"
+}

@@ -1,0 +1,38 @@
+{
+  "scenario": "s2_wan_drop",
+  "system": "aciq",
+  "mode": "adaptive",
+  "seed": 44,
+  "link_mbps": 100.0,
+  "drop_mbps": 20.0,
+  "drop_at_s": 20.0,
+  "duration_s": 40.0,
+  "settle_s": 4.0,
+  "workloads": [
+    {
+      "kind": "call",
+      "label": "call",
+      "dscp": 46
+    },
+    {
+      "kind": "bulk",
+      "label": "bulk",
+      "dscp": null
+    }
+  ],
+  "ports": [
+    {
+      "label": "call",
+      "port": 5309,
+      "dscp": 46
+    },
+    {
+      "label": "bulk",
+      "port": 5366,
+      "dscp": null
+    }
+  ],
+  "floor_mbps": 5.0,
+  "enforce_requested": true,
+  "enforcement_note": "not requested"
+}

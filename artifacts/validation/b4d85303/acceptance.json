@@ -1,0 +1,119 @@
+{
+  "run_id": "b4d85303",
+  "revision": "b4d853034d3ef899aadd075af202ed51cd04bb05",
+  "started_utc": "2026-10-18T12:18:14.200022+00:00",
+  "kernel": "7.1.5-76070105-generic",
+  "python": "3.13.15",
+  "uid": 1000,
+  "hostname": "pop-os",
+  "tests": {
+    "tests": 997,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 10,
+    "ok": true,
+    "summary": "Ran 997 tests in 32.886s",
+    "skipped_tests": [
+      "tests.test_fairness_live.TestPerFlowFairness.test_two_flows_in_one_class_are_served_fairly",
+      "tests.test_rollback_live.TestLiveRollback.test_safe_state_is_installed_and_confirmed"
+    ]
+  },
+  "finished_utc": "2026-10-18T12:19:26.446703+00:00",
+  "gates": [
+    {
+      "gate": "unit+integration+socket",
+      "status": "PASS",
+      "detail": "997 tests, 10 skipped, exit 0",
+      "log": "unittest.log"
+    },
+    {
+      "gate": "metric integrity",
+      "status": "PASS",
+      "detail": "arithmetic + socket recomputation",
+      "log": "metric-integrity.log"
+    },
+    {
+      "gate": "api security",
+      "status": "PASS",
+      "detail": "auth, bind policy, rate limit, audit",
+      "log": "api-security.log"
+    },
+    {
+      "gate": "classifier evaluation",
+      "status": "PASS",
+      "detail": "16 constructed cases, two capacities",
+      "log": "classifier-eval.log"
+    },
+    {
+      "gate": "control-plane benchmark",
+      "status": "PASS",
+      "detail": "",
+      "log": "benchmark.log"
+    },
+    {
+      "gate": "testbed gate (21 checks)",
+      "status": "BLOCKED",
+      "detail": "missing ip, tc; euid=1000, need 0 and no cached sudo; run `sudo python3 tools/acceptance.py`",
+      "log": ""
+    },
+    {
+      "gate": "live enforcement",
+      "status": "BLOCKED",
+      "detail": "missing ip, tc; euid=1000, need 0 and no cached sudo; run `sudo python3 tools/acceptance.py`",
+      "log": ""
+    },
+    {
+      "gate": "live rollback verification (kernel)",
+      "status": "BLOCKED",
+      "detail": "missing ip, tc; euid=1000, need 0 and no cached sudo; run `sudo python3 tools/acceptance.py`",
+      "log": ""
+    },
+    {
+      "gate": "rollback under real tc failure",
+      "status": "BLOCKED",
+      "detail": "missing ip, tc; euid=1000, need 0 and no cached sudo; run `sudo python3 tools/acceptance.py`",
+      "log": ""
+    },
+    {
+      "gate": "live adaptation loop",
+      "status": "BLOCKED",
+      "detail": "missing ip, tc; euid=1000, need 0 and no cached sudo; run `sudo python3 tools/acceptance.py`",
+      "log": ""
+    },
+    {
+      "gate": "FIFO/CAKE/ACIQ comparison",
+      "status": "BLOCKED",
+      "detail": "missing ip, tc; euid=1000, need 0 and no cached sudo; run `sudo python3 tools/acceptance.py`",
+      "log": ""
+    },
+    {
+      "gate": "30-minute stability",
+      "status": "BLOCKED",
+      "detail": "missing ip, tc; euid=1000, need 0 and no cached sudo; run `sudo python3 tools/acceptance.py`",
+      "log": ""
+    },
+    {
+      "gate": "lint (ruff)",
+      "status": "PASS",
+      "detail": "no findings",
+      "log": ""
+    },
+    {
+      "gate": "claim audit",
+      "status": "PASS",
+      "detail": "constants, evidence, red-flag phrases",
+      "log": "claim-audit.log"
+    }
+  ],
+  "counts": {
+    "PASS": 7,
+    "FAIL": 0,
+    "BLOCKED": 7,
+    "NOT RUN": 0
+  },
+  "skipped": 10,
+  "skipped_mandatory": [
+    "tests.test_rollback_live.TestLiveRollback.test_safe_state_is_installed_and_confirmed"
+  ],
+  "complete": false
+}

@@ -1,0 +1,110 @@
+{
+  "run_id": "8aecc3a8",
+  "revision": "8aecc3a8386627f82b775afc020a7a386c17bcf1",
+  "started_utc": "2026-10-13T17:23:37.618798+00:00",
+  "kernel": "7.1.5-76070105-generic",
+  "python": "3.12.3",
+  "uid": 0,
+  "hostname": "pop-os",
+  "tests": {
+    "tests": 845,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 1,
+    "ok": true,
+    "summary": "Ran 845 tests in 12.480s",
+    "skipped_tests": [
+      "tests.test_acceptance.TestHostGateScript.test_it_refuses_without_root_and_changes_nothing"
+    ]
+  },
+  "finished_utc": "2026-10-13T17:25:46.580086+00:00",
+  "gates": [
+    {
+      "gate": "unit+integration+socket",
+      "status": "PASS",
+      "detail": "845 tests, 1 skipped, exit 0",
+      "log": "unittest.log"
+    },
+    {
+      "gate": "metric integrity",
+      "status": "PASS",
+      "detail": "arithmetic + socket recomputation",
+      "log": "metric-integrity.log"
+    },
+    {
+      "gate": "api security",
+      "status": "PASS",
+      "detail": "auth, bind policy, rate limit, audit",
+      "log": "api-security.log"
+    },
+    {
+      "gate": "classifier evaluation",
+      "status": "PASS",
+      "detail": "16 constructed cases, two capacities",
+      "log": "classifier-eval.log"
+    },
+    {
+      "gate": "control-plane benchmark",
+      "status": "PASS",
+      "detail": "",
+      "log": "benchmark.log"
+    },
+    {
+      "gate": "live rollback verification (kernel)",
+      "status": "PASS",
+      "detail": "tc read-back in an isolated namespace",
+      "log": "rollback-live.log"
+    },
+    {
+      "gate": "testbed gate (21 checks)",
+      "status": "PASS",
+      "detail": "exit 0",
+      "log": "gate.log"
+    },
+    {
+      "gate": "live enforcement",
+      "status": "NOT RUN",
+      "detail": "not executed by this harness -- sudo ./tools/host_gate.sh   (21-check traffic gate; see gate.sh)",
+      "log": ""
+    },
+    {
+      "gate": "rollback under real tc failure",
+      "status": "NOT RUN",
+      "detail": "not executed by this harness -- sudo python3 -m unittest tests.test_rollback_live -v",
+      "log": ""
+    },
+    {
+      "gate": "live adaptation loop",
+      "status": "NOT RUN",
+      "detail": "not executed by this harness -- sudo python3 run_experiments.py --scenario s2_wan_drop --system aciq --enforce --drop 10 --drop-at 5",
+      "log": ""
+    },
+    {
+      "gate": "FIFO/CAKE/ACIQ comparison",
+      "status": "NOT RUN",
+      "detail": "not executed by this harness -- sudo python3 run_experiments.py --scenario s3_tv_and_gaming --system b0_fifo|b1_cake95|aciq --seeds 7",
+      "log": ""
+    },
+    {
+      "gate": "30-minute stability",
+      "status": "NOT RUN",
+      "detail": "not executed by this harness -- sudo python3 run_experiments.py --scenario s3_tv_and_gaming --system aciq --duration-s 1800",
+      "log": ""
+    },
+    {
+      "gate": "claim audit",
+      "status": "FAIL",
+      "detail": "constants, evidence, red-flag phrases",
+      "log": "claim-audit.log"
+    }
+  ],
+  "counts": {
+    "PASS": 7,
+    "FAIL": 1,
+    "BLOCKED": 0,
+    "NOT RUN": 5
+  },
+  "skipped": 1,
+  "skipped_mandatory": [],
+  "complete": false
+}

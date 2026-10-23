@@ -1,0 +1,78 @@
+# Static analysis configuration for ACIQ.
+#
+# Added because the acceptance criteria ask for a lint and type-check gate and
+# none existed: there was no configuration of any kind, so "lint passes" was not
+# a statement that could be made or falsified.
+#
+# Deliberately NOT maximal. This project has 990 tests and a large amount of
+# legitimately dynamic code -- netlink parsing, dataclass schemas, probe
+# processes. A ruleset that flags all of that produces a ratchet nobody turns,
+# and a ratchet nobody turns is not a gate.
+#
+# The selected rules target real defect classes rather than style:
+#   F  pyflakes   -- undefined names, unused imports, f-strings without placeholders
+#   E9            -- syntax errors and other fatal problems
+#   B            -- bugbear: mutable defaults, shadowed loop variables, etc.
+#   UP            -- pyupgrade, where the modern form is genuinely clearer
+#
+# Deliberately NOT enabled: line length, import sorting, and naming conventions.
+# Those are style, they are not currently enforced anywhere else in this repo,
+# and enforcing them now would bury the defect classes above.
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+exclude = [
+    ".git", "__pycache__", "build", "dist",
+    "data", "artifacts", ".venv",
+]
+
+[tool.ruff.lint]
+select = ["F", "E9", "B", "UP"]
+# B008: function call in a default argument. argparse and dataclass use are
+# pervasive and correct here.
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# B905: plain zip() is CORRECT in aciq/experiment.py. `ports` is a deliberate
+# filtered subset of `_expand(scenario)` -- the settle path passes only
+# interactive workloads -- so truncation is the intended semantics.
+# `strict=True` was tried, raised "zip() argument 2 is longer than argument 1",
+# and broke the probe-ingestion tests. A lint rule "fixed" into a crash is worse
+# than a false positive.
+"aciq/experiment.py" = ["B905", "B007"]
+# B905 in report.py pairs a header row with a body row; a length mismatch there
+# is caught immediately by the assertions below it, and strict=True would turn a
+# cosmetic mismatch into a crash mid-report.
+"aciq/report.py" = ["B905"]
+# B007: `for ... in zip(...)` binding an index it does not read.
+"tools/export_aciq.py" = ["B007"]
+# UP042: SystemSpec and CapacityMode are `str, Enum` on purpose. Their values
+# are the literal strings written into tc argv and into JSON evidence, and
+# switching to StrEnum changes how they render. Not a correctness issue.
+"aciq/harness.py" = ["UP042"]
+# UP042: same reason for TrafficClass (model.py) and Mode (shield.py) -- these
+# enums' values are literal strings written into tc argv and JSON evidence.
+"aciq/model.py" = ["UP042"]
+"aciq/shield.py" = ["UP042"]
+# Workload generators and the netns launcher are executed as scripts inside
+# namespaces; their imports are used for side effects and their names are read
+# from sys.argv.
+"testbed/workloads/*.py" = ["E402", "B007", "F841"]
+# Tests deliberately construct odd values and call internal helpers directly.
+# F841/B007: tests deliberately bind names for readability (`_w`, `_dscp`)
+# and some are genuinely vestigial. Removing them is churn in test code with no
+# defect behind it. F811 is NOT ignored -- see TestNoSilentlyLostTests.
+"tests/*.py" = ["B011", "B015", "F841", "B007", "B905"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_configs = true
+# Opt-in, not opt-out: this codebase is dynamically typed at the boundaries
+# (netlink text, JSON evidence), and claiming full type coverage it does not
+# have would be the same overclaim this project has been removing all session.
+# These are the errors that have actually caught bugs here.
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = false
+ignore_missing_imports = true

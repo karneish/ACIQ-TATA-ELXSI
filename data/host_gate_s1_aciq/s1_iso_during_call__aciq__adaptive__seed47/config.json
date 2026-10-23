@@ -1,0 +1,47 @@
+{
+  "scenario": "s1_iso_during_call",
+  "system": "aciq",
+  "mode": "adaptive",
+  "seed": 47,
+  "link_mbps": 100.0,
+  "drop_mbps": 20.0,
+  "drop_at_s": null,
+  "recover_at_s": null,
+  "recover_to_mbps": null,
+  "duration_s": 30.0,
+  "settle_s": 4.0,
+  "workloads": [
+    {
+      "kind": "call",
+      "label": "call",
+      "dscp": 46
+    },
+    {
+      "kind": "bulk",
+      "label": "bulk",
+      "dscp": null
+    }
+  ],
+  "ports": [
+    {
+      "label": "call",
+      "port": 5280,
+      "dscp": 46
+    },
+    {
+      "label": "bulk",
+      "port": 5132,
+      "dscp": null
+    }
+  ],
+  "floor_mbps": 5.0,
+  "enforce_requested": true,
+  "enforcement_note": "not requested",
+  "lease_ips": [],
+  "device_ips": {
+    "call": "203.0.113.3",
+    "bulk": "203.0.113.4"
+  },
+  "lease_weight": null,
+  "lease_ttl_s": null
+}

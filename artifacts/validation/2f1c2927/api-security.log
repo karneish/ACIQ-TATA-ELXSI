@@ -1,0 +1,39 @@
+test_a_created_lease_is_audited (tests.test_api_security.TestAudit.test_a_created_lease_is_audited) ... ok
+test_a_rejected_request_is_audited (tests.test_api_security.TestAudit.test_a_rejected_request_is_audited) ... ok
+test_a_throttled_request_is_audited (tests.test_api_security.TestAudit.test_a_throttled_request_is_audited) ... ok
+test_the_token_is_never_audited (tests.test_api_security.TestAudit.test_the_token_is_never_audited)
+A log line containing the bearer token turns the log into a credential ... ok
+test_a_prefix_of_the_token_is_rejected (tests.test_api_security.TestAuthentication.test_a_prefix_of_the_token_is_rejected)
+Not a constant-time shortcut, but a correct prefix check: a shorter ... ok
+test_a_rejected_request_does_not_create_a_lease (tests.test_api_security.TestAuthentication.test_a_rejected_request_does_not_create_a_lease) ... ok
+test_a_write_without_a_token_is_rejected (tests.test_api_security.TestAuthentication.test_a_write_without_a_token_is_rejected) ... ok
+test_a_wrong_token_is_rejected (tests.test_api_security.TestAuthentication.test_a_wrong_token_is_rejected) ... ok
+test_delete_also_requires_the_token (tests.test_api_security.TestAuthentication.test_delete_also_requires_the_token) ... ok
+test_reads_are_not_authenticated (tests.test_api_security.TestAuthentication.test_reads_are_not_authenticated)
+A dashboard on loopback must work without a token, or it is useless. ... ok
+test_the_correct_token_is_accepted (tests.test_api_security.TestAuthentication.test_the_correct_token_is_accepted) ... ok
+test_a_non_loopback_bind_with_a_token_is_allowed (tests.test_api_security.TestBindPolicy.test_a_non_loopback_bind_with_a_token_is_allowed) ... ok
+test_a_non_loopback_bind_without_a_token_is_refused (tests.test_api_security.TestBindPolicy.test_a_non_loopback_bind_without_a_token_is_refused) ... ok
+test_loopback_is_allowed_without_a_token (tests.test_api_security.TestBindPolicy.test_loopback_is_allowed_without_a_token) ... ok
+test_serve_refuses_rather_than_warns (tests.test_api_security.TestBindPolicy.test_serve_refuses_rather_than_warns)
+A warning in a log nobody reads is not a control. ... ok
+test_the_error_explains_the_fix (tests.test_api_security.TestBindPolicy.test_the_error_explains_the_fix) ... ok
+test_a_local_write_succeeds_without_a_token (tests.test_api_security.TestOverTheWire.test_a_local_write_succeeds_without_a_token) ... ok
+test_an_oversized_body_is_refused (tests.test_api_security.TestOverTheWire.test_an_oversized_body_is_refused) ... ok
+test_an_unknown_route_is_a_404 (tests.test_api_security.TestOverTheWire.test_an_unknown_route_is_a_404) ... ok
+test_get_cannot_reach_a_write_route (tests.test_api_security.TestOverTheWire.test_get_cannot_reach_a_write_route) ... ok
+test_malformed_json_is_a_400_not_a_500 (tests.test_api_security.TestOverTheWire.test_malformed_json_is_a_400_not_a_500) ... ok
+test_nan_weight_is_refused (tests.test_api_security.TestOverTheWire.test_nan_weight_is_refused)
+float('nan') survives `float()` and fails every comparison against ... ok
+test_a_throttled_request_creates_nothing (tests.test_api_security.TestRateLimiting.test_a_throttled_request_creates_nothing) ... ok
+test_reads_are_never_throttled (tests.test_api_security.TestRateLimiting.test_reads_are_never_throttled)
+The dashboard polls every two seconds; throttling reads would break it. ... ok
+test_the_client_table_cannot_grow_without_bound (tests.test_api_security.TestRateLimiting.test_the_client_table_cannot_grow_without_bound)
+An unbounded dict keyed by client address is itself a memory leak. ... ok
+test_the_limit_is_per_client (tests.test_api_security.TestRateLimiting.test_the_limit_is_per_client) ... ok
+test_writes_are_capped_per_client (tests.test_api_security.TestRateLimiting.test_writes_are_capped_per_client) ... ok
+
+----------------------------------------------------------------------
+Ran 27 tests in 0.446s
+
+OK

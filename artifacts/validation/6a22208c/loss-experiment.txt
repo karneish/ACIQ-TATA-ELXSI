@@ -1,0 +1,16 @@
+kernel 7.1.5-76070105-generic  python 3.13.15
+started_utc 2026-10-11T18:58:32Z
+
+probe -> 127.0.0.1:56617 (nothing listening)
+  generator : sent=100 received=0 loss_ratio=1.0
+  raw obs   : 100 lines, 100 with recv=null
+  recomputed: expected=100 received=0 loss_ratio=1.0 status=valid
+
+CHECKS
+  loss is 1.0 (measured, not assumed) : True
+  latency is None, not 0.0            : True
+  status is insufficient_samples      : True
+  every loss is an explicit null      : True
+
+A silent port is a REAL measurement of total loss. The historical
+pipeline reported 0.0 here, which is indistinguishable from 'fine'.

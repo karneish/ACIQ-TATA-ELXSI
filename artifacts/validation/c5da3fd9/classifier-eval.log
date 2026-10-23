@@ -1,0 +1,175 @@
+Classifier evaluation (ground truth from the constructed workload)
+
+=== constructed corpus, link capacity 100 Mbps (the shipped default) ===
+  corpus constructed   cases 17   labelled 14   (out of scope at this capacity: 0)
+  accuracy on labelled cases  : 1.0   (flexible: accepted abstention counts as correct)
+  selective accuracy          : 1.0   (among the 100% it classified; coverage 1.0)
+  end-to-end accuracy         : 1.0   (strict: any abstention on a labelled case is an error)
+  macro F1                    : 1.0
+  abstention rate             : 0.1765
+  required to abstain, did so : 3/3
+  high-confidence errors      : 0
+
+  per class:
+    adaptive_video       support  5  P 1.0  R 1.0  F1 1.0
+    bulk_transfer        support  3  P 1.0  R 1.0  F1 1.0
+    realtime_interactive support  6  P 1.0  R 1.0  F1 1.0
+
+  confusion (truth x got):
+                            ABSTAIN  adaptive_  bulk_tran  realtime_
+    adaptive_video                0          5          0          0
+    bulk_transfer                 0          0          3          0
+    realtime_interactiv           0          0          0          6
+
+  by protocol / by ip version:
+    proto tcp    acc 1.0 on 8
+    proto udp    acc 1.0 on 6
+    v4         acc 1.0 on 14
+
+  every case:
+    ok  call: EF, small, frequent, bidirectional             truth=realtime_interactive got=realtime_interactive conf=0.95 tier=A
+    ok  call: EF, steady, one-way-heavy                      truth=realtime_interactive got=realtime_interactive conf=0.95 tier=A
+    ok  interactive: RTP ports, no EF claim                  truth=realtime_interactive got=realtime_interactive conf=0.85 tier=A
+    ok  interactive: STUN 3478, unidirectional               truth=realtime_interactive got=realtime_interactive conf=0.85 tier=A
+    ok  game: 30 pps, 128-byte datagrams, bidirectional      truth=realtime_interactive got=realtime_interactive conf=0.55 tier=B
+    ok  video: sustained, large, few bytes per packet        truth=adaptive_video       got=adaptive_video       conf=0.60 tier=B
+    ok  video: over TLS port, no marks                       truth=adaptive_video       got=adaptive_video       conf=0.60 tier=B
+    ok  video: ramping (ABR ladder)                          truth=adaptive_video       got=adaptive_video       conf=0.60 tier=B
+    ok  bulk: sustained one-way, very large packets          truth=bulk_transfer        got=bulk_transfer        conf=0.75 tier=B
+    ok  bulk: large on an encrypted port, no marks           truth=bulk_transfer        got=bulk_transfer        conf=0.75 tier=B
+    ok  ADVERSARIAL bulk claiming EF                         truth=bulk_transfer        got=bulk_transfer        conf=0.75 tier=B
+    ok  ADVERSARIAL video claiming EF on a small pipe        truth=adaptive_video       got=adaptive_video       conf=0.60 tier=B
+    ok  ADVERSARIAL interactive on a bulk port               truth=realtime_interactive got=realtime_interactive conf=0.55 tier=B
+    ok  insufficient: 3 packets                              truth=None                 got=None                 conf=0.35 tier=C
+    ok  insufficient: too young                              truth=None                 got=None                 conf=0.35 tier=C
+    ok  insufficient: idle, tiny, no ports, no marks         truth=None                 got=None                 conf=0.35 tier=C
+    ok  correction overrides what the rate would say         truth=adaptive_video       got=adaptive_video       conf=1.00 tier=X
+
+=== constructed corpus, link capacity 10 Mbps (what --drop 10 produces) ===
+  corpus constructed   cases 17   labelled 14   (out of scope at this capacity: 0)
+  accuracy on labelled cases  : 1.0   (flexible: accepted abstention counts as correct)
+  selective accuracy          : 1.0   (among the 100% it classified; coverage 1.0)
+  end-to-end accuracy         : 1.0   (strict: any abstention on a labelled case is an error)
+  macro F1                    : 1.0
+  abstention rate             : 0.1765
+  required to abstain, did so : 3/3
+  high-confidence errors      : 0
+
+  per class:
+    adaptive_video       support  5  P 1.0  R 1.0  F1 1.0
+    bulk_transfer        support  3  P 1.0  R 1.0  F1 1.0
+    realtime_interactive support  6  P 1.0  R 1.0  F1 1.0
+
+  confusion (truth x got):
+                            ABSTAIN  adaptive_  bulk_tran  realtime_
+    adaptive_video                0          5          0          0
+    bulk_transfer                 0          0          3          0
+    realtime_interactiv           0          0          0          6
+
+  by protocol / by ip version:
+    proto tcp    acc 1.0 on 8
+    proto udp    acc 1.0 on 6
+    v4         acc 1.0 on 14
+
+  every case:
+    ok  call: EF, small, frequent, bidirectional             truth=realtime_interactive got=realtime_interactive conf=0.95 tier=A
+    ok  call: EF, steady, one-way-heavy                      truth=realtime_interactive got=realtime_interactive conf=0.95 tier=A
+    ok  interactive: RTP ports, no EF claim                  truth=realtime_interactive got=realtime_interactive conf=0.85 tier=A
+    ok  interactive: STUN 3478, unidirectional               truth=realtime_interactive got=realtime_interactive conf=0.85 tier=A
+    ok  game: 30 pps, 128-byte datagrams, bidirectional      truth=realtime_interactive got=realtime_interactive conf=0.55 tier=B
+    ok  video: sustained, large, few bytes per packet        truth=adaptive_video       got=adaptive_video       conf=0.60 tier=B
+    ok  video: over TLS port, no marks                       truth=adaptive_video       got=adaptive_video       conf=0.60 tier=B
+    ok  video: ramping (ABR ladder)                          truth=adaptive_video       got=adaptive_video       conf=0.60 tier=B
+    ok  bulk: sustained one-way, very large packets          truth=bulk_transfer        got=bulk_transfer        conf=0.75 tier=B
+    ok  bulk: large on an encrypted port, no marks           truth=bulk_transfer        got=bulk_transfer        conf=0.75 tier=B
+    ok  ADVERSARIAL bulk claiming EF                         truth=bulk_transfer        got=bulk_transfer        conf=0.75 tier=B
+    ok  ADVERSARIAL video claiming EF on a small pipe        truth=adaptive_video       got=adaptive_video       conf=0.60 tier=B
+    ok  ADVERSARIAL interactive on a bulk port               truth=realtime_interactive got=realtime_interactive conf=0.55 tier=B
+    ok  insufficient: 3 packets                              truth=None                 got=None                 conf=0.35 tier=C
+    ok  insufficient: too young                              truth=None                 got=None                 conf=0.35 tier=C
+    ok  insufficient: idle, tiny, no ports, no marks         truth=None                 got=None                 conf=0.35 tier=C
+    ok  correction overrides what the rate would say         truth=adaptive_video       got=adaptive_video       conf=1.00 tier=X
+
+=== independent corpus, link capacity 100 Mbps (the shipped default) ===
+  corpus independent   cases 12   labelled 10   (out of scope at this capacity: 1)
+  accuracy on labelled cases  : 1.0   (flexible: accepted abstention counts as correct)
+  selective accuracy          : 1.0   (among the 90% it classified; coverage 0.9)
+  end-to-end accuracy         : 0.9   (strict: any abstention on a labelled case is an error)
+  macro F1                    : 0.9524
+  abstention rate             : 0.25
+  required to abstain, did so : 2/2
+  high-confidence errors      : 0
+
+  per class:
+    adaptive_video       support  3  P 1.0  R 1.0  F1 1.0
+    bulk_transfer        support  3  P 1.0  R 1.0  F1 1.0
+    realtime_interactive support  4  P 1.0  R 0.75  F1 0.8571
+
+  confusion (truth x got):
+                            ABSTAIN  adaptive_  bulk_tran  realtime_
+    adaptive_video                0          3          0          0
+    bulk_transfer                 0          0          3          0
+    realtime_interactiv           1          0          0          3
+
+  by protocol / by ip version:
+    proto tcp    acc 1.0 on 7
+    proto udp    acc 1.0 on 3
+    v4         acc 1.0 on 7
+    v6         acc 1.0 on 3
+
+  every case:
+    ok  dns: udp/53, tiny query, bidirectional               truth=realtime_interactive got=realtime_interactive conf=0.55 tier=B
+    ok  https: tcp/443 sustained, mid rate                   truth=adaptive_video       got=adaptive_video       conf=0.60 tier=B
+    ok  nonstandard port: bulk by behaviour, not by port     truth=bulk_transfer        got=bulk_transfer        conf=0.75 tier=B
+    ok  nonstandard port: call by behaviour, not by port     truth=realtime_interactive got=realtime_interactive conf=0.55 tier=B
+    ok  ipv6 call: EF, small, bidirectional                  truth=realtime_interactive got=realtime_interactive conf=0.95 tier=A
+    ok  ipv6 video: sustained tcp/443                        truth=adaptive_video       got=adaptive_video       conf=0.60 tier=B
+    ok  concurrent: one of two distinct bulk flows           truth=bulk_transfer        got=bulk_transfer        conf=0.75 tier=B
+    ok  udp/443 QUIC: no mark, statistics cannot separate ca truth=None                 got=None                 conf=0.40 tier=C
+    ok  insufficient: single packet                          truth=None                 got=None                 conf=0.35 tier=C
+    ok  capacity-relative: 16 Mbps sustained TCP is adaptive truth=adaptive_video       got=adaptive_video       conf=0.60 tier=B
+    ok  ipv6 bulk: sustained, unidirectional                 truth=bulk_transfer        got=bulk_transfer        conf=0.75 tier=B
+    ok  dns/tcp: tiny query must not be confidently bulk     truth=realtime_interactive got=None                 conf=0.30 tier=C
+
+=== independent corpus, link capacity 10 Mbps (what --drop 10 produces) ===
+  corpus independent   cases 12   labelled 10   (out of scope at this capacity: 1)
+  accuracy on labelled cases  : 1.0   (flexible: accepted abstention counts as correct)
+  selective accuracy          : 1.0   (among the 90% it classified; coverage 0.9)
+  end-to-end accuracy         : 0.9   (strict: any abstention on a labelled case is an error)
+  macro F1                    : 0.9524
+  abstention rate             : 0.25
+  required to abstain, did so : 2/2
+  high-confidence errors      : 0
+
+  per class:
+    adaptive_video       support  2  P 1.0  R 1.0  F1 1.0
+    bulk_transfer        support  4  P 1.0  R 1.0  F1 1.0
+    realtime_interactive support  4  P 1.0  R 0.75  F1 0.8571
+
+  confusion (truth x got):
+                            ABSTAIN  adaptive_  bulk_tran  realtime_
+    adaptive_video                0          2          0          0
+    bulk_transfer                 0          0          4          0
+    realtime_interactiv           1          0          0          3
+
+  by protocol / by ip version:
+    proto tcp    acc 1.0 on 7
+    proto udp    acc 1.0 on 3
+    v4         acc 1.0 on 7
+    v6         acc 1.0 on 3
+
+  every case:
+    ok  dns: udp/53, tiny query, bidirectional               truth=realtime_interactive got=realtime_interactive conf=0.55 tier=B
+    ok  https: tcp/443 sustained, mid rate                   truth=adaptive_video       got=adaptive_video       conf=0.60 tier=B
+    ok  nonstandard port: bulk by behaviour, not by port     truth=bulk_transfer        got=bulk_transfer        conf=0.75 tier=B
+    ok  nonstandard port: call by behaviour, not by port     truth=realtime_interactive got=realtime_interactive conf=0.55 tier=B
+    ok  ipv6 call: EF, small, bidirectional                  truth=realtime_interactive got=realtime_interactive conf=0.95 tier=A
+    ok  ipv6 video: sustained tcp/443                        truth=adaptive_video       got=adaptive_video       conf=0.60 tier=B
+    ok  concurrent: one of two distinct bulk flows           truth=bulk_transfer        got=bulk_transfer        conf=0.75 tier=B
+    ok  udp/443 QUIC: no mark, statistics cannot separate ca truth=None                 got=None                 conf=0.40 tier=C
+    ok  insufficient: single packet                          truth=None                 got=None                 conf=0.35 tier=C
+    ok  capacity-relative: 16 Mbps sustained TCP is bulk at  truth=bulk_transfer        got=bulk_transfer        conf=0.75 tier=B
+    ok  ipv6 bulk: sustained, unidirectional                 truth=bulk_transfer        got=bulk_transfer        conf=0.75 tier=B
+    ok  dns/tcp: tiny query must not be confidently bulk     truth=realtime_interactive got=None                 conf=0.30 tier=C
+
+  wrote /home/mekarz/Desktop/Full-projects/TATA-ELXSI/artifacts/validation/c5da3fd9/classifier-evaluation.json

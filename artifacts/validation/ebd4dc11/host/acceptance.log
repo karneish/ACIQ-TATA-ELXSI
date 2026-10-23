@@ -1,0 +1,41 @@
+ACIQ acceptance -- revision ebd4dc11
+
+phase 1: environment-independent tests
+  [PASS   ] unit+integration+socket  -- 997 tests, 1 skipped, exit 0
+
+phase 2: metric integrity
+  [PASS   ] metric integrity  -- arithmetic + socket recomputation
+
+phase 3: api security
+  [PASS   ] api security  -- auth, bind policy, rate limit, audit
+
+phase 4: classifier
+  [PASS   ] classifier evaluation  -- 16 constructed cases, two capacities
+
+phase 5: benchmarks
+  [PASS   ] control-plane benchmark
+
+phase 6: kernel-dependent gates
+  [PASS   ] live rollback verification (kernel)  -- tc read-back in an isolated namespace
+  [PASS   ] testbed gate (21 checks)  -- exit 0
+  [PASS   ] live enforcement  -- 20 PASS, 1 MEASURED, 0 FAIL (gate-20261013-135720.log)
+  [PASS   ] rollback under real tc failure  -- live rollback tests passed (rollback-live-20261013.log)
+  [PASS   ] live adaptation loop  -- 100.0 -> 10.0 Mbps, estimator 11.23, 41 samples [evidence from revision 2fb66c39, not ebd4dc11]
+  [PASS   ] FIFO/CAKE/ACIQ comparison  -- aciq=7, b0_fifo=7, b1_cake95=7 paired seeds, aciq p95=0.553ms; b0_fifo p95=2.555ms; b1_cake95 p95=0.608ms [evi
+  [PASS   ] congested FIFO/CAKE/ACIQ comparison  -- aciq=7, b0_fifo=7, b1_cake95=7 paired seeds on a dropped link, aciq p95=65.108ms; b0_fifo p95=92.841ms; b1_cak
+  [PASS   ] controller CPU overhead  -- median 0.0049, peak 0.0052 of one core over 1851s; bound 0.02 [evidence from revision 2fb66c39, not ebd4dc11]
+  [PASS   ] interactive latency tail  -- slowest 8.3% of packets sit in a 3s adaptation transient (limit 10%)
+  [NOTRUN] scenario A: ISO download during call  -- no data/host_gate_s1_*; run: sudo tools/host_gate.sh --scenario-a
+  [PASS   ] policy leaves headroom  -- steady goodput 17.30 of 20.0 Mbps (86%), leaving 14% headroom [evidence from revision ce53da12, not ebd4dc11]
+  [PASS   ] 30-minute stability  -- 1851s sustained, 8 policy changes [evidence from revision 2fb66c39, not ebd4dc11]
+
+phase 6b: static analysis
+  [BLOCKED] lint (ruff)  -- ruff not installed; pip install ruff
+
+phase 7: claim audit
+  [PASS   ] claim audit  -- constants, evidence, red-flag phrases
+
+  PASS 17  FAIL 0  BLOCKED 1  NOT RUN 1
+  1 test(s) skipped (none mandatory) -- not counted as passed
+  complete acceptance run: False
+  evidence: artifacts/validation/ebd4dc11/

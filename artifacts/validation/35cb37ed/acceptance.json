@@ -1,0 +1,146 @@
+{
+  "run_id": "35cb37ed",
+  "revision": "35cb37ed157ed247253719080f5a97902b76bbd6",
+  "started_utc": "2026-10-18T13:04:55.405657+00:00",
+  "kernel": "7.1.5-76070105-generic",
+  "python": "3.12.3",
+  "uid": 0,
+  "hostname": "pop-os",
+  "tests": {
+    "tests": 997,
+    "failures": 4,
+    "errors": 0,
+    "skipped": 1,
+    "ok": false,
+    "summary": "Ran 997 tests in 68.352s",
+    "skipped_tests": [
+      "tests.test_acceptance.TestHostGateScript.test_it_refuses_without_root_and_changes_nothing"
+    ]
+  },
+  "finished_utc": "2026-10-18T13:08:43.541252+00:00",
+  "gates": [
+    {
+      "gate": "unit+integration+socket",
+      "status": "FAIL",
+      "detail": "exit 1, Ran 997 tests in 68.352s, exit 1",
+      "log": "unittest.log"
+    },
+    {
+      "gate": "metric integrity",
+      "status": "PASS",
+      "detail": "arithmetic + socket recomputation",
+      "log": "metric-integrity.log"
+    },
+    {
+      "gate": "api security",
+      "status": "PASS",
+      "detail": "auth, bind policy, rate limit, audit",
+      "log": "api-security.log"
+    },
+    {
+      "gate": "classifier evaluation",
+      "status": "PASS",
+      "detail": "16 constructed cases, two capacities",
+      "log": "classifier-eval.log"
+    },
+    {
+      "gate": "control-plane benchmark",
+      "status": "PASS",
+      "detail": "",
+      "log": "benchmark.log"
+    },
+    {
+      "gate": "live rollback verification (kernel)",
+      "status": "PASS",
+      "detail": "tc read-back in an isolated namespace",
+      "log": "rollback-live.log"
+    },
+    {
+      "gate": "testbed gate (21 checks)",
+      "status": "PASS",
+      "detail": "exit 0",
+      "log": "gate.log"
+    },
+    {
+      "gate": "live enforcement",
+      "status": "PASS",
+      "detail": "20 PASS, 1 MEASURED, 0 FAIL (gate-20261013-135720.log)",
+      "log": ""
+    },
+    {
+      "gate": "rollback under real tc failure",
+      "status": "PASS",
+      "detail": "live rollback tests passed (rollback-live-20261013.log)",
+      "log": ""
+    },
+    {
+      "gate": "live adaptation loop",
+      "status": "PASS",
+      "detail": "100.0 -> 10.0 Mbps, estimator 11.23, 41 samples [evidence from revision 2fb66c39, not 35cb37ed]",
+      "log": ""
+    },
+    {
+      "gate": "FIFO/CAKE/ACIQ comparison",
+      "status": "PASS",
+      "detail": "aciq=7, b0_fifo=7, b1_cake95=7 paired seeds, aciq p95=0.553ms; b0_fifo p95=2.555ms; b1_cake95 p95=0.608ms [evidence from revision fc65349e, not 35cb37ed]",
+      "log": ""
+    },
+    {
+      "gate": "congested FIFO/CAKE/ACIQ comparison",
+      "status": "PASS",
+      "detail": "aciq=7, b0_fifo=7, b1_cake95=7 paired seeds on a dropped link, aciq p95=65.108ms; b0_fifo p95=92.841ms; b1_cake95 p95=92.602ms",
+      "log": ""
+    },
+    {
+      "gate": "controller CPU overhead",
+      "status": "PASS",
+      "detail": "median 0.0049, peak 0.0052 of one core over 1851s; bound 0.02 [evidence from revision 2fb66c39, not 35cb37ed]",
+      "log": ""
+    },
+    {
+      "gate": "interactive latency tail",
+      "status": "PASS",
+      "detail": "slowest 8.3% of packets sit in a 3s adaptation transient (limit 10%)",
+      "log": ""
+    },
+    {
+      "gate": "scenario A: ISO download during call",
+      "status": "PASS",
+      "detail": "aciq=7, b0_fifo=7, b1_cake95=7 paired seeds, aciq p95=0.363ms; b0_fifo p95=119.539ms; b1_cake95 p95=0.401ms",
+      "log": ""
+    },
+    {
+      "gate": "policy leaves headroom",
+      "status": "PASS",
+      "detail": "steady goodput 17.30 of 20.0 Mbps (86%), leaving 14% headroom [evidence from revision ce53da12, not 35cb37ed]",
+      "log": ""
+    },
+    {
+      "gate": "30-minute stability",
+      "status": "PASS",
+      "detail": "1851s sustained, 8 policy changes [evidence from revision 2fb66c39, not 35cb37ed]",
+      "log": ""
+    },
+    {
+      "gate": "lint (ruff)",
+      "status": "FAIL",
+      "detail": "0 findings -- see ruff.log",
+      "log": ""
+    },
+    {
+      "gate": "claim audit",
+      "status": "PASS",
+      "detail": "constants, evidence, red-flag phrases",
+      "log": "claim-audit.log"
+    }
+  ],
+  "counts": {
+    "PASS": 17,
+    "FAIL": 2,
+    "BLOCKED": 0,
+    "NOT RUN": 0
+  },
+  "skipped": 1,
+  "skipped_mandatory": [],
+  "complete": true
+}

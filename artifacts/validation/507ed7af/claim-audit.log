@@ -1,0 +1,30 @@
+=== claim audit ===
+
+-- constants quoted in the docs vs the code --
+  [ok ] SAT_OVERLIMIT_MIN                code=3000.0 documented=3000.0
+  [ok ] BACKLOG_MIN_BYTES                code=1024 documented=1024
+  [ok ] MIN_SAMPLES_FOR_PERCENTILES      code=10 documented=10
+  [ok ] BULK_MIN_CAPACITY_FRAC           code=0.5 documented=0.5
+  [ok ] EF_FAST_CONFLICT_CAPACITY_FRAC   code=0.5 documented=0.5
+  [ok ] MIN_PKT_CONF                     code=0.5 documented=0.5
+  [ok ] DROP_RATE_LIMIT                  code=5000.0 documented=5000.0
+  [ok ] OVERLIMIT_RATE_LIMIT             code=5000.0 documented=5000.0
+  [ok ] MIN_PAIRS_FOR_PVALUE             code=6 documented=6
+  [ok ] MAX_BODY_BYTES                   code=65536 documented=65536
+  [ok ] RATE_LIMIT_WRITES                code=30 documented=30
+
+-- evidence cited by claims --
+  [present] p = 0.0312   (b0_fifo comparison) -> data/matrix6
+  [present] 0.015625     (lease Wilcoxon) -> data/ab_lease_42
+  [present] 92.6         (gate check 6 (stale value)) -> docs/evidence
+  [present] 92.7         (gate check 6) -> docs/evidence
+  [present] 12.92        (withdrawn lease figure) -> docs/limitations.md
+  [present] 20 PASS      (gate summary) -> docs/evidence
+
+-- red-flag phrases --
+  none found
+
+-- test suite --
+  ran 813 tests, ok=True, exit=0, 6 skipped
+
+  wrote docs/gap-closure/claim-audit.json

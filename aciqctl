@@ -1,0 +1,428 @@
+#!/usr/bin/env python3
+"""aciqctl — operator commands for ACIQ.
+
+    ./aciqctl correct --src 10.0.1.2 --dst 203.0.113.9 --proto tcp \\
+                      --dport 22 --as bulk_transfer --why "git clone"
+    ./aciqctl correct --src 10.0.1.2 --dst 203.0.113.9 --proto tcp \\
+                      --as interactive --scope host
+    ./aciqctl list
+    ./aciqctl check --src 10.0.1.2 --dst 203.0.113.9 --proto tcp --dport 22
+
+Corrections are appended to `data/corrections.jsonl` and are read back by the
+classifier on the next tick. Nothing here touches `tc` or nftables: recording
+that a flow is misclassified and changing the enforcement state are separate
+concerns, and conflating them would make a typo in a class name into a live
+qdisc change.
+
+Standard library only, like the rest of the project.
+"""
+
+from __future__ import annotations
+
+import argparse
+import glob
+import json
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from aciq.intent import DEFAULT_PATH as DEFAULT_LEASES_PATH  # noqa: E402
+from aciq.intent import lease_to_dict  # noqa: E402
+from aciq.corrections import (  # noqa: E402
+    CLASS_ALIASES,
+    DEFAULT_PATH,
+    DEFAULT_TTL_S,
+    CorrectionError,
+    CorrectionStore,
+    parse_class,
+)
+from aciq.model import Flow, TrafficClass  # noqa: E402
+
+
+def _flow_from_args(a) -> Flow:
+    """Build a Flow, filling in a placeholder sport.
+
+    `sport` is never part of a correction match key -- it changes on every
+    reconnect and would make corrections useless -- so it is not a CLI flag and
+    gets a fixed placeholder.
+    """
+    return Flow(src=a.src, sport=0, dst=a.dst, dport=a.dport or 0, proto=a.proto)
+
+
+def cmd_correct(a) -> int:
+    try:
+        cls = parse_class(a.as_)
+    except CorrectionError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+
+    store = CorrectionStore(a.file)
+    scope = a.scope
+    if scope == "host":
+        a.dport = None
+    elif a.dport is None:
+        print("pass --dport, or --scope host to match every port", file=sys.stderr)
+        return 2
+
+    flow = Flow(src=a.src, sport=0, dst=a.dst, dport=a.dport or 0, proto=a.proto)
+    try:
+        c = store.record(flow, cls, reason=a.why, by=a.by,
+                         dport=a.dport, ttl_s=None if a.ttl == 0 else a.ttl)
+    except CorrectionError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+
+    where = f"{c.src} -> {c.dst}/{c.proto}"
+    where += f":{c.dport}" if c.dport is not None else " (any port)"
+    ttl = "never expires" if c.expires_at is None else f"expires in {a.ttl:g}s"
+    print(f"recorded: {where} -> {c.cls.value}  [{c.scope} scope, {ttl}]")
+    print(f"  {store.path}")
+    return 0
+
+
+def cmd_list(a) -> int:
+    store = CorrectionStore(a.file)
+    cs = store.corrections_for()
+    if not cs:
+        print(f"no corrections in {store.path}")
+        return 0
+    cs.sort(key=lambda c: (c.src, c.dst, c.proto, c.dport or -1))
+    print(f"{len(cs)} correction(s) in {store.path}\n")
+    for c in cs:
+        where = f"{c.src} -> {c.dst}/{c.proto}"
+        where += f":{c.dport}" if c.dport is not None else " (any port)"
+        print(f"  {c.cls.value:<26} {where}")
+        if c.reason:
+            print(f"    {'':26} why: {c.reason}")
+        if c.recorded_by:
+            print(f"    {'':26} by:  {c.recorded_by}")
+        if c.expires_at is not None:
+            print(f"    {'':26} ttl:  expires_at={c.expires_at:.0f}")
+    if store.stats.skipped_malformed:
+        print(f"\n{store.stats.skipped_malformed} malformed line(s) skipped: "
+              f"{', '.join(store.stats.malformed_lines)}")
+    return 0
+
+
+def cmd_check(a) -> int:
+    store = CorrectionStore(a.file)
+    flow = _flow_from_args(a)
+    c = store.lookup(flow)
+    if c is None:
+        print(f"no correction applies to {flow.key}")
+        print(f"  (hits={store.stats.hits} misses={store.stats.misses} "
+              f"expired={store.stats.expired})")
+        return 1
+    print(f"{flow.key} -> {c.cls.value}")
+    print(f"  scope: {c.scope}   recorded_by: {c.recorded_by or '-'}")
+    if c.reason:
+        print(f"  why:   {c.reason}")
+    if c.expires_at is not None:
+        print(f"  ttl:   expires_at={c.expires_at:.0f}")
+    return 0
+
+
+def cmd_lease(a) -> int:
+    """Request bandwidth for a device or a flow, for a bounded time."""
+    from aciq.intent import IntentError, LeaseBook, load
+
+    # Loaded from the shared file, not a fresh store: two commands that cannot
+    # see each other prints "no active leases" right after printing a lease id.
+    book = load(a.leases_file)
+    try:
+        lease = book.request(target=a.target, ip=a.ip, flow=a.flow,
+                             weight=a.weight, ttl_s=a.ttl_s)
+    except IntentError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    d = lease_to_dict(lease, book.now())
+    print(f"{d['id']}  {d['target']:6}  {d['ip'] or d['flow']}  "
+          f"weight={d['weight']:.2f}  expires in {d['expires_in']:.0f}s")
+    return 0
+
+
+def cmd_leases(a) -> int:
+    """List live leases, from the same file cmd_lease writes."""
+    from aciq.intent import load
+
+    book = load(a.leases_file)
+    live = book.active()
+    if not live:
+        print("no active leases")
+        return 0
+    now = book.now()
+    for d in (lease_to_dict(l, now) for l in live):
+        print(f"{d['id']}  {d['target']:6}  {d['ip'] or d['flow']:<24}  "
+              f"weight={d['weight']:.2f}  expires in {d['expires_in']:.0f}s")
+    return 0
+
+
+def cmd_dashboard(a) -> int:
+    """Render the read-only dashboard from a run's samples.jsonl."""
+    from aciq.dashboard import write_snapshot
+
+    src = Path(a.samples)
+    if not src.is_file():
+        print(f"error: no such file: {src}", file=sys.stderr)
+        return 2
+    rows = [json.loads(line) for line in src.read_text().splitlines() if line.strip()]
+    events = []
+    cfg = src.parent / "config.json"
+    try:
+        c = json.loads(cfg.read_text())
+        if c.get("drop_at_s") is not None:
+            events = [{"t": float(c["drop_at_s"]),
+                       "label": f"cap -> {float(c['drop_mbps']):g} Mb/s"}]
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    out = write_snapshot(rows, a.out,
+                         subtitle=a.subtitle or f"source: {src.name}",
+                         refresh_s=a.refresh, events=events)
+    print(f"wrote {out} ({len(rows)} samples)")
+    return 0
+
+
+def cmd_serve(a) -> int:
+    """Run the M7 intent API, serving the M8 dashboard at /."""
+    from aciq.api import serve
+    from aciq.dashboard import build_from_samples
+    from aciq.intent import load
+
+    # Rows come from a run on disk, not from a live collector. This command does
+    # not own the experiment: it serves intents alongside a view of a run, so
+    # that a lease can be requested while looking at the traffic it affects.
+    # Rendering an empty dashboard instead would look like a broken page rather
+    # than an honest "no samples given".
+    pattern = a.samples or None
+
+    def resolve() -> Path | None:
+        """Find the samples file, re-globbing every time.
+
+        A dashboard meant to watch a run has to be startable *before* the run
+        exists -- otherwise it can only ever chart something already finished,
+        which is the opposite of watching. Exiting on a missing file forced a
+        dummy first run, and an unexpanded glob (`data/live/*/samples.jsonl`)
+        was reported as a literal missing path rather than as "not yet".
+
+        Resolving per request is what lets the path appear later.
+        """
+        if not pattern:
+            return None
+        if any(ch in pattern for ch in "*?["):
+            hits = sorted(glob.glob(pattern))
+            return Path(hits[0]) if hits else None
+        p = Path(pattern)
+        return p if p.is_file() else None
+
+    def read_rows() -> list:
+        """Re-read on every request, so the page tracks a run in progress.
+
+        Read once at startup instead, the server pinned the samples it saw when
+        it launched and every browser refresh re-rendered the same stale view --
+        which looks exactly like a dashboard that is not live, and is how it
+        behaved.
+
+        A run appends to samples.jsonl while this reads, so the final line can be
+        observed mid-write. An unparseable line is skipped rather than fatal: a
+        torn read is normal here and must not take the server down.
+        """
+        src = resolve()
+        if src is None:
+            return []
+        rows = []
+        for line in src.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except (json.JSONDecodeError, OSError):
+                continue
+        return rows
+
+    def drop_events(src):
+        """Annotate the capacity change from the run's own config.json.
+
+        The chart should be marked with what the run was actually told, not with
+        a flag the caller has to remember to repeat. Falls back to the dashboard
+        inferring the drop from the data, which is a guess about timing.
+        """
+        if src is None:
+            return []
+        try:
+            c = json.loads((src.parent / "config.json").read_text())
+            if c.get("drop_at_s") is not None:
+                return [{"t": float(c["drop_at_s"]),
+                         "label": f"cap -> {float(c['drop_mbps']):g} Mb/s"}]
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+        return []
+
+    def dashboard():
+        src = resolve()
+        rows = read_rows()
+        subtitle = (f"source: {src.name}" if src
+                    else f"waiting for {pattern}" if pattern else "no samples")
+        # Live by construction: the rows are re-read per request, so a refresh
+        # interval is what turns it from a snapshot into a view of a run in
+        # progress.
+        return build_from_samples(
+            rows, subtitle=subtitle,
+            refresh_s=(a.refresh or (2 if a.watch else 0)),
+            events=drop_events(src))
+
+    def status():
+        src = resolve()
+        return {"samples": len(read_rows()),
+                "sample_source": str(src) if src else None,
+                "sample_pattern": pattern,
+                "waiting": bool(pattern) and src is None}
+
+    book = load(a.leases_file)
+    audit = None
+    if a.audit_log:
+        # Append, line-buffered, flushed per record: an audit log lost on crash
+        # is not an audit log.
+        fh = open(a.audit_log, "a", buffering=1)
+
+        def audit(rec):
+            try:
+                fh.write(json.dumps(rec) + "\n")
+            except OSError:
+                pass
+
+    tokens = None
+    if a.tokens_file:
+        try:
+            tokens = json.loads(Path(a.tokens_file).read_text())
+        except (OSError, ValueError) as e:
+            print(f"error: cannot read tokens file: {e}", file=sys.stderr)
+            return 2
+    try:
+        httpd = serve(book, host=a.host, port=a.port,
+                      status_provider=status, dashboard_provider=dashboard,
+                      token=a.token, audit=audit,
+                      corrections=CorrectionStore(a.corrections_file),
+                      tokens=tokens, require_replay=a.require_replay,
+                      certfile=a.tls_cert, keyfile=a.tls_key)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    scheme = "https" if a.tls_cert else "http"
+    print(f"M7 intent API on {scheme}://{a.host}:{a.port}")
+    print(f"  POST /intent   DELETE /intent/<id>   GET /intent   GET /status")
+    print(f"  POST /corrections   GET /corrections")
+    print(f"  M8 dashboard:  {scheme}://{a.host}:{a.port}/")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nstopped")
+    finally:
+        httpd.server_close()
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="aciqctl", description="operator commands for ACIQ")
+    p.add_argument("--file", default=str(DEFAULT_PATH),
+                   help=f"corrections file (default: {DEFAULT_PATH})")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    def flow_args(sp):
+        sp.add_argument("--src", required=True)
+        sp.add_argument("--dst", required=True)
+        sp.add_argument("--proto", default="tcp", choices=["tcp", "udp"])
+        sp.add_argument("--dport", type=int)
+
+    c = sub.add_parser("correct", help="record a correction")
+    flow_args(c)
+    c.add_argument("--as", dest="as_", required=True, metavar="CLASS",
+                   help="target class. canonical: "
+                        + ", ".join(x.value for x in TrafficClass)
+                        + "; aliases: " + ", ".join(sorted(CLASS_ALIASES)))
+    c.add_argument("--scope", choices=["port", "host"], default=None,
+                   help="match one port (default) or every port on the host pair")
+    c.add_argument("--why", default="", help="why the inference was wrong")
+    c.add_argument("--by", default="user", help="who is recording this")
+    c.add_argument("--ttl", type=float, default=DEFAULT_TTL_S,
+                   help=f"seconds until it expires; 0 = never "
+                        f"(default: {DEFAULT_TTL_S:g})")
+    c.set_defaults(func=cmd_correct)
+
+    lst = sub.add_parser("list", help="show recorded corrections")
+    lst.set_defaults(func=cmd_list)
+
+    ck = sub.add_parser("check", help="what correction applies to a flow?")
+
+    lz = sub.add_parser("lease", help="request bandwidth (M7)")
+    lz.add_argument("--target", choices=("device", "flow"), default="device")
+    lz.add_argument("--ip", default=None, help="device target")
+    lz.add_argument("--flow", default=None, help="flow target, src:sport->dst:dport")
+    lz.add_argument("--weight", type=float, default=0.4)
+    lz.add_argument("--ttl-s", type=float, default=90.0, dest="ttl_s")
+    lz.add_argument("--leases-file", default=str(DEFAULT_LEASES_PATH),
+                    dest="leases_file")
+    lz.set_defaults(func=cmd_lease)
+
+    ls = sub.add_parser("leases", help="list live leases (M7)")
+    ls.add_argument("--leases-file", default=str(DEFAULT_LEASES_PATH),
+                    dest="leases_file")
+    ls.set_defaults(func=cmd_leases)
+
+    db = sub.add_parser("dashboard", help="render the read-only dashboard (M8)")
+    db.add_argument("--samples", required=True, help="path to samples.jsonl")
+    db.add_argument("--out", default="dashboard.html")
+    db.add_argument("--subtitle", default=None)
+    db.add_argument("--refresh", type=int, default=0,
+                    help="seconds between page reloads; 0 disables")
+    db.set_defaults(func=cmd_dashboard)
+
+    sv = sub.add_parser("serve", help="run the intent API + dashboard (M7/M8)")
+    sv.add_argument("--host", default="127.0.0.1")
+    sv.add_argument("--port", type=int, default=8080)
+    sv.add_argument("--refresh", type=int, default=5)
+    sv.add_argument("--samples", default=None,
+                    help="samples.jsonl to chart on the dashboard")
+    sv.add_argument("--leases-file", default=str(DEFAULT_LEASES_PATH),
+                    dest="leases_file")
+    sv.add_argument("--token", default=os.environ.get("ACIQ_API_TOKEN"),
+                    help="bearer token required for lease creation. Required "
+                         "unless the bind address is loopback; also read from "
+                         "the ACIQ_API_TOKEN environment variable")
+    sv.add_argument("--audit-log", default=None, dest="audit_log",
+                    help="append one JSON line per policy-changing request here")
+    sv.add_argument("--watch", action="store_true",
+                    help="follow a run in progress: re-read samples.jsonl on "
+                         "every request (implied by --refresh > 0)")
+    sv.add_argument("--corrections-file", default=str(DEFAULT_PATH),
+                    dest="corrections_file",
+                    help=f"correction store served by the API (default: {DEFAULT_PATH})")
+    sv.add_argument("--tokens-file", default=None, dest="tokens_file",
+                    help="JSON object mapping bearer token -> role "
+                         "(viewer, operator, admin)")
+    sv.add_argument("--require-replay", action="store_true", dest="require_replay",
+                    help="require x-aciq-timestamp and x-aciq-nonce on writes")
+    sv.add_argument("--tls-cert", default=None, dest="tls_cert",
+                    help="PEM certificate; enables HTTPS")
+    sv.add_argument("--tls-key", default=None, dest="tls_key",
+                    help="PEM private key for --tls-cert")
+    sv.set_defaults(func=cmd_serve)
+    flow_args(ck)
+    ck.set_defaults(func=cmd_check)
+    return p
+
+
+def main(argv=None) -> int:
+    args = build_parser().parse_args(argv)
+    try:
+        return args.func(args)
+    except CorrectionError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

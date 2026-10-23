@@ -1,0 +1,158 @@
+=== ACIQ M0 gate ===
+log: logs/gate-20261008-212144.log
+kernel:   7.1.5-76070105-generic
+tc:       tc utility, iproute2-6.1.0, libbpf 1.3.0
+pyroute2: 0.9.6
+
+[PASS] check 1: tooling
+[PASS] check 2: modules
+[setup] loading kernel modules
+[setup] creating namespaces
+[setup] installing nft rule to activate conntrack accounting
+[setup] nf_conntrack_acct=1
+[setup] done
+conntrack v1.4.8 (conntrack-tools): 2 flow entries have been shown.
+udp      17 29 src=127.0.0.1 dst=127.0.0.1 sport=43414 dport=9998 packets=3981 bytes=907668 [UNREPLIED] src=127.0.0.1 dst=127.0.0.1 sport=9998 dport=43414 packets=0 bytes=0 mark=0 use=1
+udp      17 29 src=127.0.0.1 dst=127.0.0.1 sport=45102 dport=9999 packets=3981 bytes=4092468 [UNREPLIED] src=127.0.0.1 dst=127.0.0.1 sport=9999 dport=45102 packets=0 bytes=0 mark=0 use=1
+9999(1000B)=4092468  9998(200B)=907668
+[PASS] check 3: conntrack loopback per-flow
+[PASS] check 4: namespaces and routes
+[PASS] check 5: offloads off
+Warning: sch_htb: quantum of class 10001 is big. Consider r2q change.
+Warning: sch_htb: quantum of class 10010 is big. Consider r2q change.
+Warning: sch_htb: quantum of class 10030 is big. Consider r2q change.
+at 100mbit: 92.7 Mbps
+dropping parent 1:1 to 20mbit AND rescaling children (ceil must not exceed parent)
+invariant: sum(child rate)=16 <= 20, max(child ceil)=20 <= 20 -> HOLDS
+at 20mbit:  19.1 Mbps
+[PASS] check 6: HTB bottleneck 1:1
+ping avg with 20ms netem: 20.148 ms
+[PASS] check 7: netem on leaf
+IFLA_STATS64: {'rx_packets': 26933, 'tx_packets': 48428, 'rx_bytes': 1802511, 'tx_bytes': 73253560, 'rx_errors': 0, 'tx_errors': 0, 'rx_dropped': 0, 'tx_dropped': 0, 'multicast': 0, 'collisions': 0, 'rx_length_errors': 0, 'rx_over_errors': 0, 'rx_crc_errors': 0, 'rx_frame_errors': 0, 'rx_fifo_errors': 0, 'rx_missed_errors': 0, 'tx_aborted_errors': 0, 'tx_carrier_errors': 0, 'tx_fifo_errors': 0, 'tx_heartbeat_errors': 0, 'tx_window_errors': 0, 'rx_compressed': 0, 'tx_compressed': 0}
+class 65552 {'attrs': [('TCA_STATS_BASIC', {'bytes': 0, 'packets': 0}), ('TCA_STATS_QUEUE', {'qlen': 0, 'backlog': 0, 'drops': 0, 'requeues': 0, 'overlimits': 0}), ('TCA_STATS_APP', {'lends': 0, 'borrows': 0, 'giants': 0, 'tokens': 5000, 'ctokens': 2021})]}
+class 65537 {'attrs': [('TCA_STATS_BASIC', {'bytes': 73252584, 'packets': 48420}), ('TCA_STATS_QUEUE', {'qlen': 0, 'backlog': 0, 'drops': 0, 'requeues': 0, 'overlimits': 5784}), ('TCA_STATS_APP', {'lends': 32674, 'borrows': 0, 'giants': 0, 'tokens': 9387, 'ctokens': 9387})]}
+class 65584 {'attrs': [('TCA_STATS_BASIC', {'bytes': 73252584, 'packets': 48420}), ('TCA_STATS_QUEUE', {'qlen': 0, 'backlog': 0, 'drops': 0, 'requeues': 0, 'overlimits': 48388}), ('TCA_STATS_APP', {'lends': 15746, 'borrows': 32674, 'giants': 0, 'tokens': 23468, 'ctokens': 9387})]}
+[PASS] check 8: pyroute2 netlink
+cake 95mbit: 90.7 Mbps
+[PASS] check 9: cake at root
+Warning: sch_htb: quantum of class 10001 is big. Consider r2q change.
+Warning: sch_htb: quantum of class 10050 is big. Consider r2q change.
+cake leaf: 18.0 Mbps, 1:50 bytes=11898819
+[PASS] check 10a: cake as leaf
+Warning: sch_htb: quantum of class 10001 is big. Consider r2q change.
+Warning: sch_htb: quantum of class 10050 is big. Consider r2q change.
+pfifo leaf: 19.1 Mbps, 1:50 bytes=13859590
+[PASS] check 10b: pfifo as leaf
+conntrack v1.4.8 (conntrack-tools): 2 flow entries have been shown.
+udp      17 29 src=203.0.113.2 dst=10.0.1.2 sport=52714 dport=7002 packets=4616 bytes=1052448 [UNREPLIED] src=10.0.1.2 dst=203.0.113.2 sport=7002 dport=52714 packets=0 bytes=0 mark=0 use=1
+udp      17 29 src=203.0.113.2 dst=10.0.1.2 sport=33330 dport=7001 packets=4616 bytes=4745248 [UNREPLIED] src=10.0.1.2 dst=203.0.113.2 sport=7001 dport=33330 packets=0 bytes=0 mark=0 use=1
+7001(1000B)=4745248  7002(200B)=1052448
+[PASS] check 11: conntrack forwarded per-flow v4
+Warning: sch_htb: quantum of class 10001 is big. Consider r2q change.
+3 packets transmitted, 3 received, 0% packet loss, time 2051ms
+rtt min/avg/max/mdev = 0.058/0.077/0.090/0.014 ms
+idle baseline:
+3 packets transmitted, 3 received, 0% packet loss, time 2051ms
+rtt min/avg/max/mdev = 0.058/0.077/0.090/0.014 ms
+(a) EF, class 1:10
+18 packets transmitted, 18 received, 0% packet loss, time 17393ms
+rtt min/avg/max/mdev = 0.023/0.071/0.111/0.028 ms
+time=0.023 time=0.025 time=0.049 time=0.060 time=0.108 time=0.102 time=0.055 time=0.085 time=0.104 time=0.073 time=0.105 time=0.041 time=0.041 time=0.111 time=0.081 time=0.081 time=0.095 time=0.044 
+(b) unmarked, class 1:30
+18 packets transmitted, 18 received, 0% packet loss, time 17413ms
+rtt min/avg/max/mdev = 0.112/0.372/0.772/0.196 ms
+time=0.269 time=0.616 time=0.204 time=0.214 time=0.218 time=0.263 time=0.381 time=0.601 time=0.184 time=0.390 time=0.112 time=0.772 time=0.320 time=0.147 time=0.696 time=0.342 time=0.361 time=0.615 
+(c) router-orig, class 1:30
+18 packets transmitted, 18 received, 0% packet loss, time 17393ms
+rtt min/avg/max/mdev = 0.084/0.301/0.774/0.179 ms
+time=0.456 time=0.474 time=0.231 time=0.204 time=0.108 time=0.209 time=0.225 time=0.320 time=0.574 time=0.118 time=0.482 time=0.090 time=0.774 time=0.303 time=0.084 time=0.268 time=0.240 time=0.271 
+counter delta (judge dropped/overlimits values, not which lines differ):
+2c2
+<  Sent 294 bytes 3 pkt (dropped 0, overlimits 0 requeues 0) 
+---
+>  Sent 62529538 bytes 41372 pkt (dropped 0, overlimits 24800 requeues 0) 
+4c4
+<  Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) 
+---
+>  Sent 1764 bytes 18 pkt (dropped 0, overlimits 0 requeues 0) 
+8c8
+<  Sent 294 bytes 3 pkt (dropped 0, overlimits 0 requeues 0) 
+---
+>  Sent 62527774 bytes 41354 pkt (dropped 0, overlimits 38790 requeues 0) 
+12c12
+<  Sent 294 bytes 3 pkt (dropped 0, overlimits 0 requeues 0) 
+---
+>  Sent 62534080 bytes 41375 pkt (dropped 248, overlimits 63595 requeues 0) 
+15c15
+<  Sent 294 bytes 3 pkt (dropped 0, overlimits 0 requeues 0) 
+---
+>  Sent 62532316 bytes 41357 pkt (dropped 248, overlimits 0 requeues 0) 
+17c17
+<   maxpacket 98 drop_overlimit 0 new_flow_count 1 ecn_mark 0
+---
+>   maxpacket 1514 drop_overlimit 0 new_flow_count 45 ecn_mark 0
+19c19
+<  Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) 
+---
+>  Sent 1764 bytes 18 pkt (dropped 0, overlimits 0 requeues 0) 
+21c21
+<   maxpacket 0 drop_overlimit 0 new_flow_count 0 ecn_mark 0
+---
+>   maxpacket 98 drop_overlimit 0 new_flow_count 1 ecn_mark 0
+throughput:
+[  5]   0.00-25.01  sec  57.0 MBytes  19.1 Mbits/sec                  receiver
+[MEASURED] check 12: saturation signals (read numbers above)
+conntrack v1.4.8 (conntrack-tools): 2 flow entries have been shown.
+udp      17 29 src=fd00:2::2 dst=fd00:1::2 sport=33972 dport=7003 packets=4482 bytes=4697136 [UNREPLIED] src=fd00:1::2 dst=fd00:2::2 sport=7003 dport=33972 packets=0 bytes=0 mark=0 use=1
+udp      17 29 src=fd00:2::2 dst=fd00:1::2 sport=53526 dport=7004 packets=4482 bytes=1111536 [UNREPLIED] src=fd00:1::2 dst=fd00:2::2 sport=7004 dport=53526 packets=0 bytes=0 mark=0 use=1
+7003(1000B)=4697136  7004(200B)=1111536
+[PASS] check 13: conntrack forwarded per-flow v6
+--- fd00:1::2 ping statistics ---
+20 packets transmitted, 20 received, 0% packet loss, time 970ms
+rtt min/avg/max/mdev = 0.046/0.135/0.224/0.035 ms
+class 1:10 bytes before=1764 after=13004
+filter protocol ip pref 1 u32 chain 0 
+filter protocol ip pref 1 u32 chain 0 fh 800: ht divisor 1 
+filter protocol ip pref 1 u32 chain 0 fh 800::800 order 2048 key ht 800 bkt 0 *flowid 1:10 not_in_hw 
+  match 00b80000/00fc0000 at 0
+filter protocol ipv6 pref 2 flower chain 0 
+filter protocol ipv6 pref 2 flower chain 0 handle 0x1 classid 1:10 
+  eth_type ipv6
+  ip_tos 184/0xfc
+  not_in_hw
+[PASS] check 14: IPv6 EF filter routes to 1:10
+[PASS] check 15: per-flow flower filters install
+steered 203.0.113.2 10.0.1.2 udp 7001 -> adaptive
+1:20 0 -> 62520   1:30 68466906 -> 68466906
+--- the filter that was installed ---
+  filter protocol ip pref 5 flower chain 0 
+  filter protocol ip pref 5 flower chain 0 handle 0x6c1371ad classid 1:20 
+    dst_ip 10.0.1.2
+    src_ip 203.0.113.2
+    dst_port 7001
+[PASS] check 16: steered IPv4 flow routed to 1:20 -- ADAPTIVE receives traffic
+steered 203.0.113.2 10.0.1.2 udp 7002 -> unclassified
+EF-claiming but classified unclassified: 1:10 13004 -> 75524
+[FAIL] check 17: EF-claiming flow reached 1:10 anyway (13004 -> 75524)
+
+STOPPED AT FIRST FAILURE
+
+=== SUMMARY ===
+PASS      check 1: tooling
+PASS      check 2: modules
+PASS      check 3: conntrack loopback per-flow
+PASS      check 4: namespaces and routes
+PASS      check 5: offloads off
+PASS      check 6: HTB bottleneck 1:1
+PASS      check 7: netem on leaf
+PASS      check 8: pyroute2 netlink
+PASS      check 9: cake at root
+PASS      check 10a: cake as leaf
+PASS      check 10b: pfifo as leaf
+PASS      check 11: conntrack forwarded per-flow v4
+PASS      check 13: conntrack forwarded per-flow v6
+PASS      check 14: IPv6 EF filter routes to 1:10
+PASS      check 15: per-flow flower filters install
+PASS      check 16: steered IPv4 flow routed to 1:20 -- ADAPTIVE receives traffic
+MEASURED  check 12: saturation signals (read numbers above)
+FAIL      check 17: EF-claiming flow reached 1:10 anyway (13004 -> 75524)

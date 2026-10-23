@@ -1,0 +1,68 @@
+=== Phase 0 environment capture ===
+captured_at_utc=2026-10-23T07:31:52Z
+project=/home/mekarz/Desktop/Full-projects/TATA-ELXSI
+git_root=/home/mekarz/Desktop/Full-projects
+git_head=366604ce881b11a5098c9648da3cb2681eb832f5
+
+--- sandbox ---
+Linux 7.1.5-76070105-generic x86_64
+python=Python 3.13.15
+shell=/bin/sh
+ip=ABSENT
+tc=ABSENT
+nft=ABSENT
+iperf3=ABSENT
+conntrack=ABSENT
+ethtool=ABSENT
+ping=ABSENT
+mmdc=ABSENT
+dot=ABSENT
+npx=/home/mekarz/.local/opt/node/bin/npx
+node=/home/mekarz/.local/opt/node/bin/node
+sudo=ABSENT
+effective_uid=1000
+uid_map=      1000       1000          1
+cap_effective=CapEff:	0000000000000000
+
+--- host ---
+Linux 7.1.5-76070105-generic x86_64
+os=Pop!_OS 24.04
+python=Python 3.12.3
+/usr/sbin/ip
+ip utility, iproute2-6.1.0, libbpf 1.3.0
+/usr/sbin/tc
+tc utility, iproute2-6.1.0, libbpf 1.3.0
+nftables v1.0.9 (Old Doc Yak #3)
+iperf 3.16 (cJSON 1.7.15)
+conntrack v1.4.8 (conntrack-tools)
+ethtool version 6.7
+sudo_noninteractive=FAIL
+
+--- test run ---
+command=python3 -m unittest discover -s tests -q
+----------------------------------------------------------------------
+Ran 1223 tests in 54.173s
+
+OK (skipped=10)
+=== Kernel support check (host via flatpak-spawn) ===
+uname: Linux pop-os 7.1.5-76070105-generic #202607241434~1787955023~24.04~38a419f SMP PREEMPT_DYNAMIC Fri A x86_64 x86_64 x86_64 GNU/Linux
+
+=== Modules / built-ins ===
+MISSING sch_cake
+MISSING sch_htb
+MISSING sch_netem
+MOD sch_fq_codel loaded
+MISSING ifb
+MISSING act_mirred
+MISSING cls_fw
+MISSING cls_u32
+MISSING cls_matchall
+
+=== namespaces ===
+286
+net ns available
+ipv4 forward present
+ipv6 forward present
+
+=== devices ===
+Device "ifb0" does not exist.

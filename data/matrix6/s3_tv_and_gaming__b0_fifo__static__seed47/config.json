@@ -1,0 +1,58 @@
+{
+  "scenario": "s3_tv_and_gaming",
+  "system": "b0_fifo",
+  "mode": "static",
+  "seed": 47,
+  "link_mbps": 100.0,
+  "drop_mbps": 20.0,
+  "drop_at_s": 20.0,
+  "duration_s": 40.0,
+  "settle_s": 4.0,
+  "workloads": [
+    {
+      "kind": "game",
+      "label": "game",
+      "dscp": 46
+    },
+    {
+      "kind": "video",
+      "label": "tv1",
+      "dscp": null
+    },
+    {
+      "kind": "video",
+      "label": "tv2",
+      "dscp": null
+    },
+    {
+      "kind": "video",
+      "label": "tv3",
+      "dscp": null
+    }
+  ],
+  "ports": [
+    {
+      "label": "game",
+      "port": 5280,
+      "dscp": 46
+    },
+    {
+      "label": "tv1",
+      "port": 5132,
+      "dscp": null
+    },
+    {
+      "label": "tv2",
+      "port": 5320,
+      "dscp": null
+    },
+    {
+      "label": "tv3",
+      "port": 5383,
+      "dscp": null
+    }
+  ],
+  "floor_mbps": 5.0,
+  "enforce_requested": true,
+  "enforcement_note": "b0_fifo is a baseline, not ACIQ"
+}

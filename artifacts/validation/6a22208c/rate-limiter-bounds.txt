@@ -1,0 +1,18 @@
+=== 1. fixed clock, 5000 unique clients ===
+  table size 904  cap 1024  bounded: True
+
+=== 2. advancing clock, 5000 clients over 10 windows ===
+  table size 500  bounded: True
+
+=== 3. one client hammering (limit must bite) ===
+  201s: 30 (cap 30)   429s: 10
+
+=== 4. forwarding headers must NOT change the client key ===
+  spoofed XFF entries in table: 0 (must be 0)
+
+=== 5. concurrent clients (threads) ===
+  exceptions: 0   table: 20
+
+=== 6. peer_spoofed(): is the socket peer address ever trusted from a header? ===
+  'x-forwarded' referenced in api.py: False
+  client comes from client_address:  True

@@ -1,0 +1,25 @@
+ACIQ host gate -- revision f3c1ff8e
+date: 2026-10-13T22:58:41+05:30
+
+-- prerequisites --
+  [ok ] root
+  [ok ] ip -> /usr/sbin/ip
+  [ok ] tc -> /usr/sbin/tc
+  [ok ] iperf3 -> /usr/bin/iperf3
+  [ok ] network namespace support
+
+kernel: 7.1.5-76070105-generic
+iproute2: tc utility, iproute2-6.1.0, libbpf 1.3.0
+
+== gate 1: live rollback verification (real kernel) ==
+  [PASS] live rollback
+
+== gate 2: acceptance harness ==
+  [WARN] acceptance ran but is NOT complete -- see the gate list above
+
+== gate 3: capacity-change adaptation (s2_wan_drop) ==
+  ~40s plus testbed build
+  evidence: data/host_gate_adapt
+
+== gate 4: FIFO / CAKE / ACIQ comparison, 7 paired seeds ==
+  ~20 min plus testbed build

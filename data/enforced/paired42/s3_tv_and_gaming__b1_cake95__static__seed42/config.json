@@ -1,0 +1,58 @@
+{
+  "scenario": "s3_tv_and_gaming",
+  "system": "b1_cake95",
+  "mode": "static",
+  "seed": 42,
+  "link_mbps": 100.0,
+  "drop_mbps": 20.0,
+  "drop_at_s": null,
+  "duration_s": 40.0,
+  "settle_s": 4.0,
+  "workloads": [
+    {
+      "kind": "game",
+      "label": "game",
+      "dscp": 46
+    },
+    {
+      "kind": "video",
+      "label": "tv1",
+      "dscp": null
+    },
+    {
+      "kind": "video",
+      "label": "tv2",
+      "dscp": null
+    },
+    {
+      "kind": "video",
+      "label": "tv3",
+      "dscp": null
+    }
+  ],
+  "ports": [
+    {
+      "label": "game",
+      "port": 5427,
+      "dscp": 46
+    },
+    {
+      "label": "tv1",
+      "port": 5157,
+      "dscp": null
+    },
+    {
+      "label": "tv2",
+      "port": 5112,
+      "dscp": null
+    },
+    {
+      "label": "tv3",
+      "port": 5479,
+      "dscp": null
+    }
+  ],
+  "floor_mbps": 5.0,
+  "enforce_requested": true,
+  "enforcement_note": "b1_cake95 is a baseline, not ACIQ"
+}

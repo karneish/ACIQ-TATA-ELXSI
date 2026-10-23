@@ -1,0 +1,26 @@
+ACIQ control-plane cost
+  kernel 7.1.5-76070105-generic  python 3.12.3  rss 16.3 MB
+
+  policy_planning
+    build_plan_no_lease                mean     9.03 us  p99    23.30 us  max   173.48 us
+    build_plan_with_lease              mean    20.27 us  p99    27.46 us  max  3015.54 us
+
+  kernel_application
+    build_tree_and_render              mean   206.65 us  p99  4378.07 us  max 10075.03 us
+    tc_commands_per_apply              12
+    (rendering only. Issuing the commands, and the kernel's cost in doing so, are not measured here.)
+
+  observation
+    parse_conntrack_line               mean     6.23 us  p99     9.66 us  max  2155.60 us
+
+  classification
+    classify_one_flow                  mean    14.44 us  p99    26.42 us  max  2181.45 us
+    flows_per_1hz_tick                 {'10': 0.144, '50': 0.722, '100': 1.444, '500': 7.22}
+
+  classifier cost per 1 Hz tick by flow count:
+      10 flows ->    0.144 ms
+      50 flows ->    0.722 ms
+     100 flows ->    1.444 ms
+     500 flows ->    7.220 ms
+
+  wrote /home/mekarz/Desktop/Full-projects/TATA-ELXSI/artifacts/validation/39348cbb/benchmark.json

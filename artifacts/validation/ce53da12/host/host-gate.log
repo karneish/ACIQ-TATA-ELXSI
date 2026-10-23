@@ -1,0 +1,30 @@
+ACIQ host gate -- revision ce53da12
+date: 2026-10-18T12:48:05+05:30
+
+-- prerequisites --
+  [ok ] root
+  [ok ] ip -> /usr/sbin/ip
+  [ok ] tc -> /usr/sbin/tc
+  [ok ] iperf3 -> /usr/bin/iperf3
+  [ok ] network namespace support
+
+kernel: 7.1.5-76070105-generic
+iproute2: tc utility, iproute2-6.1.0, libbpf 1.3.0
+
+== gate 1: live rollback verification (real kernel) ==
+  [PASS] live rollback
+
+== gate 2: acceptance harness ==
+  [FAIL] acceptance harness exited 1
+
+== gate 4b: CONGESTED comparison (s2_wan_drop), 7 paired seeds ==
+  ~20 min plus testbed build
+  this is the one that matters: a dropped link, not a free one
+  -- verifying per-flow steering actually happened in data/host_gate_congested_aciq --
+  [PASS] per-flow steering confirmed in all 7 aciq runs
+  evidence: data/host_gate_congested_{b0_fifo,b1_cake95,aciq}
+
+== summary ==
+  evidence directory: artifacts/validation/ce53da12/host
+  kernel: 7.1.5-76070105-generic
+  RESULT: one or more executed gates FAILED

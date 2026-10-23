@@ -1,0 +1,69 @@
+{
+  "scenario": "s3_tv_and_gaming",
+  "system": "aciq",
+  "mode": "adaptive",
+  "seed": 47,
+  "link_mbps": 100.0,
+  "drop_mbps": 10.0,
+  "drop_at_s": 5.0,
+  "duration_s": 40.0,
+  "settle_s": 4.0,
+  "workloads": [
+    {
+      "kind": "game",
+      "label": "game",
+      "dscp": 46
+    },
+    {
+      "kind": "video",
+      "label": "tv1",
+      "dscp": null
+    },
+    {
+      "kind": "video",
+      "label": "tv2",
+      "dscp": null
+    },
+    {
+      "kind": "video",
+      "label": "tv3",
+      "dscp": null
+    }
+  ],
+  "ports": [
+    {
+      "label": "game",
+      "port": 5280,
+      "dscp": 46
+    },
+    {
+      "label": "tv1",
+      "port": 5132,
+      "dscp": null
+    },
+    {
+      "label": "tv2",
+      "port": 5320,
+      "dscp": null
+    },
+    {
+      "label": "tv3",
+      "port": 5383,
+      "dscp": null
+    }
+  ],
+  "floor_mbps": 5.0,
+  "enforce_requested": true,
+  "enforcement_note": "not requested",
+  "lease_ips": [
+    "203.0.113.4"
+  ],
+  "device_ips": {
+    "game": "203.0.113.3",
+    "tv1": "203.0.113.4",
+    "tv2": "203.0.113.5",
+    "tv3": "203.0.113.6"
+  },
+  "lease_weight": 0.6,
+  "lease_ttl_s": null
+}

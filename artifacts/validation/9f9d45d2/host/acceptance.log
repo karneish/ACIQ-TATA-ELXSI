@@ -1,0 +1,34 @@
+ACIQ acceptance -- revision 9f9d45d2
+
+phase 1: environment-independent tests
+  [FAIL   ] unit+integration+socket  -- exit 1, Ran 915 tests in 15.821s, exit 1
+
+phase 2: metric integrity
+  [PASS   ] metric integrity  -- arithmetic + socket recomputation
+
+phase 3: api security
+  [PASS   ] api security  -- auth, bind policy, rate limit, audit
+
+phase 4: classifier
+  [PASS   ] classifier evaluation  -- 16 constructed cases, two capacities
+
+phase 5: benchmarks
+  [PASS   ] control-plane benchmark
+
+phase 6: kernel-dependent gates
+  [PASS   ] live rollback verification (kernel)  -- tc read-back in an isolated namespace
+  [PASS   ] testbed gate (21 checks)  -- exit 0
+  [PASS   ] live enforcement  -- 20 PASS, 1 MEASURED, 0 FAIL (gate-20261013-135720.log)
+  [PASS   ] rollback under real tc failure  -- live rollback tests passed (rollback-live-20261013.log)
+  [PASS   ] live adaptation loop  -- 100.0 -> 10.0 Mbps, estimator 10.97, 41 samples
+  [NOTRUN] FIFO/CAKE/ACIQ comparison  -- 5 paired seeds, need 6; a comparison below that is INCONCLUSIVE, not a result
+  [NOTRUN] congested FIFO/CAKE/ACIQ comparison  -- no congested runs; run: sudo tools/host_gate.sh --full
+  [PASS   ] 30-minute stability  -- 1859s sustained, 9 policy changes [evidence from revision 56a82be8, not 9f9d45d2]
+
+phase 7: claim audit
+  [PASS   ] claim audit  -- constants, evidence, red-flag phrases
+
+  PASS 11  FAIL 1  BLOCKED 0  NOT RUN 2
+  1 test(s) skipped (none mandatory) -- not counted as passed
+  complete acceptance run: False
+  evidence: artifacts/validation/9f9d45d2/

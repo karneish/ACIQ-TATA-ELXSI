@@ -1,0 +1,58 @@
+=== claim audit ===
+
+-- constants quoted in the docs vs the code --
+  [ok ] SAT_OVERLIMIT_MIN                code=3000.0 documented=3000.0
+  [ok ] BACKLOG_MIN_BYTES                code=1024 documented=1024
+  [ok ] MIN_SAMPLES_FOR_PERCENTILES      code=10 documented=10
+  [ok ] BULK_MIN_CAPACITY_FRAC           code=0.5 documented=0.5
+  [ok ] EF_FAST_CONFLICT_CAPACITY_FRAC   code=0.5 documented=0.5
+  [ok ] MIN_PKT_CONF                     code=0.5 documented=0.5
+  [ok ] DROP_RATE_LIMIT                  code=5000.0 documented=5000.0
+  [ok ] OVERLIMIT_RATE_LIMIT             code=5000.0 documented=5000.0
+  [ok ] MIN_PAIRS_FOR_PVALUE             code=6 documented=6
+  [ok ] MAX_BODY_BYTES                   code=65536 documented=65536
+  [ok ] RATE_LIMIT_WRITES                code=30 documented=30
+
+-- test names cited in docs/gap-closure/ --
+  [ok ] test_a_committed_plan_is_visible_to_independent_tc       real-kernel-acceptance.md
+  [ok ] test_a_measured_zero_survives                            final-validation-report.md, metric-integrity.md
+  [ok ] test_a_moderate_transfer_on_a_wide_link_is_not_bulk      classifier-before-after.md, classifier-final-validation.md, classifier-policy.md, defect-register.md
+  [ok ] test_a_small_flow_on_a_bulk_port_is_not_bulk             classifier-final-validation.md
+  [ok ] test_a_workload_label_reaches_its_class                  final-validation-report.md
+  [ok ] test_asymmetry_is_the_separator_not_duty_cycle           classifier-final-validation.md
+  [ok ] test_bulk_threshold_is_relative_adaptive_is_absolute     classifier-final-validation.md
+  [ok ] test_ceil_never_exceeds_capacity                         fairness-policy-safety.md
+  [ok ] test_degenerate_capacity_reports_degraded                fairness-policy-safety.md
+  [ok ] test_higher_weight_means_more_capacity                   fairness-policy-safety.md
+  [ok ] test_idle_samples_do_not_change_capacity                 fairness-policy-safety.md
+  [ok ] test_immature_ef_flow_is_not_judged_a_conflict           classifier-final-validation.md
+  [ok ] test_invariant_across_capacity_sweep                     fairness-policy-safety.md
+  [ok ] test_invariant_holds_for_every_class_of_lease            fairness-policy-safety.md
+  [ok ] test_loss_ratio_propagates                               baseline-audit.md
+  [ok ] test_nan_weight_is_refused                               safety-invariants.md
+  [ok ] test_rate_evidence_outranks_the_port_hint                classifier-final-validation.md
+  [ok ] test_rollback_restores_the_known_good_tree               real-kernel-acceptance.md
+  [ok ] test_rollback_that_cannot_be_verified_is_not_reported_as_success real-kernel-acceptance.md
+  [ok ] test_safe_state_is_installed_and_confirmed               real-kernel-acceptance.md
+  [ok ] test_sustained_bulk_claiming_ef_is_not_interactive       classifier-final-validation.md
+  [ok ] test_teardown_leaves_no_residue                          real-kernel-acceptance.md
+  [ok ] test_the_collector_reports_a_value_that_changes_between_polls final-validation-report.md, metric-integrity.md
+  [ok ] test_the_soak_does_not_retain_per_tick_data              resource-reliability.md
+  [ok ] test_verification_failed_is_reachable_and_is_not_a_pass  real-kernel-acceptance.md
+  [ok ] test_zero_padded_handles_do_not_trigger_a_false_mismatch real-kernel-acceptance.md, rollback-readback-verification.md
+
+-- evidence cited by claims --
+  [present  ] p = 0.0312   (b0_fifo comparison) -> data/matrix6
+  [present  ] 0.015625     (lease Wilcoxon) -> data/ab_lease_42
+  [present  ] 92.6         (gate check 6 (stale value)) -> docs/evidence
+  [present  ] 92.7         (gate check 6) -> docs/evidence
+  [present  ] 12.92        (withdrawn lease figure) -> docs/limitations.md
+  [present  ] 20 PASS      (gate summary) -> docs/evidence
+
+-- red-flag phrases --
+  none found
+
+-- test suite --
+  ran 1174 tests, ok=True, exit=0, 1 skipped
+
+  wrote docs/gap-closure/claim-audit.json
