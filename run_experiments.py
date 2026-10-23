@@ -187,6 +187,26 @@ def main() -> int:
         harness = Harness()
         launcher = NetnsLauncher(observe=args.observe)
         source = None
+        # A SIGTERM/SIGINT'd run must leave NO kernel residue: force the safe
+        # tree and tear down bridge filters on the way out, the same contract
+        # the gate proves with its own probe (gate7 p8). The watchdog is the
+        # only thing between a KILLING signal and leftover flower filters on
+        # the live testbed, so it is armed before anything touches tc.
+        from aciq.watchdog import Watchdog
+        from aciq.bridge import Bridge
+
+        def _force_safe_exit() -> None:
+            try:
+                harness.txn.force_safe()
+            except Exception:
+                pass                # teardown of the bridge is the residue that matters
+            try:
+                Bridge(dev="veth-lan", in_if="veth-wan",
+                       ns="router").teardown()
+            except Exception:
+                pass
+
+        Watchdog(safe_fn=_force_safe_exit).install()
     runner = ExperimentRunner(
         launcher=launcher,
         harness=harness,

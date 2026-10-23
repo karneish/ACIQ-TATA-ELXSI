@@ -17,40 +17,47 @@ SUMMARY="$OUT/s5_summary.json"; : >"$SUMMARY"
 note() { echo "[$1] $2"; }
 s5a=FAIL; s5b=FAIL; s5c=FAIL; s5d=FAIL
 
-# ---- (a) SIGTERM: reuse the gate's proven recipe but standalone ----------
+# ---- (a) SIGTERM: run with enforcement so there IS a filter to outlive ----
 testbed/cleanup.sh >/dev/null 2>&1; testbed/setup.sh >/dev/null
 "$PY" run_experiments.py --scenario s2_wan_drop --system aciq --seeds 1 \
-        --no-setup >/tmp/opencode/s5a.out 2>&1 &
+        --no-setup --enforce >/tmp/opencode/s5a.out 2>&1 &
 RUN_PID=$!
-sleep 8; kill -TERM $RUN_PID 2>/dev/null; wait $RUN_PID 2>/dev/null
+# enforcement takes the whole first-half of the run (probes, verdicts);
+# give it long enough that an installed filter is certain, not assumed
+sleep 20
+ip netns exec router tc filter show dev veth-lan | grep -q "dst_port" \
+  && note a "pre: filters installed (witness)" \
+  || note a "WARNING: no filter seen before SIGTERM; residue test is weak"
+kill -TERM $RUN_PID 2>/dev/null; wait $RUN_PID 2>/dev/null
 sleep 2
-if ! ip netns exec router tc filter show dev veth-lan | grep -q flower; then
-  s5a=PASS; note a "SIGTERM left NO filter residue"
+if ! ip netns exec router tc filter show dev veth-lan | grep -q "dst_port"; then
+  s5a=PASS; note a "SIGTERM left NO filter residue (watchdog force-safe)"
 else
-  note a "filter SURVIVED SIGTERM"
+  note a "filter SURVIVED SIGTERM (watchdog not engaged on the driver)"
 fi
 
 # ---- (b) SIGKILL: residue expected; next cleanup removes it ---------------
 "$PY" run_experiments.py --scenario s2_wan_drop --system aciq --seeds 1 \
-        --no-setup >/tmp/opencode/s5b.out 2>&1 &
+        --no-setup --enforce >/tmp/opencode/s5b.out 2>&1 &
 RUN_PID=$!
-sleep 8; kill -KILL $RUN_PID 2>/dev/null; wait $RUN_PID 2>/dev/null
+sleep 20; kill -KILL $RUN_PID 2>/dev/null; wait $RUN_PID 2>/dev/null
 sleep 1
-if ip netns exec router tc filter show dev veth-lan | grep -q flower; then
+if ip netns exec router tc filter show dev veth-lan | grep -q "dst_port"; then
   note b "SIGKILL left residue (expected); next cleanup removes it"
 fi
 testbed/cleanup.sh >/dev/null 2>&1
-ip link show veth-lan >/dev/null 2>&1 && s5b=BROKEN_CLEANUP
 if ! ip link show veth-lan >/dev/null 2>&1; then
   s5b=PASS; note b "cleanup after SIGKILL left nothing"
+else
+  note b "cleanup failed to remove veth-lan"
 fi
 
 # ---- (c) injected failed apply: tx path rolls back through the kernel -----
 testbed/setup.sh >/dev/null
 "$PY" run_experiments.py --scenario s2_wan_drop --system aciq --seeds 1 \
         --no-setup --inject-fail-apply >/tmp/opencode/s5c.out 2>&1
-"$(dirname "$0")/../tools/verify_s5c.py" data/runs/s2_wan_drop__aciq__adaptive__seed* \
-    && s5c=PASS || note c "verify_s5c.py says NO"
+"$PY" tools/verify_s5c.py data/runs/s2_wan_drop__aciq__adaptive__seed*; \
+    rc_c=$?; [ $rc_c -eq 0 ] && s5c=PASS || note c "verify_s5c.py says NO (rc=$rc_c)"
 note c "S5(c) injection case complete"
 
 # ---- (d) watchdog starvation through REAL tc commands ---------------------
