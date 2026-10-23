@@ -87,6 +87,9 @@ def main() -> int:
                     help="build everything but do not wait for the run to finish")
     ap.add_argument("--no-setup", action="store_true",
                     help="assume namespaces already exist")
+    ap.add_argument("--inject-fail-apply", action="store_true",
+                    help="S5 failure injection: ACIQ runs get one tc apply "
+                         "forced to fail at mid-run; rollback must restore")
     ap.add_argument("--enforce", action="store_true",
                     help="apply per-flow classifications as tc flower filters "
                          "(ACIQ only; off by default so runs stay comparable "
@@ -231,7 +234,8 @@ def main() -> int:
                         recover_at_s=args.recover_at,
                         recover_to_mbps=args.recover_to,
                         lease_ips=args.lease, lease_weight=args.lease_weight,
-                        lease_ttl_s=args.lease_ttl_s)
+                        lease_ttl_s=args.lease_ttl_s,
+                        inject_fail_apply=args.inject_fail_apply)
                     for n in res.notes:
                         # only real problems get a warning marker; a note like
                         # "no capacity drop" is informational and alarming it

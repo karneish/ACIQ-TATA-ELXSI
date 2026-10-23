@@ -314,6 +314,46 @@ class TransactionManager:
     def _prefix(self) -> tuple[str, ...]:
         return ("ip", "netns", "exec", self.ns) if self.ns else ()
 
+    def inject_failed_apply_once(self, marker: str = "class add") -> bool:
+        """S5(c): make the NEXT apply fail ONCE at a real command boundary.
+
+        The next `run()` whose argv contains `marker` returns a non-zero,
+        real-looking tc error, exactly once; every later command passes
+        through to the underlying runner untouched. The rollback path then
+        replays last-good through the same still-live commands. Implemented as
+        a bounded wrapper rather than a plan mutation, so what fails is a
+        genuine `tc` call -- the proof is the kernel's own non-zero exit --
+        but the marker never changes the shape of the tree being applied.
+
+        Returns True if injection armed (idempotent: arming twice is a bug the
+        caller must not paper over -- a second arming replaces the wrapper
+        without firing, and the "failure" would be silently deferred).
+        """
+        if getattr(self.runner, "_aciq_fail_once", False):
+            return False
+
+        class _FailOnceRunner:
+            _aciq_fail_once = True
+
+            def __init__(self, base):
+                self._base = base
+                self._fired = False
+                self.marker = marker
+
+            def run(self, argv):
+                if not self._fired and self.marker in " ".join(argv):
+                    self._fired = True
+                    return (1, "",
+                            f"tc: injected failure (S5) on {self.marker}")
+                return self._base.run(argv)
+
+        # Proved by the standalone live check; a qdisc apply that never
+        # touched the kernel could only prove the wrapper.
+        last_reason = self.last_reason
+        self.runner = _FailOnceRunner(self.runner)
+        self.last_reason = last_reason
+        return True
+
     last_readback_source: str = "none"
 
     def _rebuild(self, tree: TcTree) -> tuple[bool, str]:

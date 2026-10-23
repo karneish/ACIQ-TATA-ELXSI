@@ -265,6 +265,11 @@ class ExperimentRunner:
         #: having looked at traffic.
         self._enf_ticks = 0
         self._enf_steered = 0
+        #: S5(c) injection state: armed once per run at the midpoint, with the
+        #: outcome recorded verbatim in the run's notes.
+        self._inject_fail_apply = False
+        self._inject_fail_applied = False
+        self._inject_note: str | None = None
         #: Ticks whose enforcement step raised. Non-zero means the kernel refused
         #: something and the sample's empty verdicts are a failure, not an absence.
         self._enf_errors = 0
@@ -318,7 +323,11 @@ class ExperimentRunner:
         lease_ips: Sequence[str] = (),
         lease_weight: float = 0.5,
         lease_ttl_s: float | None = None,
+        inject_fail_apply: bool = False,
     ) -> RunResult:
+        self._inject_fail_apply = bool(inject_fail_apply)
+        self._inject_fail_applied = False
+        self._inject_note = None
         self.enforce = enforce
         self._lease_ips = list(lease_ips)
         #: Seconds during which the lease class actually existed and could steer
@@ -462,6 +471,7 @@ class ExperimentRunner:
                            for i, (label, _p, _d) in enumerate(ports)},
             "lease_weight": self._lease_weight if self._lease_ips else None,
             "lease_ttl_s": self._lease_ttl_s,
+            "inject_fail_apply": bool(self._inject_fail_apply),
         }
         paths.write_json("config.json", cfg)
 
@@ -645,6 +655,19 @@ class ExperimentRunner:
             # A dry run must still advance the *scenario* timeline, otherwise
             # drop_at_s can never be reached and the drop path goes untested.
             elapsed = (now - t0) if self.real_time else i * self.tick_s
+
+            # S5(c) — failure injection at the midpoint of the run, ONCE.
+            # The transaction's apply is made to fail at a real tc command;
+            # the rollback must replay last-good and the run must carry on.
+            if (self._inject_fail_apply and system is SystemSpec.ACIQ
+                    and not self._inject_fail_applied
+                    and elapsed >= (sc.duration_s / 2.0) - self.tick_s):
+                self._inject_fail_applied = True
+                armed = self.harness.txn.inject_failed_apply_once()
+                self._inject_note = (
+                    "S5(c) injected failed apply ARMED at t="
+                    f"{elapsed:.1f}s" if armed
+                    else "S5(c) injection NOT armed (re-called?)")
 
             # Probe telemetry has to be read *during* the run. It used to be
             # ingested once, after `launcher.collect()` returned, so every row
@@ -899,7 +922,8 @@ notes=(([] if dropped else ["no capacity drop in this run"])
                    + [enforcement_note]
                    + ([_lease_note] if lease_note else [])
                    + ([link_note] if link_note else [])
-                   + ([self._capacity_note()] if self._capacity_change_failed else [])),
+                   + ([self._capacity_note()] if self._capacity_change_failed else [])
+                   + ([self._inject_note] if self._inject_note else [])),
         )
         paths.write_json("result.json", json.loads(res.to_json()))
         return res
