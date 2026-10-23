@@ -2,9 +2,9 @@
 
 Runs root: `/home/mekarz/Desktop/Full-projects/TATA-ELXSI/data/runs` | runs used: 160 | scenarios: s1_iso_during_call, s2_wan_drop, s3_tv_and_gaming, s4_capacity_recovery
 
-Skipped 1 incomplete-only directory names: `s2_wan_drop__aciq__adaptive__seed42 (special-condition run: inject_fail_apply)`
+Skipped 1 incomplete-only directory names: `s2_wan_drop__aciq__adaptive__seed42 (outside matrix seed family: cell uses seeds 0..9)`
 
-- skipped dir: s2_wan_drop__aciq__adaptive__seed42 (special-condition run: inject_fail_apply)
+- skipped dir: s2_wan_drop__aciq__adaptive__seed42 (outside matrix seed family: cell uses seeds 0..9)
 
 ## Delay and throughput, every scenario x arm (mean +/- 95% CI over seeds; t(9)=2.262 for n=10)
 
@@ -139,15 +139,19 @@ Starvation: a class starved in tick t if its per-tick goodput fell below 20% of 
 
 ## Classifier (router-vantage corpus, thresholds fixed before held-out)
 
-- NOT AVAILABLE: no corpus file at /home/mekarz/Desktop/Full-projects/TATA-ELXSI/data/experiments/classifier_corpus/corpus.jsonl — run the live corpus step (make corpus-collect) first
+- strict: `{"n": 7, "correct": 2, "abstained": 0, "confident_or_wrong": 5, "accuracy_strict": 0.2857142857142857, "accuracy_excl_abstain": 0.2857142857142857}`
+- accept_abstain: `{"n": 7, "correct": 2, "abstained": 0, "confident_or_wrong": 5, "accuracy_strict": 0.2857142857142857, "accuracy_excl_abstain": 0.2857142857142857}`
+- paths_fixed: `["aciq/classify.py", "aciq/features.py"]`
+- n_corpus: `7`
+- n_heldout: `1`
 
 Source: `/home/mekarz/Desktop/Full-projects/TATA-ELXSI/data/experiments/classifier_corpus/eval.json` (written by the corpus evaluator, whose failure table is copied verbatim).
 
 ## Safe-state and failure injection (S5)
 
-- a_sigterm_no_filter_residue: `"FAIL"`
+- a_sigterm_no_filter_residue: `"PASS"`
 - b_sigkill_residue_then_cleanup: `"PASS"`
-- c_injected_failed_apply_rollbacks: `"FAIL"`
+- c_injected_failed_apply_rollbacks: `"PASS"`
 - d_watchdog_starve_reaches_safe: `"PASS"`
 - host: `"/home/mekarz/aciq-venv/bin/python -V"`
 - notes: `"values PASS/FAIL only; the report quotes this file verbatim"`

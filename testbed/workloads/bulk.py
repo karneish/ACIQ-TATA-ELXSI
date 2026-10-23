@@ -20,6 +20,27 @@ import threading
 import time
 
 BLOCK = 256 * 1024
+#: a paced window sends the cap's worth of bytes and stops sending for the
+#: rest of the second; 0.5 s is the longest single sleep that still lets the
+#: loop watch `end` closely.
+PACING_MAX_SLEEP = 0.5
+
+
+def rate_cap_pace(sent: int, t0: float, end, now: float, cap,
+                  sleep=time.sleep, monotonic=time.monotonic) -> None:
+    """Hold the rate to `cap` Mbps on the WINDOW.
+
+    The sender loop cannot know available bandwidth; what it can do is stop
+    sending once bytes-in-flight exceed what the cap allows in elapsed time.
+    Injected sleep/monotonic keep this pure math: the offline suite proves
+    the cap holds without a network.
+    """
+    if cap is None or cap <= 0:
+        return
+    target = (sent * 8) / cap / 1e6
+    owed = target - (now - t0)
+    if owed > 0 and (end is None or now < end):
+        sleep(min(owed, PACING_MAX_SLEEP))
 
 
 def sink(port: int, out: dict, stop: threading.Event | None = None) -> None:
@@ -67,6 +88,11 @@ def main() -> int:
     ap.add_argument("--duration", type=float, default=20.0)
     ap.add_argument("--dscp", type=int, default=None)
     ap.add_argument("--label", default="bulk")
+    ap.add_argument("--rate-cap", type=float, default=None,
+                    help="cap sender throughput (Mbps). Default: None, i.e. "
+                         "go as fast as TCP can; --rate-cap paces the send "
+                         "loop, for mid-rate profiles (an update/backup "
+                         "window differs from a hog by NOT saturating)")
     ap.add_argument("--src", default=None,
                     help="source address to bind, so this workload is a "
                          "distinct device for lease matching")
@@ -127,6 +153,7 @@ def main() -> int:
         except OSError as e:
             print(f"  [{args.label}] send error: {e}", flush=True)
             break
+        rate_cap_pace(sent, t0, end, time.monotonic(), args.rate_cap)
 
     s.close()
     elapsed = max(time.monotonic() - t0, 1e-9)

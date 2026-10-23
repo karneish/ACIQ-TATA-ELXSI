@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import dataclasses
 import sys
 import time
 from pathlib import Path
@@ -32,22 +33,30 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from aciq.flowtrack import ConntrackSource, FlowTracker  # noqa: E402
+from aciq.flowtrack import (ConntrackSource, FlowTracker,
+                            parse_conntrack_dirs)  # noqa: E402
 from aciq.features import FlowFeatures  # noqa: E402
 
-#: label -> (client workload script, sender script, dport).
+#: label -> (client workload script, sender script, dport, extra_args).
 #: Ports match the shipped generators so a mis-tagged port is obvious: the
 #: port IS the label in this design, and a collision would poison every
 #: record downstream. S5 f-note: update/backup reuse bulk.py; they are
 #: distinct classes to the classifier (rate/shape), same port is fine because
 #: each window observes exactly one class.
+#:
+#: software_update is a smooth constant MID-RATE shape (rate-capped, so the
+#: `frac >= 0.5` bulk rule must not swallow it); cloud_backup is an UPLOAD
+#: (sink elsewhere, sender home) — exactly the shape the shipped
+#: cloud_backup rule looks for (tx share >= 0.8).
 CORPUS_PLAN = {
-    "video_call_voice": ("call.py", "call.py", 5001),
-    "interactive_gaming": ("game.py", "game.py", 5002),
-    "adaptive_video_streaming": ("video.py", "video.py", 5003),
-    "bulk_download": ("bulk.py", "bulk.py", 5004),
-    "software_update": ("bulk.py", "bulk.py", 5004),
-    "cloud_backup": ("bulk.py", "bulk.py", 5004),
+    "video_call_voice": ("call.py", "call.py", 5001, [], False),
+    "interactive_gaming": ("game.py", "game.py", 5002, [], False),
+    "adaptive_video_streaming": ("video.py", "video.py", 5003, [], False),
+    "bulk_download": ("bulk.py", "bulk.py", 5004, [], False),
+    "software_update": ("bulk.py", "bulk.py", 5004,
+                        ["--rate-cap", "8"], False),
+    "cloud_backup": ("bulk.py", "bulk.py", 5004,
+                     ["--rate-cap", "8"], True),
 }
 
 #: 7 classes is the statement; the 7th (UNKNOWN) is never generated: it is the
@@ -126,24 +135,67 @@ def ns_pre(ns: str) -> list[str]:
     return ["ip", "netns", "exec", ns]
 
 
+class DirectionTracker(FlowTracker):
+    """FlowTracker that knows WHERE bytes sat, at corpus-vantage terms.
+
+    The shipped tracker sums both directions (volume is what the controller
+    reasons about). The corpus needs direction: the conntrack ORIGIN is
+    whoever spoke first, and `orig.src == 10.0.1.2` says the home side
+    initiated — reply bytes are then downstream (server payload), orig bytes
+    upstream. For a backup window (home side pushes payload) this is what
+    lets the tx-share rule fire at all.
+    """
+
+    def __init__(self, window: int = 10, home_src: str = "10.0.1.2"):
+        super().__init__(window=window)
+        self._orig: dict[str, int] = {}
+        self.home_src = home_src
+
+    def observe(self, text: str, now: float) -> None:
+        seen = parse_conntrack_dirs(text)
+        for key, (flow, _p, _b, orig_bytes, reply_bytes) in seen.items():
+            self._orig[key] = orig_bytes if flow.src == self.home_src \
+                else reply_bytes
+        # Base class observes its own summed parse; the direction map is our
+        # parallel state, indexed by the same identity key.
+        super().observe(text, now)
+
+    def features(self, key: str, dscp: int | None = None
+                 ) -> FlowFeatures | None:
+        f = super().features(key, dscp)
+        if f is None:
+            return None
+        k = f.flow.identity
+        if k in self._orig:
+            orig = self._orig[k]
+            total = f.rx_bytes
+            return dataclasses.replace(f, tx_bytes=orig,
+                                       rx_bytes=total - orig)
+        return f
+
+
 def collect_window(label: str, plan: tuple, env: NSEnv,
                    duration_s: float, poll_s: float,
                    workloads_dir: Path, capacity_mbps: float,
-                   extra_flags: list[str] | None = None,
                    tracker: FlowTracker | None = None,
                    source: ConntrackSource | None = None) -> list[dict]:
-    _, script, dport = plan
+    _listener, script, dport, extra_flags, reverse = plan
     wl = str(workloads_dir)
-    tracker = tracker or FlowTracker(window=max(2, int(duration_s / poll_s)))
+    tracker = tracker or DirectionTracker(window=max(2, int(duration_s / poll_s)))
     source = source or ConntrackSource(ns=env.router)
+    sender_side, sink_side = (env.client, env.wan) if reverse \
+        else (env.wan, env.client)
+    # Dst for the sender: the SINK side's in-bridge address. Download (default):
+    # sink home is 10.0.1.2; upload: sink elsewhere is 203.0.113.2.
+    sink_ip = "203.0.113.2" if reverse else env.client_ip
     sink = Generator(script,
-                     env.nsexec(env.client, ["python3", f"{wl}/{script}",
-                                             "--listen", "--port", str(dport)]),
-                     env.nsexec(env.wan, ["python3", f"{wl}/{script}",
-                                          "--dst", env.client_ip,
-                                          "--port", str(dport),
-                                          "--duration", str(duration_s)]
-                                   + (extra_flags or [])))
+                     env.nsexec(sink_side, ["python3", f"{wl}/{script}",
+                                            "--listen", "--port", str(dport)]),
+                     env.nsexec(sender_side, ["python3", f"{wl}/{script}",
+                                              "--dst", sink_ip,
+                                              "--port", str(dport),
+                                              "--duration", str(duration_s)]
+                                       + list(extra_flags)))
     with sink:
         time.sleep(1.5)
         sink.start_sender()
@@ -157,7 +209,9 @@ def collect_window(label: str, plan: tuple, env: NSEnv,
         if f is None:
             continue
         flw = f.flow
-        if flw.dport == dport and flw.proto == "tcp":
+        # TCP AND UDP: a corpus with no video-call or gaming rows was a
+        # tcp-only filter, not a missing generator.
+        if flw.dport == dport:
             ps.append(features_record(label, f, capacity_mbps))
     return ps
 

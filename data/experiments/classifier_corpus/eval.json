@@ -1,3 +1,151 @@
 {
- "fatal": "no corpus file at /home/mekarz/Desktop/Full-projects/TATA-ELXSI/data/experiments/classifier_corpus/corpus.jsonl \u2014 run the live corpus step (make corpus-collect) first"
+ "n_corpus": 7,
+ "n_fixed": 6,
+ "n_heldout": 1,
+ "paths_fixed": [
+  "aciq/classify.py",
+  "aciq/features.py"
+ ],
+ "capacity_note": "capacity_mbps travels with each record; bulk is relative to it",
+ "strict": {
+  "n": 7,
+  "correct": 2,
+  "abstained": 0,
+  "confident_or_wrong": 5,
+  "accuracy_strict": 0.2857142857142857,
+  "accuracy_excl_abstain": 0.2857142857142857
+ },
+ "strict_fixed": {
+  "n": 6,
+  "correct": 1,
+  "abstained": 0,
+  "confident_or_wrong": 5,
+  "accuracy_strict": 0.16666666666666666,
+  "accuracy_excl_abstain": 0.16666666666666666
+ },
+ "strict_heldout": {
+  "n": 1,
+  "correct": 1,
+  "abstained": 0,
+  "confident_or_wrong": 0,
+  "accuracy_strict": 1.0,
+  "accuracy_excl_abstain": 1.0
+ },
+ "accept_abstain": {
+  "n": 7,
+  "correct": 2,
+  "abstained": 0,
+  "confident_or_wrong": 5,
+  "accuracy_strict": 0.2857142857142857,
+  "accuracy_excl_abstain": 0.2857142857142857
+ },
+ "accept_abstain_fixed": {
+  "n": 6,
+  "correct": 1,
+  "abstained": 0,
+  "confident_or_wrong": 5,
+  "accuracy_strict": 0.16666666666666666,
+  "accuracy_excl_abstain": 0.16666666666666666
+ },
+ "accept_abstain_heldout": {
+  "n": 1,
+  "correct": 1,
+  "abstained": 0,
+  "confident_or_wrong": 0,
+  "accuracy_strict": 1.0,
+  "accuracy_excl_abstain": 1.0
+ },
+ "confusion_full": {
+  "classes": [
+   "adaptive_video_streaming",
+   "bulk_download",
+   "cloud_backup",
+   "software_update"
+  ],
+  "matrix": {
+   "adaptive_video_streaming": {
+    "bulk_download": 0,
+    "cloud_backup": 0,
+    "software_update": 0,
+    "adaptive_video_streaming": 1,
+    "?abstain": 0
+   },
+   "bulk_download": {
+    "adaptive_video_streaming": 0,
+    "cloud_backup": 0,
+    "software_update": 0,
+    "bulk_download": 1,
+    "?abstain": 0
+   },
+   "cloud_backup": {
+    "adaptive_video_streaming": 0,
+    "bulk_download": 3,
+    "software_update": 0,
+    "cloud_backup": 0,
+    "?abstain": 0
+   },
+   "software_update": {
+    "adaptive_video_streaming": 0,
+    "bulk_download": 2,
+    "cloud_backup": 0,
+    "software_update": 0,
+    "?abstain": 0
+   }
+  },
+  "per_class": {
+   "adaptive_video_streaming": {
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+   },
+   "bulk_download": {
+    "tp": 1,
+    "fp": 5,
+    "fn": 0,
+    "precision": 0.16666666666666666,
+    "recall": 1.0,
+    "f1": 0.2857142857142857
+   },
+   "cloud_backup": {
+    "tp": 0,
+    "fp": 0,
+    "fn": 3,
+    "precision": null,
+    "recall": 0.0,
+    "f1": null
+   },
+   "software_update": {
+    "tp": 0,
+    "fp": 0,
+    "fn": 2,
+    "precision": null,
+    "recall": 0.0,
+    "f1": null
+   }
+  }
+ },
+ "confusion_heldout": {
+  "classes": [
+   "adaptive_video_streaming"
+  ],
+  "matrix": {
+   "adaptive_video_streaming": {
+    "adaptive_video_streaming": 1,
+    "?abstain": 0
+   }
+  },
+  "per_class": {
+   "adaptive_video_streaming": {
+    "tp": 1,
+    "fp": 0,
+    "fn": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+   }
+  }
+ }
 }

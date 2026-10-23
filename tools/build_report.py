@@ -19,6 +19,7 @@ import argparse
 import html as _html
 import json
 import math
+import re
 import statistics
 import sys
 from pathlib import Path
@@ -127,6 +128,40 @@ def load_runs(runs_root: Path) -> tuple[list[dict], list[str]]:
             continue
         runs.append({"dir": d.name, "cfg": cfg, "wl": wl,
                      "res": res, "samples": samples})
+    # Matrix cells must be one contiguous seed family per (scenario, arm).
+    # Off-by-run evidence runs (the dashboard's seed42 rerun, an s5 probe
+    # named after its scenario) otherwise join cells silently as member #11
+    # and move every mean and CI against the audit. The LARGEST contiguous
+    # seed family per scenario-arm is the matrix; any other seed is skipped
+    # by name so the exclusion is visible.
+    fam: dict[tuple[str, str], list[tuple[int, dict]]] = {}
+    for r in runs:
+        try:
+            seed = int(r["cfg"].get("seed", 0))
+        except (TypeError, ValueError) as e:
+            skipped.append(f"{r['dir']} (bad seed value: {e})")
+            continue
+        fam.setdefault((r["cfg"].get("scenario", "?"), r["cfg"].get("system", "?")),
+                       []).append((seed, r))
+    runs, dropped = [], []
+    for (sc, sysname), members in sorted(fam.items()):
+        seeds = sorted(s for s, _ in members)
+        best = cur = [seeds[0]] if seeds else []
+        for s in seeds[1:]:
+            if cur and s == cur[-1] + 1:
+                cur.append(s)
+            else:
+                cur = [s]
+            if len(cur) > len(best):
+                best = cur
+        keep = set(best)
+        for s, r in members:
+            if s in keep:
+                runs.append(r)
+            else:
+                dropped.append(f"{r['dir']} (outside matrix seed family: "
+                               f"cell uses seeds {min(keep)}..{max(keep)})")
+    skipped.extend(sorted(dropped))
     return runs, skipped
 
 

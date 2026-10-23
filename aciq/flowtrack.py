@@ -44,8 +44,8 @@ _TUPLE_RE = re.compile(
     r"src=(?P<src>\S+)\s+dst=(?P<dst>\S+)\s+"
     r"(?:sport=(?P<sport>\d+)\s+)?(?:dport=(?P<dport>\d+)\s+)?"
     r"packets=(?P<packets>\d+)\s+bytes=(?P<bytes>\d+)"
-    r"(?:\s+(?:\[UNREPLIED\]|\[ASSURED\])?"
-    r"\s+src=\S+\s+dst=\S+\s+(?:sport=\d+\s+)?(?:dport=\d+\s+)?"
+    r"(?:(?:\s*\[(?:UNREPLIED|ASSURED)\])?\s+src=\S+\s+dst=\S+\s+"
+    r"(?:sport=\d+\s+)?(?:dport=\d+\s+)?"
     r"packets=(?P<rpackets>\d+)\s+bytes=(?P<rbytes>\d+))?"
 )
 
@@ -63,6 +63,34 @@ def parse_conntrack_line(line: str) -> Flow | None:
         dport=int(g["dport"]) if g.get("dport") else 0,
         proto=g["proto"],
     )
+
+
+def parse_conntrack_dirs(text: str) -> dict[str, tuple[Flow, int, int, int, int]]:
+    """-> {identity: (Flow, packets, bytes, orig_bytes, reply_bytes)}.
+
+    parse_conntrack() sums both directions because the shipped rule base
+    reasons about volume only; the corpus collector needs the direction split
+    (an upload differs from a download by WHERE the payload bytes sit).
+    Unidirectional lines keep reply bytes at 0.
+    """
+    out: dict[str, tuple[Flow, int, int, int, int]] = {}
+    for line in text.splitlines():
+        m = _TUPLE_RE.match(line.strip())
+        if not m:
+            continue
+        g = m.groupdict()
+        flow = Flow(
+            src=g["src"],
+            sport=int(g["sport"]) if g.get("sport") else 0,
+            dst=g["dst"],
+            dport=int(g["dport"]) if g.get("dport") else 0,
+            proto=g["proto"],
+        )
+        packets = int(g["packets"]) + int(g["rpackets"] or 0)
+        total_bytes = int(g["bytes"]) + int(g["rbytes"] or 0)
+        out[flow.identity] = (flow, packets, total_bytes,
+                              int(g["bytes"]), int(g["rbytes"] or 0))
+    return out
 
 
 def parse_conntrack(text: str) -> dict[str, tuple[Flow, int, int]]:
