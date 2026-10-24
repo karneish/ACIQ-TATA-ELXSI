@@ -203,3 +203,27 @@ populate the new columns from scratch.
 Tests: 34 fairness/report/bind metrics tests (24 new); suite 1442 OK
 (skipped=10 live-kernel by design); `make lint` citation audit clean.
 Committed as `fix 18`.
+
+## Ready-to-run (T4–T8) — user command block
+
+The agent cannot run privileged steps. Use this single batched script (resume-safe):
+
+```bash
+# From repo root on the target host (with kernel/netns/tc available)
+sudo env ACIQ_VENV=/home/mekarz/aciq-venv ./testbed/run_live_fix.sh
+```
+
+What it does (T4–T8):
+- **T4**: S1–S4 all four arms with **new seeds 200–209** (distinct from 0-9/42-51)
+- **T6**: S3 rerun all four arms post-realism changes (fair comparison)
+- **T5**: S5 via `testbed/s5_live.sh` (SIGTERM/SIGKILL/failed-apply, tc/nft dumps, time-to-safe)
+- **T7**: corpus via `testbed/corpus_live.sh` (DEV-split fixes → fresh held-out, floor enforced)
+- **T8**: dashboard via `testbed/dashboard_evidence.sh` (+ no-external check)
+
+After completion:
+```bash
+/home/mekarz/aciq-venv/bin/python tools/build_report.py
+/home/mekarz/aciq-venv/bin/python tools/audit_claims.py scan_path_citations | tail -1
+```
+
+Verify cleanup: `ip netns list` should be empty (script checks and exits non-zero if not). Oracle arms must remain labeled "oracle / cannot have" and never described as operator-real.
