@@ -189,3 +189,33 @@ class TestAdaptationOnAppliedTree(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDeltaFactor(unittest.TestCase):
+    """A near-zero baseline must print a factor, not -15356%."""
+
+    def test_small_cheeky_baseline_prints_percent(self):
+        v, arrow = delta_pct(98.11, 89.55, lower_is_better=True)
+        self.assertEqual(v, "-9.6")
+        self.assertEqual(arrow, "worse")
+
+    def test_factor_when_ratio_passes_twenty(self):
+        v, arrow = delta_pct(98.11, 2.38, lower_is_better=True)
+        self.assertEqual(v, "41.2x")
+        self.assertEqual(arrow, "worse")
+
+    def test_factor_better_direction_when_lower_is_better(self):
+        v, arrow = delta_pct(0.09, 2.38, lower_is_better=True)
+        self.assertEqual(v, "26.4x")
+        self.assertEqual(arrow, "better")
+
+    def test_factor_direction_for_higher_is_better_metrics(self):
+        # bulk throughput: higher is better; ACIQ 200 vs baseline 5 is a
+        # real 40x factor, and the direction is "better"
+        v, arrow = delta_pct(200.0, 5.0, lower_is_better=False)
+        self.assertEqual(v, "40.0x")
+        self.assertEqual(arrow, "better")
+
+    def test_percent_boundary_stays_percent_just_below(self):
+        v, _ = delta_pct(19.0, 1.0, lower_is_better=False)
+        self.assertEqual(v, "+1800.0")

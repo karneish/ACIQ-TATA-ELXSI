@@ -147,3 +147,33 @@ class TestStarvation(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestAssignedClasses(unittest.TestCase):
+    """T3 wording: per-class series restricted to classes the scenario
+    actually assigned, identically for every mode."""
+
+    def test_s1_assigns_exactly_call_and_bulk(self):
+        got = F.assigned_classes(S1_CALL_BULK)
+        self.assertEqual(got, ["bulk_download", "video_call_voice"])
+
+    def test_absent_classes_are_not_reported_as_starved(self):
+        got = F.assigned_classes(S1_CALL_BULK)
+        self.assertNotIn("software_update", got)
+        self.assertNotIn("adaptive_video_streaming", got)
+        # every mode derives the SAME scope from its own artefact
+        self.assertEqual(got, F.assigned_classes(S1_CALL_BULK_OTHER_MODE))
+
+    def test_tv_labels_count_as_streaming(self):
+        self.assertEqual(F.assigned_classes(THREE_FLOWS),
+                         ["adaptive_video_streaming"])
+
+    def test_empty_workloads_assign_nothing(self):
+        self.assertEqual(F.assigned_classes({}), [])
+        self.assertEqual(F.assigned_classes(None), [])
+
+    def test_update_and_backup_kinds_map_to_their_classes(self):
+        self.assertEqual(
+            F.assigned_classes({"update": {"kind": "update"},
+                                "backup": {"kind": "backup"}}),
+            ["cloud_backup", "software_update"])

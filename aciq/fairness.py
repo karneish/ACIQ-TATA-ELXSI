@@ -44,6 +44,49 @@ _MBPS_KINDS = frozenset({"bulk", "bulk_download", "video", "tv", "update",
 #: separate flows in the artefacts.
 _TV_PREFIXES = ("tv",)
 
+#: Workload kind (generator kind, or label for the TV prefix rule) ->
+#: canonical TrafficClass value, spelled exactly as samples.jsonl's
+#: per_class sheet keys them. Same alias intent as corrections.CLASS_ALIASES;
+#: kept local so the fairness contract owns its own vocabulary.
+_WORKLOAD_CLASS = {
+    "call": "video_call_voice",
+    "game": "interactive_gaming",
+    "video": "adaptive_video_streaming",
+    "tv": "adaptive_video_streaming",
+    "bulk": "bulk_download",
+    "bulk_download": "bulk_download",
+    "update": "software_update",
+    "update_download": "software_update",
+    "backup": "cloud_backup",
+    "cloud_backup": "cloud_backup",
+}
+
+
+def assigned_classes(workloads: dict[str, Any]) -> list[str]:
+    """The classes this scenario actually gave traffic to, from the workloads
+    file — identically derivable for every mode, because every mode records
+    the same workloads.json.
+
+    This is the class scope the per-class minimum/starvation tables must
+    use. A class no flow was assigned CANNOT be starved in a scenario:
+    counting it as min 0 was the counter-attribution artefact (the samples
+    sheet emits every class key for every mode), and it made even the
+    pfifo baseline look like it starves `software_update` in a scenario
+    that schedules none.
+    """
+    out: set[str] = set()
+    for label, rep in sorted((workloads or {}).items()):
+        if not isinstance(rep, dict):
+            continue
+        kind = str(rep.get("kind") or rep.get("label") or "").lower()
+        if label.startswith(_TV_PREFIXES) and any(
+                ch.isdigit() for ch in label):
+            kind = "tv"
+        cls = _WORKLOAD_CLASS.get(kind)
+        if cls:
+            out.add(cls)
+    return sorted(out)
+
 
 def flow_rates(workloads: dict[str, Any]) -> dict[str, float]:
     """One rate per flow the scenario actually assigned, from the generator.

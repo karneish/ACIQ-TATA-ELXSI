@@ -27,8 +27,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from aciq.fairness import (flow_rates, jain, minimum_over_time,  # noqa: E402
-                           per_class_series, run_fairness, starved_ticks)
+from aciq.fairness import (assigned_classes, flow_rates, jain,  # noqa: E402
+                           minimum_over_time, per_class_series,
+                           run_fairness, starved_ticks)
 
 NOT_AVAILABLE = "NOT AVAILABLE"
 
@@ -117,14 +118,21 @@ def load_runs(runs_root: Path) -> tuple[list[dict], list[str]]:
         # Special-condition runs are NOT part of the four-arm matrix and must
         # never move a matrix cell: a failure-injection run or a leased run
         # answers a DIFFERENT question. They are excluded BY NAME (their own
-        # reason in the report), not averaged in, because one S5 seed among
-        # ten otherwise rewrites "the matrix" into "the matrix plus an S5".
+        # reason in the report), not averaged in.
+        # The keys are the ones run_experiments.py ACTUALLY writes — and the
+        # writes are truthy for SPECIAL runs ONLY. That mattered: the matrix
+        # config template carries `enforce_requested: True` on EVERY run
+        # (with `enforcement_note: 'not requested'`), so keying on
+        # `enforce_requested` excluded the whole matrix. The discriminating
+        # truthy evidence is: an actual failure injection (`inject_fail_apply`)
+        # and an actual lease (`lease_ips` non-empty). Legacy spellings
+        # (`enforce`, `lease`) are honoured for artefacts that used them.
         special = []
         if cfg.get("inject_fail_apply"):
             special.append("inject_fail_apply")
         if cfg.get("enforce"):
             special.append("enforce")
-        if cfg.get("lease"):
+        if cfg.get("lease") or cfg.get("lease_ips"):
             special.append("lease")
         if special:
             skipped.append(d.name + " (special-condition run: "
@@ -246,10 +254,30 @@ def delta_pct(v: float | None, base: float | None,
               *, lower_is_better: bool) -> tuple[str, str]:
     """Signed change of ACIQ vs an arm for one metric, with the honest
     direction named by the column header. None means the pair could not be
-    paired (a missing arm or a missing value)."""
+    paired (a missing arm or a missing value).
+
+    When the baseline is near zero (CAKE-oracle's ~2 ms p95), a percentage
+    would print absurd worries like `-15356%`; the honest display for a
+    >100x rift is the factor itself, so the reader sees what actually
+    happened instead of a number that looks like a bug."""
     if v is None or base in (None, 0.0):
         return NOT_AVAILABLE, ""
-    pct = 100.0 * (float(v) - float(base)) / abs(float(base))
+    a, b = float(v), float(base)
+    ratio = a / abs(b)
+    # 20x in EITHER direction: the percentage for a 26x faster cell is
+    # just as misleading as for a 41x slower one.
+    if max(ratio, 1.0 / ratio) >= 20.0:
+        if ratio > 1.0:
+            arrow = "worse" if lower_is_better else "better"
+        elif ratio < 1.0:
+            arrow = "better" if lower_is_better else "worse"
+        else:
+            arrow = "same"
+        # show the factor as >=1 in the arrow's direction: 0.04x "better"
+        # reads wrong; 26.4x better does not.
+        shown = ratio if ratio >= 1.0 else 1.0 / ratio
+        return f"{shown:.1f}x", arrow
+    pct = 100.0 * (a - b) / abs(b)
     if lower_is_better:
         pct = -pct
     arrow = "better" if pct > 0 else ("worse" if pct < 0 else "same")
@@ -319,7 +347,9 @@ def build_report(runs_root: Path, out_md: Path,
 
     # ---- improvement table ----------------------------------------------
     add("## ACIQ vs every arm (positive % is better ACIQ on the metric at "
-        "the head of the column)")
+        "the head of the column; a cell like `41.0x` is the multiplicative "
+        "factor when the baseline is so close to zero that a percentage "
+        "would mislead)")
     add("")
     add(row_md(["scenario", "vs arm", "call p95 delta %", "CI overlap?",
                 "bulk delta %", "CI overlap?"]))
@@ -457,8 +487,8 @@ def build_report(runs_root: Path, out_md: Path,
     add("")
 
     # ---- fairness detail -------------------------------------------------
-    add("## Fairness detail (workload-rate Jain; per-class series from ACIQ "
-        "samples where present)")
+    add("## Fairness detail (workload-rate Jain; per-class minima over "
+        "ASSIGNED classes only, same scope for every mode)")
     add("")
     add(row_md(["scenario", "arm", "n", "jain mean +/- CI",
                 "flows used", "min over time (classes+ticks)"]))
@@ -474,8 +504,11 @@ def build_report(runs_root: Path, out_md: Path,
             for r in grp:
                 if not r["samples"]:
                     continue
-                per_cls = r["samples"][0].get("per_class") or {}
-                for cls in sorted(per_cls):
+                # ONLY the classes the scenario assigned work. The samples
+                # sheet emits every class key for every mode; iterating it
+                # directly was how absent classes printed min=0 and
+                # fabricated identical fake-starvation rows for every arm.
+                for cls in assigned_classes(r["wl"]):
                     series = per_class_series(r["samples"], cls,
                                               field="goodput_mbps")
                     v = minimum_over_time(series)
@@ -485,11 +518,15 @@ def build_report(runs_root: Path, out_md: Path,
                         fmt(jains, 3),
                         fmt([float(x) for x in nf], 1),
                         "; ".join(mins[:6]) if mins else
-                        (NOT_AVAILABLE + " (no samples in run dirs)")]))
+                        (NOT_AVAILABLE + " (no assigned-class series in this"
+                         " arm's samples: the baselines' per-tick sheet is"
+                         " aggregate counters mislabelled as one class)")]))
     add("")
     add("Starvation: a class starved in tick t if its per-tick goodput "
         "fell below 20% of its own run median (threshold computed from the "
-        "run's own series); the cell lists the starved timestamps.")
+        "run's own series); the cell lists the starved timestamps. Only "
+        "ASSIGNED classes are considered — a class the scenario never gave "
+        "traffic to cannot be starved in it.")
     add("")
     add(row_md(["scenario", "arm", "starved ticks per class"]))
     add(row_md(["---"] * 3))
@@ -502,7 +539,7 @@ def build_report(runs_root: Path, out_md: Path,
                 continue
             cells = []
             for r in grp:
-                for cls in sorted((r["samples"][0].get("per_class") or {})):
+                for cls in assigned_classes(r["wl"]):
                     series = per_class_series(r["samples"], cls,
                                               field="goodput_mbps")
                     if not series:
