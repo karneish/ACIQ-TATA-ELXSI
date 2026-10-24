@@ -1069,7 +1069,12 @@ the capture now targets `data/experiments/dashboard/dashboard_run/`
 exclusively (`tests/test_live_wiring.py` pins this). (2) The
 intent-TTL/starvation step reused the matrix directory
 `s4_capacity_recovery__aciq__adaptive__seed7`, overwriting that matrix run;
-it now runs under its own results directory. (3) The report's special-run
+it now runs under its own results directory, builds the testbed itself
+instead of assuming a live one (a resume can legitimately skip the pipeline
+setup step while the netns are down -- the first live rerun aborted on
+exactly that: "Cannot open network namespace router"), and keeps its
+1-run report inside its results dir instead of overwriting the matrix
+`data/REPORT.md`. (3) The report's special-run
 exclusion keyed on config spellings the driver never writes, so the lease
 run SNEAKED INTO the s4 ACIQ cell (visible as a jain CI that varied where
 every other arm's did not). The exclusion now keys on the real evidence

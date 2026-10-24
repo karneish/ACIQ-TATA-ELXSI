@@ -13,7 +13,7 @@ cd "$(dirname "$0")/.."
 VENV="${ACIQ_VENV:-/home/mekarz/aciq-venv}"
 PY="$VENV/bin/python"; [ -x "$PY" ] || PY=python3
 STATUS_DIR="data/live_status"; mkdir -p "$STATUS_DIR" testbed/logs
-T0=$(date +%s); KNOWN_TIME_TOTAL=10200
+T0=$(date +%s); KNOWN_TIME_TOTAL=10202
 SEEDS="${SEEDS:-10}"
 
 step() {  # step <id> <estimated min> <cmd...>
@@ -68,11 +68,17 @@ done
 # The run writes to ITS OWN results dir: a run with an active lease answers
 # a different question than the matrix cell whose number it once overwrote
 # (the fix-round defect register calls this out; it must not happen again).
-step intent_starvation 4 \
+# NO --no-setup: the pipeline's own setup step may be skipped on resume
+# while the testbed is DOWN, and this step then must build the testbed
+# itself (that failure shipped once: an instant "Cannot open network
+# namespace router" aborted at apply). Its report lands INSIDE its results
+# dir so a 1-run intent report cannot overwrite data/REPORT.md.
+step intent_starvation 6 \
   "$PY" run_experiments.py --scenario s4_capacity_recovery --system aciq \
      --enforce --lease 203.0.113.2 --lease-weight 0.5 --lease-ttl-s 15 \
-     --seed 7 --seeds 1 --no-setup \
-     --results-dir data/experiments/intent_starvation
+     --seed 7 --seeds 1 \
+     --results-dir data/experiments/intent_starvation \
+     --report data/experiments/intent_starvation/REPORT.md
 
 # -- safe-state / failure injection (S5) ------------------------------------
 step s5_live       25 ./testbed/s5_live.sh

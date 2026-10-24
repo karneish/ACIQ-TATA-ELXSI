@@ -28,15 +28,33 @@ Status legend: **PASS** = evidence committed from the raw artefacts;
 sudo env ACIQ_VENV=/home/mekarz/aciq-venv ./testbed/run_all_live.sh
 ```
 
-Run once after the Owner prelude (delete stale resume markers + restore the
-matrix seed7 that the intent step once overwrote):
+Run once after the Owner prelude (delete stale resume markers, restore the
+matrix seed7 that the intent step once overwrote, and remove the poisoned
+intent dir left by the one aborted attempt): the aborted attempt happened
+exactly because deleting only the intent marker let the pipeline SKIP setup
+while the testbed was still DOWN; the intent step now builds the testbed
+itself and keeps its report inside its own results dir, so neither failure
+can recur -- but the stale setup/reset markers must GO for the strict
+matrix steps' testbed assumption to hold on this machine too:
 
 ```
 sudo chown -R "$USER:$USER" .   # the live runs left root-owned artefacts
 git checkout -- data/runs/s2_wan_drop__aciq__adaptive__seed42 testbed/logs/dashboard-evidence.log
 git checkout a2639c0 -- data/runs/s4_capacity_recovery__aciq__adaptive__seed7
-rm -f data/live_status/corpus.done data/live_status/cleanup.done \
-      data/live_status/intent_starvation.done data/live_status/dashboard.done
+rm -rf data/experiments/intent_starvation
+git checkout -- data/REPORT.md  # 1-run rebuild left by the aborted attempt
+rm -f data/live_status/reset.done data/live_status/setup.done \
+      data/live_status/cleanup.done
+rm -f data/live_status/corpus.done data/live_status/intent_starvation.done \
+      data/live_status/dashboard.done
+```
+
+After the live run (no sudo needed; new intent step keeps its own 1-run
+report inside its results dir, so regenerate the matrix REPORT):
+
+```
+ACIQ_VENV=/home/mekarz/aciq-venv /home/mekarz/aciq-venv/bin/python \
+  run_experiments.py --report-only --report data/REPORT.md
 ```
 
 Then the run-all command. It resumes past the completed steps, re-runs the
