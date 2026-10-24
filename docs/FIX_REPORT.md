@@ -227,3 +227,23 @@ After completion:
 ```
 
 Verify cleanup: `ip netns list` should be empty (script checks and exits non-zero if not). Oracle arms must remain labeled "oracle / cannot have" and never described as operator-real.
+
+## T9 — Final report (2026-10-24, live evidence)
+
+**T4 (S1–S4, new seeds 200–209, all four arms):**
+- Reran S1/S2/S3/S4 with `--seed 200 --seeds 10` for `b0_fifo`, `b1_cake95`, `b1_cake_oracle`, `aciq`. 
+- ACIQ arms now show active estimation/policy changes (governor engaged). Bind-time measured by `tools/build_report.py` with the stricter `<= 1.05x` applied-tree check on post-drop links.
+
+**T5 (S5):** See `data/experiments/s5/s5_summary.json`
+- `a_sigterm_no_filter_residue`: PASS
+- `b_sigkill_residue_then_cleanup`: PASS
+- `c_injected_failed_apply_rollbacks`: **FAIL** (measured)
+- `d_watchdog_starve_reaches_safe`: PASS
+
+**T6 (S3 realism):** All four arms reran post-realism config for fair comparison (`t6_s3_*_rerun`).
+
+**T7 (classifier corpus):** Fresh held-out run via `testbed/corpus_live.sh` — `data/experiments/classifier_corpus/` (228 flows). Held-out strict acc 0.594 over n=106. **WEAK CLASSES (reported as measured):** `interactive_gaming`, `software_update`. No thresholds tuned on held-out.
+
+**T8 (dashboard):** Evidence in `data/experiments/dashboard/` (`dashboard.html`, copied samples). No-external-URLs check enforced by the dashboard script.
+
+**Runbook:** `testbed/run_live_fix.sh` (resume-safe). Oracle arms remain labeled `oracle / cannot have` and are never described as operator-real. `ip netns list` must be empty after cleanup.
