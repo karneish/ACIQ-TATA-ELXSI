@@ -7,8 +7,10 @@ import time
 import unittest
 
 from aciq.metrics import (
+    BASELINE_HANDLE_MAP,
     ClassCounters,
     CounterSnapshot,
+    DEFAULT_HANDLE_MAP,
     EvaluationData,
     MetricsCollector,
     StaticSource,
@@ -135,13 +137,37 @@ class TestUnmappedClassesAreVisible(unittest.TestCase):
         self.assertIsNotNone(snap.link)
 
 
+class TestBaselineAggregateLeaf(unittest.TestCase):
+    """The baselines' whole-link leaf must NOT read as a software_update
+    class (fix 18): the aggregate never masquerades as a per-class series."""
+
+    AGG = json.dumps([{"kind": "htb", "handle": "1:50",
+                       "stats": {"bytes": 5000, "drops": 1}}])
+
+    def test_default_map_still_labels_1_50_as_software_update(self):
+        s = parse_tc_class_json(self.AGG)
+        self.assertEqual(s.by_class[TrafficClass.SOFTWARE_UPDATE].rx_bytes,
+                         5000)
+
+    def test_baseline_map_labels_it_unknown(self):
+        s = parse_tc_class_json(self.AGG, BASELINE_HANDLE_MAP)
+        self.assertEqual(list(s.by_class), [TrafficClass.UNKNOWN])
+        self.assertEqual(s.by_class[TrafficClass.UNKNOWN].rx_bytes, 5000)
+
+    def test_baseline_map_differs_only_on_the_leaf(self):
+        diff = {h: (DEFAULT_HANDLE_MAP[h].value,
+                    BASELINE_HANDLE_MAP[h].value)
+                for h in BASELINE_HANDLE_MAP
+                if DEFAULT_HANDLE_MAP[h] != BASELINE_HANDLE_MAP[h]}
+        self.assertEqual(set(diff), {"1:50"})
+
+
 class TestTcJsonParsing(unittest.TestCase):
     SAMPLE = json.dumps([
         {"kind": "htb", "handle": "1:10", "stats": {"bytes": 1000, "drops": 2, "overlimits": 5}},
         {"kind": "htb", "handle": "1:30", "stats": {"bytes": 2000, "drops": 0, "overlimits": 1}},
         {"kind": "htb", "handle": "1:99", "stats": {"bytes": 9999}},  # unmapped -> ignored
     ])
-
     def test_parses_known_handles(self):
         s = parse_tc_class_json(self.SAMPLE)
         self.assertEqual(s.by_class[I].rx_bytes, 1000)

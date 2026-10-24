@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import shutil
 import signal
 import subprocess
@@ -32,7 +33,8 @@ from .bridge import count_flow_filters_text, enumerate_flow_filters
 from .flowtrack import ConntrackSource, FlowTracker
 from .intent import IntentError, LeaseBook
 from .harness import SCENARIOS, CapacityMode, Harness, RunResult, SystemSpec
-from .metrics import EvaluationData, MetricsCollector, TextClassSource
+from .metrics import (EvaluationData, MetricsCollector, TextClassSource,
+                      BASELINE_HANDLE_MAP)
 from .model import TrafficClass
 from .policy import floor_mbps
 
@@ -342,6 +344,9 @@ class ExperimentRunner:
         self._last_verdicts: list[dict] = []
         self.window_verdicts = 200
         self._lease_weight = lease_weight
+        #: label -> seconds the flow's spawn was delayed this run; set in
+        #: run() before the senders launch, empty in early-failure exits.
+        self._start_offsets: dict[str, float] = {}
         #: None means "one whole run", which is the useful default for measuring
         #: a lease: a TTL shorter than the run would demonstrate expiry and
         #: nothing else. It still expires on its own -- `expires_at` is recorded
@@ -612,10 +617,30 @@ class ExperimentRunner:
         # would just be hiding the effect we want to measure. Each system
         # therefore experiences the same starting condition.
         if settle > 0:
-            self._settle(paths, ports, sc, settle)
+            self._settle(paths, ports, sc, settle, system)
 
+        # ---- 2c. launch the senders, each after a SEEDED start offset
+        #
+        # Variance control, not cosmetics: without an offset every flow in
+        # every seed started within one tick of every other, so seed-to-seed
+        # scatter measured kernel noise only. The offsets are derived
+        # deterministically from (scenario, seed) so a run CAN be repeated,
+        # and are recorded in result.json so the window each flow actually
+        # measured is readable from the artefact.
+        self._start_offsets = {}
+        rng_off = random.Random(f"start-offset|{sc.name}|{seed}")
         for idx, ((label, port, dscp), w) in enumerate(
                 zip(ports, _expand(sc))):
+            # enumerate is deliberate here the way the loop above uses it for
+            # device_ip_for: the index is consumed.
+            off = round(rng_off.uniform(0.0, 1.0), 3) if self.real_time else 0.0
+            if off:
+                # Sleep in the SPAWNING loop: each flow is shifted by the sum
+                # of all preceding offsets, which decorrelates the ramp
+                # windows across seeds at the cost of the whole run running
+                # ~1 s longer. Recorded per label below.
+                self._start_offsets[label] = off
+                time.sleep(off)
             self.launcher.spawn_source(
                 w.kind, CLIENT_IP, port, sc.duration_s, w.dscp,
                 paths.file(f"{label}.json"), paths.file(f"{label}.log"),
@@ -626,7 +651,17 @@ class ExperimentRunner:
         # returned empty on this host and made every sample come back as
         # `per_class: {}`.
         collector = MetricsCollector(
-            self.source or TextClassSource(dev=self.harness.dev, ns=self.harness.ns))
+            self.source or TextClassSource(
+                dev=self.harness.dev, ns=self.harness.ns,
+                # Per-run counter attribution (fix 18): ACIQ's tree maps each
+                # handle onto its class; the baselines' single-class tree puts
+                # the WHOLE link on the 1:50 leaf, and DEFAULT_HANDLE_MAP would
+                # mislabel that aggregate as a software_update series -- the
+                # artefact the fairness module's header calls out. Baselines
+                # parse through BASELINE_HANDLE_MAP so the aggregate is
+                # labelled `unknown` in their per-tick sheet.
+                handle_map=(None if system is SystemSpec.ACIQ
+                            else BASELINE_HANDLE_MAP)))
         samples: list[dict] = []
         # Read fresh each tick. Bound before the loop so a run with enforcement
         # off still has them: -1 means "not read", which is what it is.
@@ -940,13 +975,15 @@ class ExperimentRunner:
             # observed, not configured
             duration_s=(round((samples[-1]["t"] - samples[0]["t"]), 2)
                         if len(samples) >= 2 else 0.0),
-notes=(([] if dropped else ["no capacity drop in this run"])
+        notes=(([] if dropped else ["no capacity drop in this run"])
                    + ([stale_note] if stale_note else [])
                    + [enforcement_note]
                    + ([_lease_note] if lease_note else [])
                    + ([link_note] if link_note else [])
                    + ([self._capacity_note()] if self._capacity_change_failed else [])
-                   + ([self._inject_note] if self._inject_note else [])),
+                   + ([self._inject_note] if self._inject_note else [])
+                   + ([f"workload start offsets (seeded): "
+                       f"{self._start_offsets}" ] if self._start_offsets else [])),
         )
         paths.write_json("result.json", json.loads(res.to_json()))
         return res
@@ -1166,7 +1203,8 @@ notes=(([] if dropped else ["no capacity drop in this run"])
                 f"matching. Compare with data/leaseB, where the count was not "
                 f"recorded and this could not be told apart")
 
-    def _settle(self, paths: RunPaths, ports, sc, settle_s: float) -> None:
+    def _settle(self, paths: RunPaths, ports, sc, settle_s: float,
+                system: SystemSpec | None = None) -> None:
         """Run interactive workloads only, and record nothing.
 
         The point is to let the shaping tree and the interactive path reach
@@ -1186,7 +1224,14 @@ notes=(([] if dropped else ["no capacity drop in this run"])
                 kind, CLIENT_IP, port, settle_s, DSCP_BY_KIND.get(kind),
                 scratch / f"{label}.json", scratch / f"{label}.log")
         warm = MetricsCollector(
-            self.source or TextClassSource(dev=self.harness.dev, ns=self.harness.ns))
+            self.source or TextClassSource(
+                dev=self.harness.dev, ns=self.harness.ns,
+                # Same attribution the measured run will use: the baselines'
+                # whole-link leaf must be labelled `unknown` here too, or the
+                # settle sheet would contradict the run sheet that follows it.
+                handle_map=None if (system is None
+                                    or system is SystemSpec.ACIQ)
+                else BASELINE_HANDLE_MAP))
         for _ in range(max(1, int(settle_s / self.tick_s))):
             if self.real_time:
                 time.sleep(self.tick_s)

@@ -369,6 +369,20 @@ DEFAULT_HANDLE_MAP: dict[str, TrafficClass] = {
 }
 
 
+#: The baselines (B0 / CAKE / CAKE-oracle) run a single-class HTB tree whose
+#: leaf is 1:50 (harness.SINGLE_CLASS_ID) and carries the WHOLE link -- every
+#: flow of every kind. DEFAULT_HANDLE_MAP names that handle `software_update`,
+#: so the baseline samples' per-tick sheet presented the aggregate as one
+#: class's series: exactly the attribution artefact aciq/fairness.py's header
+#: warns about. Baseline runs parse with THIS map instead: the aggregate leaf
+#: is labelled `unknown`, a name that cannot masquerade as a per-class series
+#: in any per-class table.
+BASELINE_HANDLE_MAP: dict[str, TrafficClass] = {
+    **DEFAULT_HANDLE_MAP,
+    "1:50": TrafficClass.UNKNOWN,   # whole link, not a software_update class
+}
+
+
 def _int(v) -> int:
     try:
         return int(v)

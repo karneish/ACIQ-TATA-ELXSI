@@ -168,8 +168,11 @@ class TestClassificationSection(unittest.TestCase):
         self.assertIn("SPEC GAP (held-out half thin)", md)
 
 
-class TestAdaptationOnAppliedTree(unittest.TestCase):
-    def test_adaptation_counts_apply_not_belief(self):
+class TestBindOnAppliedTree(unittest.TestCase):
+    """bind replaces the old 1.25x adaptation metric: 1.05x post-drop, from
+    the applied tree, never the belief."""
+
+    def test_bind_counts_apply_not_belief(self):
         run = {"cfg": {"drop_at_s": 10.0, "drop_mbps": 20.0},
                "samples": [
                    {"t": 0.5, "capacity_mbps": 95.0},
@@ -177,14 +180,78 @@ class TestAdaptationOnAppliedTree(unittest.TestCase):
                    {"t": 11.7, "capacity_mbps": 24.9},
                    {"t": 12.0, "capacity_mbps": 20.5},
                ]}
-        self.assertAlmostEqual(run["samples"][2]["t"] - 10.0,
-                               br.adaptation_time(run))
+        # 24.9 is NOT <= 1.05*20 = 21.0 any more; the 1.25x variant would
+        # have called 11.7 the bind point and lied by 0.3 s.
+        self.assertAlmostEqual(run["samples"][3]["t"] - 10.0,
+                               br.bind_time(run))
 
-    def test_adaptation_none_when_apply_never_lands_with_a_cap(self):
+    def test_bind_none_when_apply_never_lands_with_a_cap(self):
         run = {"cfg": {"drop_at_s": 10.0, "drop_mbps": 20.0},
                "samples": [{"t": float(i), "capacity_mbps": 95.0}
                            for i in range(20)]}
-        self.assertIsNone(br.adaptation_time(run))
+        self.assertIsNone(br.bind_time(run))
+
+    def test_bind_none_without_a_drop(self):
+        run = {"cfg": {"drop_at_s": None, "drop_mbps": None},
+               "samples": []}
+        self.assertIsNone(br.bind_time(run))
+
+
+class TestPostDropBulk(unittest.TestCase):
+    def setUp(self):
+        self.run = {
+            "cfg": {"drop_at_s": 10.0, "drop_mbps": 20.0, "system": "aciq"},
+            "samples": [
+                {"t": 1.0, "per_class": {"bulk_download":
+                                         {"goodput_mbps": 99.0}}},
+                {"t": 5.0, "per_class": {"bulk_download":
+                                         {"goodput_mbps": 99.0}}},
+                {"t": 11.0, "per_class": {"bulk_download":
+                                          {"goodput_mbps": 15.0}}},
+                {"t": 21.0, "per_class": {"bulk_download":
+                                          {"goodput_mbps": 13.0}}},
+            ],
+        }
+
+    def test_prefers_the_bulk_class(self):
+        self.assertAlmostEqual(14.0, br.post_drop_bulk_mbps(self.run))
+
+    def test_whole_run_prefix_is_excluded(self):
+        # the pre-drop 99.0 ticks must not dilute the cell
+        self.assertTrue(br.post_drop_bulk_mbps(self.run) < 50.0)
+
+    def test_baseline_falls_back_to_legacy_aggregate_label(self):
+        run = {
+            "cfg": {"drop_at_s": 10.0, "drop_mbps": 20.0,
+                    "system": "b0_fifo"},
+            "samples": [
+                {"t": 11.0, "per_class": {"software_update":
+                                          {"goodput_mbps": 12.0}}},
+                {"t": 21.0, "per_class": {"software_update":
+                                          {"goodput_mbps": 14.0}}},
+            ],
+        }
+        self.assertAlmostEqual(13.0, br.post_drop_bulk_mbps(run))
+
+    def test_prefers_relabelled_unknown_over_legacy(self):
+        run = {
+            "cfg": {"drop_at_s": 10.0, "drop_mbps": 20.0,
+                    "system": "b0_fifo"},
+            "samples": [
+                {"t": 11.0, "per_class": {"unknown": {"goodput_mbps": 30.0},
+                                          "software_update":
+                                          {"goodput_mbps": 12.0}}},
+            ],
+        }
+        self.assertAlmostEqual(30.0, br.post_drop_bulk_mbps(run))
+
+    def test_none_without_a_drop(self):
+        self.run["cfg"]["drop_at_s"] = None
+        self.assertIsNone(br.post_drop_bulk_mbps(self.run))
+
+    def test_none_without_any_per_tick_series(self):
+        self.run["samples"] = [{"t": 11.0, "per_class": {}}]
+        self.assertIsNone(br.post_drop_bulk_mbps(self.run))
 
 
 if __name__ == "__main__":

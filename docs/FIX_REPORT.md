@@ -141,3 +141,65 @@ whose gap was under 0.10/0.6 ~= 16.7% forever. fix 17 closes it:
   (skipped=10 live-kernel by design). No thresholds were tuned on
   held-out live data; the cap fraction and thresholds are constants
   documented against the diagnosis's measured numbers.
+
+## Metrics-rework round (2026-10-24, fix 18) — Task 3: fairer, stricter, symmetric
+
+Follow-up to the T2 governor work (fix 17). The measurement layer had four
+audit-visible gaps left; each is closed with code + tests; none of them
+rating against live runs (still queued). Deliberately NO existing live
+result is re-parsed as "fixed": the changes bind to how the artefacts are
+WRITTEN and read, so regeneration + the queued live step (T4–T8 batch) will
+populate the new columns from scratch.
+
+1. Demand-normalized fairness (`aciq/fairness.py`): new `run_demand_fairness`
+   = Jain over per-flow satisfied-demand ratios. Demand comes ONLY from the
+   generator's own report (`pps_requested` for call/game; the video
+   ladder's deterministic walk, computed from the report's own
+   ladder/step_s/elapsed_s — no invented constants). Elastic kinds
+   (bulk/update/backup, no declared demand) are EXCLUDED by definition and
+   that exclusion is declared in the report. The raw flow-rate Jain column
+   stays beside it; the two answer different questions and sometimes
+   violently disagree (a 0.1 Mbps call next to a 96 Mbps bulk reads ~0.03
+   raw, 1.0 demand-normalized if the call is fully served).
+
+2. Bind time replaces the loose 1.25x adaptation metric
+   (`tools/build_report.py`): first tick the APPLIED tree (`capacity_mbps`)
+   is <= 1.05x the post-drop configured link. The old threshold called a
+   tree at 26 Mbps "adapted" on a 21.8 Mbps link. With the fix-17 governor
+   the tree settles at 0.90 x belief (belief error bounded +9% by the
+   capacity.py hysteresis fix), so <= 1.05x is reachable by design, not a
+   promise: the live rerun must still prove it.
+
+3. Post-drop-only bulk compare: scenarios with a capacity drop compare the
+   candidate against the mean of the bulk class's per-tick goodput at
+   t >= drop_at_s (and t >= the warm-up window), not the generator's
+   whole-run mean — which diluted the post-drop regime with a saturated
+   prefix. ACIQ reads `bulk_download`; the baselines' single-class tree has
+   no per-flow attribution, so their cell is the AGGREGATE leaf and the
+   report names it.
+
+4. Counter attribution symmetry (fix 18's samples-sheet change): the
+   baselines' whole-link leaf (harness SINGLE_CLASS_ID = 1:50) used to be
+   labelled `software_update` by the DEFAULT handle map — the whole link
+   masquerading as one class's series (the artefact aciq/fairness.py's
+   header documents). Baseline runs now parse tc with BASELINE_HANDLE_MAP,
+   labelling that aggregate `unknown`. Existing (pre-fix) artefacts are NOT
+   rewritten; consumers fall back to the legacy key and must name it
+   (the post-drop bulk cell does exactly that).
+
+5. Warm-up exclusion, declared: every per-tick window (class minima,
+   starvation, post-drop bulk) drops ticks at t < 2.0 s — the transmit/
+   counter ramp artefact shown in the diagnosis. The boundary is a
+   generator constant (WARMUP_S), stated at every table that uses it.
+
+6. Seed-variance control: the senders now start after a SEEDED per-flow
+   offset (0..1 s, derived from scenario+seed, recorded in result.json's
+   notes). Seed-to-seed scatter can no longer be pure kernel-noise on
+   identical start times. UDP loss/jitter stay UNSEEDED on purpose: they
+   are realized by netem on a deterministic pacing schedule, and a seeded
+   RNG there would fake measurement independence rather than provide it —
+   recorded as a declared limitation, not a TODO.
+
+Tests: 34 fairness/report/bind metrics tests (24 new); suite 1442 OK
+(skipped=10 live-kernel by design); `make lint` citation audit clean.
+Committed as `fix 18`.

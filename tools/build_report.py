@@ -28,10 +28,25 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from aciq.fairness import (assigned_classes, flow_rates, jain,  # noqa: E402
-                           minimum_over_time, per_class_series,
+                           mean_over_time, minimum_over_time,
+                           per_class_series, run_demand_fairness,
                            run_fairness, starved_ticks)
 
 NOT_AVAILABLE = "NOT AVAILABLE"
+
+#: Per-tick warm-up exclusion, DECLARED here because it changes several
+#: tables at once. The diagnosis (fix 17, diagnosis.md) shows the first ~2 s
+#: of per-tick counter rates are a transmitter/counter ramp artefact, not
+#: traffic behaviour; every per-tick window in this report therefore starts
+#: at t >= 2.0 s. It only ever REMOVES early ticks; it never touches any
+#: value at or after the mark.
+WARMUP_S = 2.0
+
+#: Post-drop bind threshold for `bind_time`: the applied tree counts as
+#: bound once it has been set to at most 1.05x the post-drop configured
+#: link. 1.25x used to be the threshold and read far too loose: 26 Mbps
+#: "bound" on a 21.8 Mbps link is not bound.
+BIND_TOLERANCE = 1.05
 
 #: T6 acceptance: at least 30 flows per class; the corpus collector enforces
 #: the same floor, and the report declares it verbatim when not met.
@@ -214,15 +229,76 @@ def applied_capacity_series(run: dict) -> list[tuple[float, float]]:
     return out
 
 
-def adaptation_time(run: dict) -> float | None:
-    """Seconds from the drop to the first tick the APPLIED tree is at/below
-    1.25x the post-drop capacity. Baselines have no such tick under a drop
-    (that is not a failure of the metric, it is the finding)."""
+def warmup(series: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Drop the declared warm-up ticks from a per-tick series.
+
+    Docstring-quiet, loud in the report: the constant lives in WARMUP_S and
+    the report says so at the top of every per-tick table."""
+    return [(t, v) for t, v in series if t >= WARMUP_S]
+
+
+def _post_drop(series: list[tuple[float, float]],
+               drop_at: float) -> list[tuple[float, float]]:
+    return [(t, v) for t, v in series if t >= float(drop_at) and t >= WARMUP_S]
+
+
+#: Per-tick bulk attribution by arm: ACIQ's tree maps bulk onto its own
+#: class; the baselines run ONE aggregate leaf. From fix 18 that leaf is
+#: sampled under `unknown` (BASELINE_HANDLE_MAP); artefacts from before it
+#: stored the same aggregate under `software_update`, so the fallback is
+#: legacy-labelled and the report says so wherever it is used.
+_BULK_TICK_KEYS = ("bulk_download", "unknown", "software_update")
+
+
+def bulk_tick_series(run: dict) -> tuple[str, list[tuple[float, float]]] | None:
+    """(key, post-drop bulk per-tick series) for one run, or None.
+
+    Nothing invents a window: the caller decides drop vs whole-run. The key
+    is returned so every consumer can print WHICH sheet the number came
+    from -- an aggregate labelled as bulk would be the exact misattribution
+    this report exists to prevent."""
+    for key in _BULK_TICK_KEYS:
+        series = per_class_series(run["samples"], key,
+                                  field="goodput_mbps")
+        if series:
+            return key, series
+    return None
+
+
+def post_drop_bulk_mbps(run: dict) -> float | None:
+    """Mean post-drop bulk/tree goodput, from the APPLIED tree's counters.
+
+    `bulk_mbps` above is the generator's whole-run mean, which in a drop
+    scenario dilutes the post-drop regime with a saturated prefix -- the
+    opposite of the decision that matters. This cell uses only ticks at or
+    after `drop_at_s` (and at or after the declared warm-up). For ACIQ the
+    series is the bulk class itself; for the baselines the single-class
+    tree has no per-flow attribution, so the cell is the aggregate leaf and
+    the report names it."""
+    drop_at = run["cfg"].get("drop_at_s")
+    if drop_at is None:
+        return None
+    entry = bulk_tick_series(run)
+    if entry is None:
+        return None
+    _key, series = entry
+    post = _post_drop(series, float(drop_at))
+    return mean_over_time(post)
+
+
+def bind_time(run: dict) -> float | None:
+    """Seconds from the drop to the first tick the APPLIED tree has been set
+    at/below 1.05x the post-drop capacity.
+
+    replaces the old 1.25x `adaptation_time`: boundaries that loose counted
+    a tree at 26 Mbps as "adapted" on a 21.8 Mbps link. Baselines have no
+    such tick under a drop (that is not a metric failure, it is the
+    finding)."""
     cfg, drop_at = run["cfg"], run["cfg"].get("drop_at_s")
     post = cfg.get("drop_mbps")
     if drop_at is None or post is None or not post:
         return None
-    thresh = float(post) * 1.25
+    thresh = float(post) * BIND_TOLERANCE
     for t, cap in applied_capacity_series(run):
         if t >= float(drop_at) and cap <= thresh:
             return t - float(drop_at)
@@ -323,8 +399,9 @@ def build_report(runs_root: Path, out_md: Path,
         add("")
         add(row_md(["arm", "n", "call p95 ms", "call jitter ms",
                     "call loss %", "game p95 ms", "bulk Mbps",
-                    "jain (workload-rate Jain)"]))
-        add(row_md(["---"] * 8))
+                    "post-drop bulk (tree)",
+                    "jain (workload-rate Jain)", "jain (demand-normalized)"]))
+        add(row_md(["---"] * 10))
         for arm in arms:
             grp = per_arm(sc, arm, runs)
             if not grp:
@@ -332,7 +409,9 @@ def build_report(runs_root: Path, out_md: Path,
             calls = [call_metrics(r["wl"]) for r in grp]
             games = [game_p95(r["wl"]) for r in grp]
             bulks = [bulk_mbps(r["wl"]) for r in grp]
+            pd_bulks = [post_drop_bulk_mbps(r) for r in grp]
             jains = [run_fairness(r["wl"]) for r in grp]
+            djains = [run_demand_fairness(r["wl"]) for r in grp]
             add(row_md([
                 ARM_LABELS.get(arm, arm),
                 str(len(grp)),
@@ -341,7 +420,10 @@ def build_report(runs_root: Path, out_md: Path,
                 fmt([c["loss_pct"] for c in calls], 3),
                 fmt(games),
                 fmt(bulks),
+                fmt(pd_bulks) if any(v is not None for v in pd_bulks) \
+                    else "(no drop scenario)",
                 fmt(jains, 3),
+                fmt(djains, 3),
             ]))
         add("")
 
@@ -354,11 +436,19 @@ def build_report(runs_root: Path, out_md: Path,
     add(row_md(["scenario", "vs arm", "call p95 delta %", "CI overlap?",
                 "bulk delta %", "CI overlap?"]))
     add(row_md(["---"] * 6))
+    add("Bulk compares are POST-DROP ONLY in scenarios with a capacity drop "
+        "(same `bulk_mbps` whole-run mean otherwise): the whole-run number "
+        "dilutes the post-drop regime with a saturated prefix, which is the "
+        "opposite of the decision those scenarios exist to measure.")
+    add("")
     worse_rows: list[str] = []
     for sc in scen:
         base_p95 = [call_metrics(r["wl"]).get("p95")
                     for r in per_arm(sc, "aciq", runs)]
-        base_bulk = [bulk_mbps(r["wl"]) for r in per_arm(sc, "aciq", runs)]
+        sc_has_drop = any(r["cfg"].get("drop_at_s") is not None
+                          for r in runs if r["cfg"].get("scenario") == sc)
+        bfn = post_drop_bulk_mbps if sc_has_drop else bulk_mbps
+        base_bulk = [bfn(r) for r in per_arm(sc, "aciq", runs)]
         for arm in arms:
             if arm == "aciq":
                 continue
@@ -366,7 +456,7 @@ def build_report(runs_root: Path, out_md: Path,
             if not grp:
                 continue
             p95s = [call_metrics(r["wl"]).get("p95") for r in grp]
-            bulks = [bulk_mbps(r["wl"]) for r in grp]
+            bulks = [bfn(r) for r in grp]
             d95, a95 = delta_pct(statistics.mean(
                 [x for x in base_p95 if x is not None]) if any(
                 x is not None for x in base_p95) else None,
@@ -386,7 +476,9 @@ def build_report(runs_root: Path, out_md: Path,
                         dbk,
                         ci_overlap(via_int(base_bulk), via_int(bulks))
                         if abk else ""]))
-            lost = [m for m, d in (("call p95", d95), ("bulk Mbps", dbk))
+            bulk_label = "post-drop bulk Mbps" if sc_has_drop \
+                else "bulk Mbps"
+            lost = [m for m, d in (("call p95", d95), (bulk_label, dbk))
                     if d and d.startswith("-")]
             if lost:
                 worse_rows.append(row_md([sc, ARM_LABELS.get(arm, arm),
@@ -409,15 +501,15 @@ def build_report(runs_root: Path, out_md: Path,
     # ---- adaptation + accuracy ------------------------------------------
     add("## ACIQ adaptation and capacity accuracy (from the same runs above)")
     add("")
-    add(row_md(["scenario", "n", "adaptation: drop -> first applied <=1.25x "
-                               "post-drop (s)", "final estimate",
+    add(row_md(["scenario", "n", "bind: drop -> first applied "
+                               "<=1.05x post-drop (s)", "final estimate",
                 "configured end link", "estimate error %"]))
     add(row_md(["---"] * 6))
     for sc in scen:
         grp = per_arm(sc, "aciq", runs)
         if not grp:
             continue
-        ads = [adaptation_time(r) for r in grp]
+        ads = [bind_time(r) for r in grp]
         ests, links, errs = [], [], []
         for r in grp:
             res = r["res"] or {}
@@ -431,12 +523,12 @@ def build_report(runs_root: Path, out_md: Path,
             mean_ads = f"{statistics.mean(adds):.2f} (n={len(adds)})"
         elif len(grp) and all(set(r["cfg"].get("mode", "")) >= set("static")
                               for r in grp) or \
-                (grp and not any(adaptation_time(r) is not False
+                (grp and not any(bind_time(r) is not False
                                  for r in grp)):
             mean_ads = NOT_AVAILABLE
         else:
             mean_ads = ("no post-drop applied tree at/below "
-                        "1.25x post-drop link in any seed")
+                        "1.05x post-drop link in any seed")
         if ests:
             acc = "; ".join(
                 f"{e:.2f}/{l:.1f} ({er:.1f}% off)" for e, l, er in
@@ -449,9 +541,13 @@ def build_report(runs_root: Path, out_md: Path,
                     fmt(ests) if ests else NOT_AVAILABLE,
                     fmt(links, 1) if links else NOT_AVAILABLE, acc]))
     add("")
-    add("Adaptation is defined on the applied tree (`capacity_mbps` in "
+    add("Bind time is defined on the applied tree (`capacity_mbps` in "
         "samples.jsonl), not on the estimator's belief, so a controller that "
-        "estimates right but applies slow counts as slow.")
+        "estimates right but applies slow counts as slow. The threshold is "
+        "1.05x the post-drop link: 5% of slack is what the netem hop's own "
+        "delivery loss (measured 93.7% of configured in the diagnosis round) "
+        "makes achievable, so 'bound' cannot hide a tree still above the "
+        "link it is supposed to have adapted to.")
     add("")
 
     # ---- resources -------------------------------------------------------
@@ -491,14 +587,30 @@ def build_report(runs_root: Path, out_md: Path,
         "ASSIGNED classes only, same scope for every mode)")
     add("")
     add(row_md(["scenario", "arm", "n", "jain mean +/- CI",
-                "flows used", "min over time (classes+ticks)"]))
-    add(row_md(["---"] * 5 + ["---"]))
+                "demand-jain mean +/- CI", "flows used",
+                "min over time (classes+ticks)"]))
+    add(row_md(["---"] * 6 + ["---"]))
+    add("demand-jain: Jain over per-flow satisfied-demand ratios "
+        "(achieved/demand, demand self-reported by the generator; elastic "
+        "flows without a declared demand are excluded by definition -- see "
+        "aciq/fairness.py). A scenario flows all-elastic has no such index "
+        "and prints NOT AVAILABLE rather than a substitute.")
+    add("")
+    add("Per-tick counter attribution (fix 18): ACIQ's tree has one leaf per "
+        "class; the baselines' single-class tree carries the WHOLE link on "
+        "the 1:50 leaf. New artefacts sample that aggregate under `unknown` "
+        "(an aggregate can no longer masquerade as a software_update class); "
+        "artefacts from before this change stored the same aggregate under "
+        "`software_update`, and consumers that fall back to the legacy label "
+        "must name it -- the post-drop bulk column does exactly that.")
+    add("")
     for sc in scen:
         for arm in arms:
             grp = per_arm(sc, arm, runs)
             if not grp:
                 continue
             jains = [run_fairness(r["wl"]) for r in grp]
+            djains = [run_demand_fairness(r["wl"]) for r in grp]
             nf = [len(flow_rates(r["wl"])) for r in grp]
             mins: list[float] = []
             for r in grp:
@@ -509,18 +621,17 @@ def build_report(runs_root: Path, out_md: Path,
                 # directly was how absent classes printed min=0 and
                 # fabricated identical fake-starvation rows for every arm.
                 for cls in assigned_classes(r["wl"]):
-                    series = per_class_series(r["samples"], cls,
-                                              field="goodput_mbps")
+                    series = warmup(per_class_series(
+                        r["samples"], cls, field="goodput_mbps"))
                     v = minimum_over_time(series)
                     if v is not None:
                         mins.append(f"{cls}={v:.3g}")
             add(row_md([sc, ARM_LABELS.get(arm, arm), str(len(grp)),
-                        fmt(jains, 3),
+                        fmt(jains, 3), fmt(djains, 3),
                         fmt([float(x) for x in nf], 1),
                         "; ".join(mins[:6]) if mins else
                         (NOT_AVAILABLE + " (no assigned-class series in this"
-                         " arm's samples: the baselines' per-tick sheet is"
-                         " aggregate counters mislabelled as one class)")]))
+                         " arm's samples)")]))
     add("")
     add("Starvation: a class starved in tick t if its per-tick goodput "
         "fell below 20% of its own run median (threshold computed from the "
@@ -540,8 +651,8 @@ def build_report(runs_root: Path, out_md: Path,
             cells = []
             for r in grp:
                 for cls in assigned_classes(r["wl"]):
-                    series = per_class_series(r["samples"], cls,
-                                              field="goodput_mbps")
+                    series = warmup(per_class_series(
+                        r["samples"], cls, field="goodput_mbps"))
                     if not series:
                         continue
                     vals = [v for _, v in series]
@@ -557,6 +668,13 @@ def build_report(runs_root: Path, out_md: Path,
     lines.extend(row_cache)
     if not st_any:
         add(row_md(["-", "-", "no run in this root has per-tick samples"]))
+    add("")
+    add(f"Warm-up exclusion (declared): every per-tick window above "
+        f"starts at t >= {WARMUP_S:.1f} s. The diagnosis round (fix 17's "
+        "diagnosis.md) shows the first ~2 s of per-tick counter rates are "
+        "a transmit/counter ramp artefact, not traffic behaviour; dropping "
+        "those ticks removes nothing else. The window boundary is a "
+        "declared constant in this generator, not a per-run choice.")
     add("")
 
     # ---- classification --------------------------------------------------

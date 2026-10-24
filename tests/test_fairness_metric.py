@@ -145,6 +145,100 @@ class TestStarvation(unittest.TestCase):
         self.assertEqual(F.per_class_tick_cover(samples, "bulk_download"), 2)
 
 
+class TestVideoDemand(unittest.TestCase):
+    """The ladder demand is the report's own schedule, nothing invented."""
+
+    def test_full_cycles_average_the_ladder(self):
+        # 8/5/3/1.5 cycling every 6 s: a 24 s walk is exactly one cycle.
+        rep = {"ladder": [8.0, 5.0, 3.0, 1.5], "step_s": 6.0,
+               "elapsed_s": 24.0}
+        self.assertAlmostEqual(4.375, F.video_demand_mbps(rep))
+
+    def test_partial_cycles_prorate(self):
+        # 30 s = 4 full steps + 6.0*0.5? 30/6 = 5 steps exactly -> covers
+        # 8,5,3,1.5,8 = 25.5/6 * ... mean over 30 s = (8+5+3+1.5+8)/5 = 5.1
+        rep = {"ladder": [8.0, 5.0, 3.0, 1.5], "step_s": 6.0,
+               "elapsed_s": 30.0}
+        self.assertAlmostEqual(5.1, F.video_demand_mbps(rep),
+                               places=10)
+
+    def test_missing_ladder_is_none_not_a_guess(self):
+        rep = {"step_s": 6.0, "elapsed_s": 30.0}
+        self.assertIsNone(F.video_demand_mbps(rep))
+
+    def test_no_elapsed_is_none(self):
+        rep = {"ladder": [8.0, 5.0, 3.0, 1.5], "step_s": 6.0}
+        self.assertIsNone(F.video_demand_mbps(rep))
+        self.assertIsNone(F.video_demand_mbps(rep, duration_s=0.0))
+
+
+class TestFlowSatisfactions(unittest.TestCase):
+    def test_pps_satisfaction_is_self_reported_demand(self):
+        wl = {"call": {"label": "call", "pps_requested": 50.0,
+                       "pps_achieved": 25.0}}
+        self.assertAlmostEqual(0.5, F.flow_satisfactions(wl)["call"])
+
+    def test_two_calls_actually_served(self):
+        wl = {"call": {"label": "call", "pps_requested": 50.0,
+                       "pps_achieved": 50.0},
+              "game": {"kind": "game", "sender_mbps": None,
+                       "pps_requested": 30.0, "pps_achieved": 22.5}}
+        self.assertAlmostEqual(1.0, F.flow_satisfactions(wl)["call"])
+        self.assertAlmostEqual(0.75, F.flow_satisfactions(wl)["game"])
+
+    def test_elastic_flows_are_absent_not_zero(self):
+        wl = {"bulk": {"label": "bulk", "sender_mbps": 39.0},
+              "call": {"label": "call", "pps_requested": 50.0,
+                       "pps_achieved": 50.0}}
+        self.assertEqual(list(F.flow_satisfactions(wl)), ["call"])
+
+    def test_satisfaction_is_capped_at_one(self):
+        wl = {"call": {"label": "call", "pps_requested": 50.0,
+                       "pps_achieved": 51.0}}
+        self.assertEqual(1.0, F.flow_satisfactions(wl)["call"])
+
+    def test_video_demand_comes_from_the_ladder(self):
+        wl = {"tv1": {"kind": "video", "sender_mbps": 4.375,
+                      "ladder": [8.0, 5.0, 3.0, 1.5], "step_s": 6.0,
+                      "elapsed_s": 24.0}}
+        self.assertAlmostEqual(1.0, F.flow_satisfactions(wl)["tv1"])
+
+    def test_no_demand_reported_is_skipped(self):
+        wl = {"call": {"label": "call", "pps_achieved": 50.0}}
+        self.assertEqual({}, F.flow_satisfactions(wl))
+
+
+class TestRunDemandFairness(unittest.TestCase):
+    def test_new_scenario_is_demand_fair_when_rates_are_wildly_unequal(self):
+        # 0.1-scaled call next to an elastic bulk: the OLD jain would read
+        # ~0.03 here; the demand-normalized one must not punish the call
+        # for the bulk's appetite.
+        wl = {"call": {"label": "call", "pps_requested": 50.0,
+                       "pps_achieved": 50.0},
+              "game": {"kind": "game", "pps_requested": 30.0,
+                       "pps_achieved": 30.0},
+              "bulk": {"label": "bulk", "sender_mbps": 96.0}}
+        self.assertAlmostEqual(1.0, F.run_demand_fairness(wl))
+
+    def test_single_demanding_flow_has_no_index(self):
+        wl = {"call": {"label": "call", "pps_requested": 50.0,
+                       "pps_achieved": 10.0},
+              "bulk": {"label": "bulk", "sender_mbps": 20.0}}
+        self.assertIsNone(F.run_demand_fairness(wl))
+
+    def test_only_elastic_flows_has_no_index(self):
+        wl = {"bulk": {"label": "bulk", "sender_mbps": 20.0}}
+        self.assertIsNone(F.run_demand_fairness(wl))
+
+    def test_starved_call_dragged_the_index(self):
+        wl = {"call": {"label": "call", "pps_requested": 50.0,
+                       "pps_achieved": 10.0},
+              "game": {"kind": "game", "pps_requested": 30.0,
+                       "pps_achieved": 30.0}}
+        # jain over {0.2, 1.0} = 1.44 / 2.08
+        self.assertAlmostEqual(1.44 / 2.08, F.run_demand_fairness(wl))
+
+
 if __name__ == "__main__":
     unittest.main()
 
