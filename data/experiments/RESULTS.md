@@ -1,13 +1,10 @@
 # Results (generated, no summarised files consulted)
 
-Runs root: `/home/mekarz/Desktop/Full-projects/TATA-ELXSI/data/runs` | runs used: 157 | scenarios: s1_iso_during_call, s2_wan_drop, s3_tv_and_gaming, s4_capacity_recovery
+Runs root: `/home/mekarz/Desktop/Full-projects/TATA-ELXSI/data/runs` | runs used: 160 | scenarios: s1_iso_during_call, s2_wan_drop, s3_tv_and_gaming, s4_capacity_recovery
 
-Skipped 4 incomplete-only directory names: `s4_capacity_recovery__aciq__adaptive__seed7 (special-condition run: lease)`, `s2_wan_drop__aciq__adaptive__seed42 (outside matrix seed family: cell uses seeds 0..9)`, `s4_capacity_recovery__aciq__adaptive__seed8 (outside matrix seed family: cell uses seeds 0..6)`, `s4_capacity_recovery__aciq__adaptive__seed9 (outside matrix seed family: cell uses seeds 0..6)`
+Skipped 1 incomplete-only directory names: `s2_wan_drop__aciq__adaptive__seed42 (outside matrix seed family: cell uses seeds 0..9)`
 
-- skipped dir: s4_capacity_recovery__aciq__adaptive__seed7 (special-condition run: lease)
 - skipped dir: s2_wan_drop__aciq__adaptive__seed42 (outside matrix seed family: cell uses seeds 0..9)
-- skipped dir: s4_capacity_recovery__aciq__adaptive__seed8 (outside matrix seed family: cell uses seeds 0..6)
-- skipped dir: s4_capacity_recovery__aciq__adaptive__seed9 (outside matrix seed family: cell uses seeds 0..6)
 
 ## Delay and throughput, every scenario x arm (mean +/- 95% CI over seeds; t(9)=2.262 for n=10)
 
@@ -45,7 +42,7 @@ Skipped 4 incomplete-only directory names: `s4_capacity_recovery__aciq__adaptive
 | B0 (default router, pfifo) | 10 | 245.07 +/- 0.18 | 2.06 +/- 0.01 | 6.127 +/- 0.088 | NOT AVAILABLE | 33.78 +/- 0.01 | 0.964 +/- 0.000 |
 | CAKE-static (95% of pre-drop link, set and forget) | 10 | 89.95 +/- 0.46 | 0.84 +/- 0.29 | 0.407 +/- 0.367 | NOT AVAILABLE | 32.38 +/- 0.01 | 0.956 +/- 0.000 |
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 2.75 +/- 0.03 | 0.49 +/- 0.01 | 0.000 +/- 0.000 | NOT AVAILABLE | 18.08 +/- 0.00 | 0.820 +/- 0.000 |
-| ACIQ (controller) | 7 | 96.72 +/- 1.11 | 0.87 +/- 0.02 | 0.357 +/- 0.073 | NOT AVAILABLE | 32.64 +/- 0.05 | 0.958 +/- 0.000 |
+| ACIQ (controller) | 10 | 96.87 +/- 1.09 | 0.88 +/- 0.02 | 0.363 +/- 0.054 | NOT AVAILABLE | 32.65 +/- 0.05 | 0.958 +/- 0.000 |
 
 ## ACIQ vs every arm (positive % is better ACIQ on the metric at the head of the column; a cell like `41.0x` is the multiplicative factor when the baseline is so close to zero that a percentage would mislead)
 
@@ -60,9 +57,9 @@ Skipped 4 incomplete-only directory names: `s4_capacity_recovery__aciq__adaptive
 | s3_tv_and_gaming | B0 (default router, pfifo) | NOT AVAILABLE |  | NOT AVAILABLE |  |
 | s3_tv_and_gaming | CAKE-static (95% of pre-drop link, set and forget) | NOT AVAILABLE |  | NOT AVAILABLE |  |
 | s3_tv_and_gaming | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | NOT AVAILABLE |  | NOT AVAILABLE |  |
-| s4_capacity_recovery | B0 (default router, pfifo) | +60.5 | disjoint | -3.4 | disjoint |
-| s4_capacity_recovery | CAKE-static (95% of pre-drop link, set and forget) | -7.5 | disjoint | +0.8 | disjoint |
-| s4_capacity_recovery | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 35.1x | disjoint | +80.5 | disjoint |
+| s4_capacity_recovery | B0 (default router, pfifo) | +60.5 | disjoint | -3.3 | disjoint |
+| s4_capacity_recovery | CAKE-static (95% of pre-drop link, set and forget) | -7.7 | disjoint | +0.8 | disjoint |
+| s4_capacity_recovery | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 35.2x | disjoint | +80.6 | disjoint |
 
 ## Where ACIQ is worse (the honest column)
 
@@ -82,7 +79,7 @@ Every row above where ACIQ's signed delta is negative, collected so a CAKE win c
 | s1_iso_during_call | 10 | no post-drop applied tree at/below 1.25x post-drop link in any seed | 102.07 +/- 0.46 | 100.0 +/- 0.0 | mean abs 2.1% (seed0: 102.45/100.0 (2.5% off)) |
 | s2_wan_drop | 10 | 1.68 (n=10) | 23.59 +/- 0.17 | 20.0 +/- 0.0 | mean abs 17.9% (seed0: 23.33/20.0 (16.6% off)) |
 | s3_tv_and_gaming | 10 | no post-drop applied tree at/below 1.25x post-drop link in any seed | 50.48 +/- 14.49 | 100.0 +/- 0.0 | mean abs 49.5% (seed0: 61.84/100.0 (38.2% off)) |
-| s4_capacity_recovery | 7 | 1.67 (n=7) | 23.52 +/- 0.33 | 20.0 +/- 0.0 | mean abs 17.6% (seed0: 23.23/20.0 (16.2% off)) |
+| s4_capacity_recovery | 10 | 1.67 (n=10) | 23.55 +/- 0.24 | 20.0 +/- 0.0 | mean abs 17.8% (seed0: 23.23/20.0 (16.2% off)) |
 
 Adaptation is defined on the applied tree (`capacity_mbps` in samples.jsonl), not on the estimator's belief, so a controller that estimates right but applies slow counts as slow.
 
@@ -93,7 +90,7 @@ Adaptation is defined on the applied tree (`capacity_mbps` in samples.jsonl), no
 | s1_iso_during_call | 10 | 0.0038 +/- 0.0003 | 16.62 +/- 4.26 | 99.10 +/- 37.53 | 20120371 +/- 284550 |
 | s2_wan_drop | 10 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE |
 | s3_tv_and_gaming | 10 | 0.0043 +/- 0.0003 | 79.67 +/- 7.11 | 132.83 +/- 38.61 | 20588544 +/- 440697 |
-| s4_capacity_recovery | 7 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE |
+| s4_capacity_recovery | 10 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE |
 
 ## Fairness detail (workload-rate Jain; per-class minima over ASSIGNED classes only, same scope for every mode)
 
@@ -114,7 +111,7 @@ Adaptation is defined on the applied tree (`capacity_mbps` in samples.jsonl), no
 | s4_capacity_recovery | B0 (default router, pfifo) | 10 | 0.964 +/- 0.000 | 2.0 +/- 0.0 | NOT AVAILABLE (no assigned-class series in this arm's samples: the baselines' per-tick sheet is aggregate counters mislabelled as one class) |
 | s4_capacity_recovery | CAKE-static (95% of pre-drop link, set and forget) | 10 | 0.956 +/- 0.000 | 2.0 +/- 0.0 | NOT AVAILABLE (no assigned-class series in this arm's samples: the baselines' per-tick sheet is aggregate counters mislabelled as one class) |
 | s4_capacity_recovery | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 0.820 +/- 0.000 | 2.0 +/- 0.0 | NOT AVAILABLE (no assigned-class series in this arm's samples: the baselines' per-tick sheet is aggregate counters mislabelled as one class) |
-| s4_capacity_recovery | ACIQ (controller) | 7 | 0.958 +/- 0.000 | 2.0 +/- 0.0 | bulk_download=0; video_call_voice=0; bulk_download=0; video_call_voice=0; bulk_download=0; video_call_voice=0 |
+| s4_capacity_recovery | ACIQ (controller) | 10 | 0.958 +/- 0.000 | 2.0 +/- 0.0 | bulk_download=0; video_call_voice=0; bulk_download=0; video_call_voice=0; bulk_download=0; video_call_voice=0 |
 
 Starvation: a class starved in tick t if its per-tick goodput fell below 20% of its own run median (threshold computed from the run's own series); the cell lists the starved timestamps. Only ASSIGNED classes are considered — a class the scenario never gave traffic to cannot be starved in it.
 
@@ -139,12 +136,12 @@ Starvation: a class starved in tick t if its per-tick goodput fell below 20% of 
 
 ## Classifier (router-vantage corpus, thresholds fixed before held-out)
 
-- strict: `{"n": 9, "correct": 5, "abstained": 0, "confident_or_wrong": 4, "accuracy_strict": 0.5555555555555556, "accuracy_excl_abstain": 0.5555555555555556}`
-- accept_abstain: `{"n": 9, "correct": 5, "abstained": 0, "confident_or_wrong": 4, "accuracy_strict": 0.5555555555555556, "accuracy_excl_abstain": 0.5555555555555556}`
+- strict: `{"n": 228, "correct": 139, "abstained": 0, "confident_or_wrong": 89, "accuracy_strict": 0.6096491228070176, "accuracy_excl_abstain": 0.6096491228070176}`
+- accept_abstain: `{"n": 228, "correct": 139, "abstained": 0, "confident_or_wrong": 89, "accuracy_strict": 0.6096491228070176, "accuracy_excl_abstain": 0.6096491228070176}`
 - paths_fixed: `["aciq/classify.py", "aciq/features.py"]`
-- n_corpus: `9`
-- n_heldout: `1`
-- SPEC GAP (held-out half thin): n_heldout=1 < 15 — per-class CIs are not meaningful at this size
+- n_corpus: `228`
+- n_heldout: `121`
+- per-class floor 30: met (counts: `{"video_call_voice": 30, "interactive_gaming": 30, "adaptive_video_streaming": 49, "bulk_download": 40, "software_update": 49, "cloud_backup": 30}`)
 
 Source: `/home/mekarz/Desktop/Full-projects/TATA-ELXSI/data/experiments/classifier_corpus/eval.json` (written by the corpus evaluator, whose failure table is copied verbatim).
 

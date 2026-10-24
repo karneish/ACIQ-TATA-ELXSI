@@ -20,8 +20,13 @@ echo "[dash] one ACIQ run (s2_wan_drop, seed 42), then render the page"
 # overwritten in place by a later capture (that happened once; this path
 # change is the fix).
 RUNDATA="$DEST/dashboard_run"
+# --report keeps the driver's report output INSIDE the evidence dir: with the
+# default (data/REPORT.md) the capture silently overwrote the matrix-wide
+# report with a 1-run version AGAIN at 10:50 on 2026-10-24 — the exact class
+# of accident the step's other redirections were added to prevent.
 "$PY" run_experiments.py --scenario s2_wan_drop --system aciq --seed 42 \
-  --seeds 1 --results-dir "$RUNDATA" >"$LOG" 2>&1 || true
+  --seeds 1 --results-dir "$RUNDATA" \
+  --report "$DEST/dashboard_run/REPORT.md" >"$LOG" 2>&1 || true
 RUN=$(ls -td "$RUNDATA"/s2_wan_drop__* 2>/dev/null | head -1)
 echo "[dash] run dir: $RUN"
 

@@ -87,6 +87,18 @@ two deeper defects. Both are now closed with offline tests:
 3. The driver was also made tolerant of a root-or-no-sudo split
    (`_safe_sudo` in `run_experiments.py`) so its offline dry-run works
    in environments without a sudo binary.
+4. With those two fixed, the SECOND rerun (10:16) completed all live
+   steps in 36 min — corpus 228 flows at/above the per-class floor
+   (6 classes, strict held-out accuracy 0.595 over 121, gaming and
+   software_update genuinely weak and so declared), intent run REAL
+   (61 samples, lease held 8.0 s of the run, 3/61 enforcement ticks)
+   and the s4 seed7 matrix cell unpolluted (n=10) — but it STILL
+   clobbered data/REPORT.md once more: the DASHBOARD capture's driver
+   call had no --report, so the default (data/REPORT.md) got the
+   dashboard's 1-run version. Closed with the same one-line pattern
+   (--report inside the evidence dir) and a wiring test pinning it
+   (`tests/test_live_wiring.py`); data/REPORT.md was then rebuilt from
+   the matrix unprivileged with `run_experiments.py --report-only`.
 
 ## Known-not-fixed (honest)
 

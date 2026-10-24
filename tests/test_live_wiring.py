@@ -33,6 +33,14 @@ class TestDashboardCapture(unittest.TestCase):
         self.assertIn('RUNDATA="$DEST/dashboard_run"', s)
         self.assertIn('--results-dir "$RUNDATA"', s)
 
+    def test_capture_report_also_stays_inside_the_evidence_dir(self):
+        # the driver's DEFAULT report target is data/REPORT.md; a capture
+        # without --report overwrote the matrix-wide report with a 1-run
+        # version once (2026-10-24 10:50, AFTER the --results-dir fix) —
+        # so the report target is pinned alongside the results target.
+        s = _src(DASH)
+        self.assertIn('--report "$DEST/dashboard_run/REPORT.md"', s)
+
     def test_capture_never_selects_from_committed_data_runs(self):
         s = _src(DASH)
         self.assertNotIn("ls -td data/runs/", s)

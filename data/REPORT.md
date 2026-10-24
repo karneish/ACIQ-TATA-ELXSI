@@ -51,7 +51,7 @@ Runs found: **161**
 | s2_wan_drop | aciq | adaptive | 2 | 100.0 | 20.0 | 23.2 Mbps | 2 |
 | s2_wan_drop | aciq | adaptive | 3 | 100.0 | 20.0 | 23.3 Mbps | 2 |
 | s2_wan_drop | aciq | adaptive | 4 | 100.0 | 20.0 | 23.8 Mbps | 2 |
-| s2_wan_drop | aciq | adaptive | 42 | 100.0 | 20.0 | 28.5 Mbps | 3 |
+| s2_wan_drop | aciq | adaptive | 42 | 100.0 | 20.0 | 28.0 Mbps | 3 |
 | s2_wan_drop | aciq | adaptive | 5 | 100.0 | 20.0 | 23.6 Mbps | 2 |
 | s2_wan_drop | aciq | adaptive | 6 | 100.0 | 20.0 | 23.6 Mbps | 2 |
 | s2_wan_drop | aciq | adaptive | 7 | 100.0 | 20.0 | 23.8 Mbps | 2 |
@@ -134,7 +134,7 @@ Runs found: **161**
 | s4_capacity_recovery | aciq | adaptive | 4 | 100.0 | 20.0 | 23.2 Mbps | 2 |
 | s4_capacity_recovery | aciq | adaptive | 5 | 100.0 | 20.0 | 23.9 Mbps | 2 |
 | s4_capacity_recovery | aciq | adaptive | 6 | 100.0 | 20.0 | 23.1 Mbps | 2 |
-| s4_capacity_recovery | aciq | adaptive | 7 | 100.0 | 20.0 | 23.6 Mbps | 3 |
+| s4_capacity_recovery | aciq | adaptive | 7 | 100.0 | 20.0 | 23.3 Mbps | 2 |
 | s4_capacity_recovery | aciq | adaptive | 8 | 100.0 | 20.0 | 23.7 Mbps | 2 |
 | s4_capacity_recovery | aciq | adaptive | 9 | 100.0 | 20.0 | 23.9 Mbps | 2 |
 | s4_capacity_recovery | b0_fifo | static | 0 | 100.0 | 20.0 | n/a | 0 |
@@ -199,7 +199,7 @@ Cells are **mean (min-max)** over seeds. A mean alone would hide the tails this 
 
 | system | n | p50 | p95 | p99 | jitter | loss |
 |---|---|---|---|---|---|---|
-| aciq | 11 | 81.637 (72.166-151.231) | 111.250 (94.218-242.701) | 216.683 (98.495-1136.731) | 1.034 (0.787-2.602) | 0.012 (0.002-0.091) |
+| aciq | 11 | 81.664 (72.166-151.527) | 111.598 (94.218-246.520) | 217.032 (98.495-1140.572) | 1.095 (0.787-3.271) | 0.009 (0.002-0.066) |
 | b0_fifo | 10 | 85.273 (83.099-88.627) | 248.959 (248.394-251.784) | 1149.975 (1142.838-1173.573) | 2.887 (2.700-3.873) | 0.091 (0.086-0.095) |
 | b1_cake95 | 10 | 71.223 (69.940-73.255) | 89.553 (87.696-92.281) | 95.156 (91.012-101.038) | 0.690 (0.662-0.759) | 0.004 (0.002-0.005) |
 | b1_cake_oracle | 10 | 0.684 (0.638-0.711) | 2.375 (2.256-2.485) | 3.207 (2.918-3.361) | 0.336 (0.315-0.409) | 0.000 |
@@ -241,7 +241,7 @@ Cells are **mean (min-max)** over seeds. A mean alone would hide the tails this 
 
 | system | n | p50 | p95 | p99 | jitter | loss |
 |---|---|---|---|---|---|---|
-| aciq | 10 | 75.303 (23.562-83.479) | 96.787 (94.493-99.959) | 117.753 (97.389-127.532) | 0.858 (0.684-0.908) | 0.004 (0.002-0.005) |
+| aciq | 10 | 81.027 (79.231-83.479) | 96.869 (94.551-99.959) | 117.339 (97.389-127.532) | 0.877 (0.831-0.908) | 0.004 (0.003-0.005) |
 | b0_fifo | 10 | 82.774 (80.533-84.898) | 245.068 (244.750-245.502) | 893.096 (851.583-907.843) | 2.056 (2.013-2.083) | 0.061 (0.060-0.064) |
 | b1_cake95 | 10 | 75.029 (73.750-75.743) | 89.947 (89.067-91.085) | 93.975 (90.160-100.064) | 0.838 (0.684-1.984) | 0.004 (0.001-0.018) |
 | b1_cake_oracle | 10 | 0.879 (0.837-0.928) | 2.754 (2.685-2.803) | 3.820 (3.360-4.180) | 0.486 (0.465-0.506) | 0.000 |
@@ -307,13 +307,13 @@ ACIQ against each rival, paired by seed. Exact, by enumerating sign flips -- 2^n
 | s4_capacity_recovery | call | b0_fifo | p99 | 10 | 0 | 0.0 | 0.0020 | -1.00 |
 | s4_capacity_recovery | call | b0_fifo | jitter_ms | 10 | 0 | 0.0 | 0.0020 | -1.00 |
 | s4_capacity_recovery | call | b0_fifo | loss_ratio | 10 | 0 | 0.0 | 0.0020 | -1.00 |
-| s4_capacity_recovery | call | b1_cake95 | p50 | 10 | 0 | 45.0 | 0.0840 | +0.64 |
+| s4_capacity_recovery | call | b1_cake95 | p50 | 10 | 0 | 55.0 | 0.0020 | +1.00 |
 | s4_capacity_recovery | call | b1_cake95 | p95 | 10 | 0 | 55.0 | 0.0020 | +1.00 |
-| s4_capacity_recovery | call | b1_cake95 | p99 | 10 | 0 | 55.0 | 0.0020 | +1.00 |
-| s4_capacity_recovery | call | b1_cake95 | jitter_ms | 10 | 0 | 44.0 | 0.1055 | +0.60 |
-| s4_capacity_recovery | call | b1_cake95 | loss_ratio | 9 | 1 | 34.0 | 0.1875 | +0.51 |
+| s4_capacity_recovery | call | b1_cake95 | p99 | 10 | 0 | 54.0 | 0.0039 | +0.96 |
+| s4_capacity_recovery | call | b1_cake95 | jitter_ms | 10 | 0 | 45.0 | 0.0840 | +0.64 |
+| s4_capacity_recovery | call | b1_cake95 | loss_ratio | 9 | 1 | 36.0 | 0.1250 | +0.60 |
 
-**39 of 47 comparisons reach p < 0.05.** Each is one metric against one rival in one scenario; they are not independent of each other, so this is a count of results, not a family-wise error rate.
+**40 of 47 comparisons reach p < 0.05.** Each is one metric against one rival in one scenario; they are not independent of each other, so this is a count of results, not a family-wise error rate.
 
 4 pair(s) had zero difference and were dropped from the signed-rank test; each dropped pair lowers n and raises the smallest attainable p, which is stated per row rather than hidden.
 

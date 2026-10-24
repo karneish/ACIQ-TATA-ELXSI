@@ -1,59 +1,71 @@
 {
- "n_corpus": 9,
- "n_fixed": 8,
- "n_heldout": 1,
+ "n_corpus": 228,
+ "n_fixed": 107,
+ "n_heldout": 121,
  "paths_fixed": [
   "aciq/classify.py",
   "aciq/features.py"
  ],
+ "corpus_classes": [
+  "adaptive_video_streaming",
+  "bulk_download",
+  "cloud_backup",
+  "interactive_gaming",
+  "software_update",
+  "video_call_voice"
+ ],
+ "case_counts": {
+  "canonical": 180,
+  "ambiguous": 48
+ },
  "capacity_note": "capacity_mbps travels with each record; bulk is relative to it",
  "strict": {
-  "n": 9,
-  "correct": 5,
+  "n": 228,
+  "correct": 139,
   "abstained": 0,
-  "confident_or_wrong": 4,
-  "accuracy_strict": 0.5555555555555556,
-  "accuracy_excl_abstain": 0.5555555555555556
+  "confident_or_wrong": 89,
+  "accuracy_strict": 0.6096491228070176,
+  "accuracy_excl_abstain": 0.6096491228070176
  },
  "strict_fixed": {
-  "n": 8,
-  "correct": 5,
+  "n": 107,
+  "correct": 67,
   "abstained": 0,
-  "confident_or_wrong": 3,
-  "accuracy_strict": 0.625,
-  "accuracy_excl_abstain": 0.625
+  "confident_or_wrong": 40,
+  "accuracy_strict": 0.6261682242990654,
+  "accuracy_excl_abstain": 0.6261682242990654
  },
  "strict_heldout": {
-  "n": 1,
-  "correct": 0,
+  "n": 121,
+  "correct": 72,
   "abstained": 0,
-  "confident_or_wrong": 1,
-  "accuracy_strict": 0.0,
-  "accuracy_excl_abstain": 0.0
+  "confident_or_wrong": 49,
+  "accuracy_strict": 0.5950413223140496,
+  "accuracy_excl_abstain": 0.5950413223140496
  },
  "accept_abstain": {
-  "n": 9,
-  "correct": 5,
+  "n": 228,
+  "correct": 139,
   "abstained": 0,
-  "confident_or_wrong": 4,
-  "accuracy_strict": 0.5555555555555556,
-  "accuracy_excl_abstain": 0.5555555555555556
+  "confident_or_wrong": 89,
+  "accuracy_strict": 0.6096491228070176,
+  "accuracy_excl_abstain": 0.6096491228070176
  },
  "accept_abstain_fixed": {
-  "n": 8,
-  "correct": 5,
+  "n": 107,
+  "correct": 67,
   "abstained": 0,
-  "confident_or_wrong": 3,
-  "accuracy_strict": 0.625,
-  "accuracy_excl_abstain": 0.625
+  "confident_or_wrong": 40,
+  "accuracy_strict": 0.6261682242990654,
+  "accuracy_excl_abstain": 0.6261682242990654
  },
  "accept_abstain_heldout": {
-  "n": 1,
-  "correct": 0,
+  "n": 121,
+  "correct": 72,
   "abstained": 0,
-  "confident_or_wrong": 1,
-  "accuracy_strict": 0.0,
-  "accuracy_excl_abstain": 0.0
+  "confident_or_wrong": 49,
+  "accuracy_strict": 0.5950413223140496,
+  "accuracy_excl_abstain": 0.5950413223140496
  },
  "confusion_full": {
   "classes": [
@@ -71,25 +83,25 @@
     "interactive_gaming": 0,
     "software_update": 0,
     "video_call_voice": 0,
-    "adaptive_video_streaming": 1,
+    "adaptive_video_streaming": 49,
     "?abstain": 0
    },
    "bulk_download": {
-    "adaptive_video_streaming": 0,
+    "adaptive_video_streaming": 10,
     "cloud_backup": 0,
     "interactive_gaming": 0,
     "software_update": 0,
     "video_call_voice": 0,
-    "bulk_download": 1,
+    "bulk_download": 30,
     "?abstain": 0
    },
    "cloud_backup": {
-    "adaptive_video_streaming": 1,
-    "bulk_download": 1,
+    "adaptive_video_streaming": 0,
+    "bulk_download": 0,
     "interactive_gaming": 0,
     "software_update": 0,
     "video_call_voice": 0,
-    "cloud_backup": 1,
+    "cloud_backup": 30,
     "?abstain": 0
    },
    "interactive_gaming": {
@@ -97,17 +109,17 @@
     "bulk_download": 0,
     "cloud_backup": 0,
     "software_update": 0,
-    "video_call_voice": 1,
+    "video_call_voice": 30,
     "interactive_gaming": 0,
     "?abstain": 0
    },
    "software_update": {
-    "adaptive_video_streaming": 0,
-    "bulk_download": 1,
+    "adaptive_video_streaming": 49,
+    "bulk_download": 0,
     "cloud_backup": 0,
     "interactive_gaming": 0,
     "video_call_voice": 0,
-    "software_update": 1,
+    "software_update": 0,
     "?abstain": 0
    },
    "video_call_voice": {
@@ -116,55 +128,61 @@
     "cloud_backup": 0,
     "interactive_gaming": 0,
     "software_update": 0,
-    "video_call_voice": 1,
+    "video_call_voice": 30,
     "?abstain": 0
    }
   },
   "per_class": {
    "adaptive_video_streaming": {
-    "tp": 1,
-    "fp": 1,
+    "tp": 49,
+    "fp": 59,
     "fn": 0,
-    "precision": 0.5,
+    "support": 49,
+    "precision": 0.4537037037037037,
     "recall": 1.0,
-    "f1": 0.6666666666666666
+    "f1": 0.6242038216560509
    },
    "bulk_download": {
-    "tp": 1,
-    "fp": 2,
-    "fn": 0,
-    "precision": 0.3333333333333333,
-    "recall": 1.0,
-    "f1": 0.5
+    "tp": 30,
+    "fp": 0,
+    "fn": 10,
+    "support": 40,
+    "precision": 1.0,
+    "recall": 0.75,
+    "f1": 0.8571428571428571
    },
    "cloud_backup": {
-    "tp": 1,
+    "tp": 30,
     "fp": 0,
-    "fn": 2,
+    "fn": 0,
+    "support": 30,
     "precision": 1.0,
-    "recall": 0.3333333333333333,
-    "f1": 0.5
+    "recall": 1.0,
+    "f1": 1.0
    },
    "interactive_gaming": {
     "tp": 0,
     "fp": 0,
-    "fn": 1,
+    "fn": 30,
+    "support": 30,
     "precision": null,
     "recall": 0.0,
     "f1": null
    },
    "software_update": {
-    "tp": 1,
+    "tp": 0,
     "fp": 0,
-    "fn": 1,
-    "precision": 1.0,
-    "recall": 0.5,
-    "f1": 0.6666666666666666
+    "fn": 49,
+    "support": 49,
+    "precision": null,
+    "recall": 0.0,
+    "f1": null
    },
    "video_call_voice": {
-    "tp": 1,
-    "fp": 1,
+    "tp": 30,
+    "fp": 30,
     "fn": 0,
+    "support": 30,
     "precision": 0.5,
     "recall": 1.0,
     "f1": 0.6666666666666666
@@ -173,37 +191,123 @@
  },
  "confusion_heldout": {
   "classes": [
+   "adaptive_video_streaming",
+   "bulk_download",
+   "cloud_backup",
    "interactive_gaming",
+   "software_update",
    "video_call_voice"
   ],
   "matrix": {
+   "adaptive_video_streaming": {
+    "bulk_download": 0,
+    "cloud_backup": 0,
+    "interactive_gaming": 0,
+    "software_update": 0,
+    "video_call_voice": 0,
+    "adaptive_video_streaming": 24,
+    "?abstain": 0
+   },
+   "bulk_download": {
+    "adaptive_video_streaming": 5,
+    "cloud_backup": 0,
+    "interactive_gaming": 0,
+    "software_update": 0,
+    "video_call_voice": 0,
+    "bulk_download": 17,
+    "?abstain": 0
+   },
+   "cloud_backup": {
+    "adaptive_video_streaming": 0,
+    "bulk_download": 0,
+    "interactive_gaming": 0,
+    "software_update": 0,
+    "video_call_voice": 0,
+    "cloud_backup": 16,
+    "?abstain": 0
+   },
    "interactive_gaming": {
-    "video_call_voice": 1,
+    "adaptive_video_streaming": 0,
+    "bulk_download": 0,
+    "cloud_backup": 0,
+    "software_update": 0,
+    "video_call_voice": 20,
     "interactive_gaming": 0,
     "?abstain": 0
    },
-   "video_call_voice": {
+   "software_update": {
+    "adaptive_video_streaming": 24,
+    "bulk_download": 0,
+    "cloud_backup": 0,
     "interactive_gaming": 0,
     "video_call_voice": 0,
+    "software_update": 0,
+    "?abstain": 0
+   },
+   "video_call_voice": {
+    "adaptive_video_streaming": 0,
+    "bulk_download": 0,
+    "cloud_backup": 0,
+    "interactive_gaming": 0,
+    "software_update": 0,
+    "video_call_voice": 15,
     "?abstain": 0
    }
   },
   "per_class": {
+   "adaptive_video_streaming": {
+    "tp": 24,
+    "fp": 29,
+    "fn": 0,
+    "support": 24,
+    "precision": 0.4528301886792453,
+    "recall": 1.0,
+    "f1": 0.6233766233766235
+   },
+   "bulk_download": {
+    "tp": 17,
+    "fp": 0,
+    "fn": 5,
+    "support": 22,
+    "precision": 1.0,
+    "recall": 0.7727272727272727,
+    "f1": 0.8717948717948718
+   },
+   "cloud_backup": {
+    "tp": 16,
+    "fp": 0,
+    "fn": 0,
+    "support": 16,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+   },
    "interactive_gaming": {
     "tp": 0,
     "fp": 0,
-    "fn": 1,
+    "fn": 20,
+    "support": 20,
+    "precision": null,
+    "recall": 0.0,
+    "f1": null
+   },
+   "software_update": {
+    "tp": 0,
+    "fp": 0,
+    "fn": 24,
+    "support": 24,
     "precision": null,
     "recall": 0.0,
     "f1": null
    },
    "video_call_voice": {
-    "tp": 0,
-    "fp": 1,
+    "tp": 15,
+    "fp": 20,
     "fn": 0,
-    "precision": 0.0,
-    "recall": null,
-    "f1": null
+    "support": 15,
+    "precision": 0.42857142857142855,
+    "recall": 1.0,
+    "f1": 0.6
    }
   }
  }
