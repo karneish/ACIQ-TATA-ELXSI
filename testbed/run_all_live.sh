@@ -65,10 +65,14 @@ done
 # -- fairness / starvation under intent (T3 fixture on live workloads) ------
 # Lease TTL 15 s INSIDE a 60 s run: the length so expiry, not just effect,
 # is measured. Continuous bulk is part of the scenario's own workloads.
+# The run writes to ITS OWN results dir: a run with an active lease answers
+# a different question than the matrix cell whose number it once overwrote
+# (the fix-round defect register calls this out; it must not happen again).
 step intent_starvation 4 \
   "$PY" run_experiments.py --scenario s4_capacity_recovery --system aciq \
      --enforce --lease 203.0.113.2 --lease-weight 0.5 --lease-ttl-s 15 \
-     --seed 7 --seeds 1 --no-setup
+     --seed 7 --seeds 1 --no-setup \
+     --results-dir data/experiments/intent_starvation
 
 # -- safe-state / failure injection (S5) ------------------------------------
 step s5_live       25 ./testbed/s5_live.sh

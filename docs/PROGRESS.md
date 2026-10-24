@@ -224,11 +224,40 @@ Remaining open items: commit decision (user); nothing else pending.
   change was needed after the run: the numbers came from the same pipeline
   the offline tests pin.
 
-## 2026-10-23 FIX ROUND (T1–T10) DONE offline; one live command pending
+## 2026-10-24 FIX ROUND CONTINUATION (T6 corpus redesign + honesty defects found in the live evidence)
+
+Live pipeline had ALREADY run (2026-10-23 evening: all matrix steps, S5,
+intent, dashboard — evidence committed up to `5eec2ef`). This session:
+
+- found + fixed TWO committed-dir overwrite incidents (dashboard capture
+  clobbered `s2 seed42`; intent step overwrote `s4 seed7` and its lease
+  run snuck INTO the s4 ACIQ cell because the report's special-run
+  exclusion keyed on config spellings the driver never writes). Fixes:
+  capture/intent runs now target their own `data/experiments/` dirs;
+  exclusion keys on `lease_ips` non-empty / `inject_fail_apply` true;
+  pinned by `tests/test_live_wiring.py`.
+- fairness scope: per-class minima/starvation now restricted to
+  `assigned_classes(workloads)` (`aciq/fairness.py`) — identical for every
+  mode; absent classes can no longer print `software_update=0` fake
+  starvation rows for every arm.
+- report display: near-zero baselines print multiplicative factors
+  (`41.3x`), not `−3414%`; improvement-table header explains it.
+- T6 corpus redesign (`24cb91a`): one generator pair PER FLOW, distinct
+  dport per flow (stale conntrack poisoning impossible), 6x30 flows +
+  3 ambiguous windows x 10 flows, per-class floor ENFORCED (exit 1 if
+  missed), unsupported `enforce_min_counts` unit tests; evaluator adds
+  `support` per class + plan-universe class table; report declares SPEC
+  GAP from counts.json verbatim.
+- commits `164372b` (fix 11), `24cb91a` (fix 12), fix 13 (report/docs
+  evidence). Suite 1382+OK (skipped=10), audit 0 broken, secret-scan clean.
+
+PENDING (privileged, one command): the Owner prelude restores the two
+clobbered run dirs from git (root-owned files; see docs/FIX_REPORT.md)
+clears four resume markers, then re-runs `./testbed/run_all_live.sh`
+(~50 min). After: `ip netns list` empty; commit the regenerated evidence.
+
+## 2026-10-23 FIX ROUND (T1–T10) — prior session record
 Commits `38233a1`→`7cd5cb3` per task. See docs/FIX_REPORT.md for the
 per-task table. Suite 1326 OK (skipped=10 live-kernel), citation audit 0
-broken, secret-scan clean. PENDING: the single sudo step
-`sudo env ACIQ_VENV=/home/mekarz/aciq-venv ./testbed/run_all_live.sh`
-(4-arm matrices incl. cake-ORACLE, S4 intent+TTL-15s expiry (starvation
-evidence), S5 live with injected failed-apply witnesses, classifier
-corpus + eval, dashboard evidence, teardown+report).
+broken, secret-scan clean. That round's live run completed the same day
+(records above).

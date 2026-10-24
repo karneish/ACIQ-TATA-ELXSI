@@ -298,7 +298,10 @@ def scan_path_citations() -> list[dict]:
                         "testbed/logs/demo-", "testbed/logs/dashboard-",
                         "testbed/logs/corpus-",
                         # Shell globs over run dirs: a family, not a file.
-                        "data/runs/s2_wan_drop__aciq__adaptive__seed")
+                        "data/runs/s2_wan_drop__aciq__adaptive__seed",
+                        # The resume markers the live script reads and rewrites
+                        # are runtime state, not published evidence.
+                        "data/live_status/")
 
     # A path that a document says is NOT YET WRITTEN is a documented gap, not
     # a broken citation: the whole point of the sentence is that the file does

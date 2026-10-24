@@ -1059,3 +1059,47 @@ samples.jsonl; a leftover note could not be written because the directory
 is owned by root-created artifacts). Every S3 number above it came from the
 other two arms or from later seeds; nothing cites this directory's absent
 artefacts.
+
+## Second fix-round additions (2026-10-24)
+
+**A committed run directory was overwritten twice, and both paths were
+closed.** (1) The dashboard capture ran its evidence run into the seed-42
+s2 matrix directory, clobbering a committed matrix directory in place;
+the capture now targets `data/experiments/dashboard/dashboard_run/`
+exclusively (`tests/test_live_wiring.py` pins this). (2) The
+intent-TTL/starvation step reused the matrix directory
+`s4_capacity_recovery__aciq__adaptive__seed7`, overwriting that matrix run;
+it now runs under its own results directory. (3) The report's special-run
+exclusion keyed on config spellings the driver never writes, so the lease
+run SNEAKED INTO the s4 ACIQ cell (visible as a jain CI that varied where
+every other arm's did not). The exclusion now keys on the real evidence
+(`lease_ips` non-empty, `inject_fail_apply` true) and the run is excluded
+BY NAME in the report. The original seed7 matrix artefact is recoverable
+from git history (commit `a2639c0`) and its restore is part of the queued
+privileged step.
+
+**Per-class minima are scoped to assigned classes.** The samples sheet
+emits every class key for every mode, so an earlier table showed
+`software_update=0` minima in scenarios that schedule no software_update
+flow — for every arm, every seed. `aciq.fairness.assigned_classes()` now
+defines the scope from workloads.json (identically derivable for every
+mode), and the report's fallback names the real baselines limitation
+(their per-tick sheet is aggregate counters mislabelled as one class).
+
+**Near-zero baselines print factors, not percentages.** CAKE-oracle's
+~2 ms p95 against ACIQ's ~98 ms printed `−3414%` — technically true,
+uselessly misleading. Cells ≥20x either way now print the multiplicative
+factor (`41.3x worse`), and the improvement-table header says so.
+
+**The corpus was below spec twice; the design, not the operators, was at
+fault.** First run: the sender command was never built (fixed by `10f`).
+Second run: 9 flows total, one flow per 20-second window. The collector now
+runs one generator pair PER FLOW with a distinct dport per flow (stale
+conntrack entries cannot be re-read as the next flow's data), enforces the
+30-per-class floor and EXITS NON-ZERO if any class falls short, and adds
+three deliberately ambiguous windows (bulk at 40% of capacity, update at
+3 Mbps, full-shape streaming on an uncommon port) with ground truth still
+the generated class. Thresholds remain the shipped ones; nothing was tuned
+against the corpus. Until the privileged corpus re-run, the committed
+corpus is the 9-flow one and every per-class classifier number carries a
+SPEC GAP line in the report.
