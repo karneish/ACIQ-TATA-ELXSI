@@ -14,6 +14,8 @@ testbed/cleanup.sh. Every run writes its own directory under data/runs/.
 from __future__ import annotations
 
 import argparse
+import os
+import shutil
 import subprocess
 import sys
 import time
@@ -27,14 +29,28 @@ from aciq.harness import CapacityMode, Harness, SystemSpec
 from aciq.report import build_report
 
 
+def _safe_sudo(cmd: str) -> int | None:
+    """Run a testbed script, shell-free. Retuning 0 root needs no sudo and some
+    sandboxes have no sudo BINARY: root runs it directly, a missing sudo binary
+    in a non-root dev shell returns None so a dry run can still happen."""
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        return subprocess.run([cmd], check=False).returncode
+    try:
+        return subprocess.run(["sudo", cmd], check=False).returncode
+    except FileNotFoundError:
+        print(f"note: no sudo and not root; skipped {Path(cmd).name}",
+              file=sys.stderr)
+        return None
+
+
 def setup_testbed() -> bool:
-    subprocess.run(["sudo", str(ROOT / "testbed" / "cleanup.sh")], check=False)
+    _safe_sudo(str(ROOT / "testbed" / "cleanup.sh"))
     r = subprocess.run([str(ROOT / "testbed" / "setup.sh")])
     return r.returncode == 0
 
 
 def teardown() -> None:
-    subprocess.run(["sudo", str(ROOT / "testbed" / "cleanup.sh")], check=False)
+    _safe_sudo(str(ROOT / "testbed" / "cleanup.sh"))
 
 
 # All three scenarios from the brief. s2 needs --drop-at to be meaningful.
@@ -241,6 +257,11 @@ def main() -> int:
     seeds = ([args.seed] if not args.seeds
              else [args.seed + i for i in range(args.seeds)])
 
+    # A failed run must not be reported as a finished step: the pipeline's
+    # resume markers once let an aborted intent step march on silently
+    # (the driver recorded the dead run and returned 0).
+    warned: list[str] = []
+
     try:
         for sc in scenarios:
             for sysspec in systems:
@@ -261,7 +282,14 @@ def main() -> int:
                         # "no capacity drop" is informational and alarming it
                         # would make every successful run look like a failure
                         warn = "failed" in n.lower() or "error" in n.lower()
-                        print(f"    {'!' if warn else '  '} {n}")
+                        if warn:
+                            print(f"    ! {n}")
+                            warned.append(n)
+                            dead = runner.run_paths(sc, sysspec, mode, seed).root
+                            shutil.rmtree(dead, ignore_errors=True)
+                            print(f"    (removed incomplete run dir {dead})")
+                        else:
+                            print(f"      {n}")
                     print(f"    estimator={res.estimator_mbps} "
                           f"policy_changes={res.policy_changes}")
     finally:
@@ -271,9 +299,13 @@ def main() -> int:
 
     out = Path(args.report) if args.report else ROOT / "data" / "REPORT.md"
     out.parent.mkdir(parents=True, exist_ok=True)
+    if warned and (not Path(args.results_dir).exists()
+                   or not any(Path(args.results_dir).iterdir())):
+        print(f"\nno runs succeeded; report NOT written (would clobber {out})")
+        return 1
     out.write_text(build_report(Path(args.results_dir)))
     print(f"\nreport written to {out}")
-    return 0
+    return 1 if warned else 0
 
 
 if __name__ == "__main__":

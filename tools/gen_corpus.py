@@ -328,7 +328,8 @@ def main() -> int:
     ap.add_argument("--flows-per-class", type=int, default=30)
     ap.add_argument("--min-per-class", type=int, default=30)
     a = ap.parse_args()
-    if subprocess.run(["id", "-u"]).returncode != 0:
+    if subprocess.run(["id", "-u"],
+                      stdout=subprocess.PIPE, text=True).stdout.strip() != "0":
         print("must run as root (ip netns exec conntrack -L)")
         return 1
     return collect_all(a.out, a.duration, a.poll_s,

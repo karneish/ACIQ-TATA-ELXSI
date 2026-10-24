@@ -15,10 +15,16 @@ OUT="data/experiments/classifier_corpus/corpus.jsonl"
 mkdir -p data/experiments/classifier_corpus
 
 testbed/cleanup.sh 2>/dev/null || true
-testbed/setup.sh >/dev/null
+# setup is LOGGED, not voided: an unexplained abort at 09:51 on 2026-10-24 died
+# between "id -u" and the corpus header and every shard of why was dropped to
+# the pipe buffer -- a setup failure silently the same shape as nothing.
+testbed/setup.sh 2>&1 | tee testbed/logs/corpus-setup-$(date +%Y%m%d-%H%M%S).log
 
 echo "[corpus] per-flow windows: 6 classes x 30 flows + 3 ambiguous x 10, ~6 s each (~35 min)"
-"$PY" tools/gen_corpus.py --out "$OUT" \
+# -u: the collector prints nothing default-swallowed; its early crash must not
+# be indistinguishable from no output. (Same 09:51 abort: print buffering kept
+# even the header from reaching tee.)
+"$PY" -u tools/gen_corpus.py --out "$OUT" \
   2>&1 | tee testbed/logs/corpus-$(date +%Y%m%d-%H%M%S).log
 echo "[corpus] offline evaluation (thresholds were fixed before this data existed)"
 "$PY" tools/eval_corpus.py
