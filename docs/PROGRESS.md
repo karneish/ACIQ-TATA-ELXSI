@@ -250,11 +250,22 @@ intent, dashboard — evidence committed up to `5eec2ef`). This session:
   GAP from counts.json verbatim.
 - commits `164372b` (fix 11), `24cb91a` (fix 12), fix 13 (report/docs
   evidence). Suite 1382+OK (skipped=10), audit 0 broken, secret-scan clean.
+- the first prelude+rerun (09:51) half-worked and exposed two deeper
+  defects, both closed with tests: the aborted intent step RECORDED its
+  dead run and returned 0 (pipeline marched on silently, then corpus died
+  on set -e with only `0` in the corpus log — the driver's print
+  buffering discarded the traceback). Now: failed runs exit 1, their
+  incomplete run dir is removed, the report is not written over nothing
+  (`tests/test_driver_exit.py`); corpus setup is logged and the collector
+  runs unbuffered. Suite 1398 OK.
 
 PENDING (privileged, one command): the Owner prelude restores the two
-clobbered run dirs from git (root-owned files; see docs/FIX_REPORT.md)
-clears four resume markers, then re-runs `./testbed/run_all_live.sh`
-(~50 min). After: `ip netns list` empty; commit the regenerated evidence.
+clobbered run dirs from git, removes the poisoned intent dir + clobbered
+REPORT.md, clears the stale resume markers (incl. setup/reset — the
+netns are DOWN regardless of yesterday's markers), then re-runs
+`./testbed/run_all_live.sh` (~55 min). After: `ip netns list` empty;
+`run_experiments.py --report-only` rebuilds data/REPORT.md; commit the
+regenerated evidence (docs/FIX_REPORT.md carries the exact block).
 
 ## 2026-10-23 FIX ROUND (T1–T10) — prior session record
 Commits `38233a1`→`7cd5cb3` per task. See docs/FIX_REPORT.md for the

@@ -65,6 +65,29 @@ the tail of `data/live_status/corpus.log` and
 `data/experiments/classifier_corpus/eval.json` head, and commit the
 evidence.
 
+## Live rerun attempt log (2026-10-24, 09:51) — and its closure
+
+The prelude ran, the rerun ran, and it half-failed in a way that exposed
+two deeper defects. Both are now closed with offline tests:
+
+1. The intent step had `--no-setup` while the pipeline (on resume) skips
+   its own setup step — the testbed's namespaces were already DOWN, so
+   the run aborted instantly at `apply_system` with "Cannot open network
+   namespace router". WORSE: the driver recorded the dead run (config +
+   result only) and returned **0**, so the pipeline treated the step as
+   finished and marched on. Fix (`6412fc3`): the intent step builds the
+   testbed itself and keeps its report inside its own results dir.
+2. The driver then started corpus, which died within seconds and left
+   ONLY `0` in the corpus log: `id -u` had leaked its stdout into the
+   log, and Python's print buffering (the `2>&1 | tee` pipe) discarded
+   the actual traceback silently. Fix (`94267e8`): failed runs now exit
+   1 and REMOVE their incomplete run dir (pinned by
+   `tests/test_driver_exit.py`), the corpus step logs setup and runs the
+   collector unbuffered, and `id -u` no longer prints to stdout.
+3. The driver was also made tolerant of a root-or-no-sudo split
+   (`_safe_sudo` in `run_experiments.py`) so its offline dry-run works
+   in environments without a sudo binary.
+
 ## Known-not-fixed (honest)
 
 - S3 `aciq` seed-42 run dir has no result.json/samples.jsonl (root-owned;
