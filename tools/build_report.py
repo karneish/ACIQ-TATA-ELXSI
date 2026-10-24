@@ -228,8 +228,25 @@ def applied_capacity_series(run: dict) -> list[tuple[float, float]]:
     """
     out = []
     for s in run["samples"]:
-        cap, t = s.get("capacity_mbps"), s.get("t")
-        if cap is None or t is None:
+        t = s.get("t")
+        if t is None:
+            continue
+        cap = None
+        g = s.get("governor") or {}
+        if isinstance(g, dict):
+            for k in ("rate", "ceiling_mbps"):
+                v = g.get(k)
+                if v is not None:
+                    try:
+                        cap = float(v)
+                        break
+                    except Exception:
+                        pass
+        if cap is None:
+            cap = s.get("applied_capacity_mbps") or s.get("applied_rate_mbps")
+        if cap is None:
+            cap = s.get("capacity_mbps")
+        if cap is None:
             continue
         if float(cap) <= 0.0:          # ticks before the first successful apply
             continue
@@ -296,7 +313,7 @@ def post_drop_bulk_mbps(run: dict) -> float | None:
 
 def bind_time(run: dict, tol: float = BIND_TOLERANCE) -> float | None:
     """Seconds from the drop to the first tick the APPLIED tree has been set
-    at/below 1.05x the post-drop capacity.
+    at/below tol * post-drop capacity.
 
     replaces the old 1.25x `adaptation_time`: boundaries that loose counted
     a tree at 26 Mbps as "adapted" on a 21.8 Mbps link. Baselines have no
@@ -525,14 +542,17 @@ def build_report(runs_root: Path, out_md: Path,
     add("## ACIQ adaptation and capacity accuracy (from the same runs above)")
     add("")
     add(row_md(["scenario", "n", "bind: drop -> first applied "
-                               "<=1.05x post-drop (s)", "final estimate",
+                               "<=1.05x post-drop (s)",
+                "bind: drop -> first applied <=1.25x post-drop (s)",
+                "final estimate",
                 "configured end link", "estimate error %"]))
-    add(row_md(["---"] * 6))
+    add(row_md(["---"] * 7))
     for sc in scen:
         grp = per_arm(sc, "aciq", runs)
         if not grp:
             continue
-        ads = [bind_time(r) for r in grp]
+        ads = [bind_time(r, tol=1.05) for r in grp]
+        ads25 = [bind_time(r, tol=1.25) for r in grp]
         ests, links, errs = [], [], []
         for r in grp:
             res = r["res"] or {}
@@ -542,6 +562,7 @@ def build_report(runs_root: Path, out_md: Path,
                 links.append(float(end))
                 errs.append(abs(float(end) - float(est)) / float(end) * 100)
         adds = [float(a) for a in ads if a is not None]
+        adds25 = [float(a) for a in ads25 if a is not None]
         if adds:
             mean_ads = f"{statistics.mean(adds):.2f} (n={len(adds)})"
         elif len(grp) and all(r["cfg"].get("mode") == "static" for r in grp):
@@ -551,6 +572,15 @@ def build_report(runs_root: Path, out_md: Path,
                         "1.05x post-drop link in any seed")
         else:
             mean_ads = NOT_AVAILABLE
+        if adds25:
+            mean_ads25 = f"{statistics.mean(adds25):.2f} (n={len(adds25)})"
+        elif len(grp) and all(r["cfg"].get("mode") == "static" for r in grp):
+            mean_ads25 = NOT_AVAILABLE + " (static/baseline)"
+        elif grp:
+            mean_ads25 = ("no post-drop applied tree at/below "
+                          "1.25x post-drop link in any seed")
+        else:
+            mean_ads25 = NOT_AVAILABLE
         if ests:
             acc = "; ".join(
                 f"{e:.2f}/{l:.1f} ({er:.1f}% off)" for e, l, er in
@@ -559,7 +589,7 @@ def build_report(runs_root: Path, out_md: Path,
                    f"(seed0: {acc.split('; ')[0]})")
         else:
             acc = NOT_AVAILABLE + " (no result.json)"
-        add(row_md([sc, str(len(grp)), mean_ads,
+        add(row_md([sc, str(len(grp)), mean_ads, mean_ads25,
                     fmt(ests) if ests else NOT_AVAILABLE,
                     fmt(links, 1) if links else NOT_AVAILABLE, acc]))
 
