@@ -439,12 +439,27 @@ def build_report(runs_root: Path, out_md: Path,
         add(f"Skipped {len(skipped)} incomplete-only directory names: "
             + ", ".join(f"`{s}`" for s in skipped))
         add("")
-    for s in skipped:
-        add(f"- skipped dir: {s}")
     if skipped:
+        from collections import Counter
+        reasons = Counter()
+        for sx in skipped:
+            if "outside tracked seed families" in sx or "outside matrix seed family" in sx:
+                reasons["outside tracked seed families"] += 1
+            elif "special-condition" in sx:
+                reasons["special-condition run"] += 1
+            elif "missing config" in sx or "missing workloads" in sx:
+                reasons["missing required files"] += 1
+            elif "bad seed" in sx:
+                reasons["bad seed"] += 1
+            else:
+                reasons["other"] += 1
+        add("**Skipped directories (summary):**")
+        for k,v in sorted(reasons.items()):
+            add(f"- {k}: {v}")
+        add(f"- total skipped: {len(skipped)}")
         add("")
 
-    # ---- scenario x arm table -------------------------------------------
+    # ---- scenario x arm table (POST-FIX primary) -------------------------------------------
     add("## Delay and throughput, every scenario x arm (mean +/- 95% CI over "
         "seeds; t(9)=2.262 for n=10)")
     add("")
