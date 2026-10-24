@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # testbed/run_live_fix.sh — ONE batched script for the NEW MISSION live work
-# (T4–T8). Resume via data/live_status_fix/*.done markers. For the user to
+# (T4–T8). Resume via data/live_status_fix//*.done markers. For the user to
 # run with sudo. Agent sandbox has no sudo/tc/netns.
 #
 # Usage:
@@ -10,7 +10,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 VENV="${ACIQ_VENV:-/home/mekarz/aciq-venv}"
 PY="$VENV/bin/python"; [ -x "$PY" ] || PY=python3
-STATUS_DIR="data/live_status_fix"; mkdir -p "$STATUS_DIR" testbed/logs
+STATUS_DIR="data/live_status_fix/"; mkdir -p "$STATUS_DIR" testbed/logs
 T0=$(date +%s)
 KNOWN_MIN_TOTAL=180
 

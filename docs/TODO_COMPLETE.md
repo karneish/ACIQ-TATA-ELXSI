@@ -39,7 +39,7 @@ Last updated: after fix 18 (72527c5), full suite 1442 OK (skipped=10), make lint
 - [ ] Execute testbed/run_live_fix.sh (or equivalent) to add S1–S4 all four arms with seeds 200–209
 - [ ] Verify ACIQ binds post-drop: bind_time ≤ 1.05× post-drop on new runs
 - [ ] Compare S1 call p95 vs CAKE-static, S2/S4 post-drop vs CAKE-oracle (report honestly)
-- [ ] Regenerate data/experiments/RESULTS.md/html + update FIX_REPORT
+- [ ] Regenerate `data/experiments/RESULTS.md` + update FIX_REPORT
 
 ### T5 — S6 intent scenario live
 - [ ] Run intent_starvation or equivalent with enforcement + lease (TTL expiry) via batched script
@@ -66,7 +66,7 @@ Last updated: after fix 18 (72527c5), full suite 1442 OK (skipped=10), make lint
 - [ ] Dashboard snapshot + no-external-URLs check (dashboard_evidence.sh)
 
 ### T9 — Final report + runbook
-- [ ] Regenerate RESULTS.md/html from all new runs
-- [ ] Update docs/FIX_REPORT.md with T4–T8 evidence (numbers, pass/fail, oracle caveat)
+- [ ] Regenerate `data/experiments/RESULTS.md` from all new runs
+- [ ] Update `docs/FIX_REPORT.md` with T4–T8 evidence (numbers, pass/fail, oracle caveat)
 - [ ] Add runbook / exact user command block (copy/paste) showing how to reproduce verified flow
 - [ ] Final git commit of live artefacts + report updates
