@@ -14,9 +14,8 @@ STATUS_DIR="data/live_status_fix/"; mkdir -p "$STATUS_DIR" testbed/logs
 T0=$(date +%s)
 KNOWN_MIN_TOTAL=180
 
-step() {  # id min cmd...
-  local id="$1"; shift 2
-  local estm="$1"; shift 1
+step() {  # id estm cmd...
+  local id="$1"; local estm="$2"; shift 2
   if [ -f "$STATUS_DIR/$id.done" ]; then
     echo "[skip] $id (done; delete $STATUS_DIR/$id.done to re-run)"
     return 2
@@ -30,7 +29,7 @@ step() {  # id min cmd...
   fi
   tail -40 "$log" | sed 's/^/    ! /'
   echo "STEP FAILED: $id — log: $log"
-  NOW=$(date +%s); echo "elapsed: $(( (NOW-T0)/60 ))m est: $KNOWN_MIN_TOTALm"
+  NOW=$(date +%s); echo "elapsed: $(( (NOW-T0)/60 ))m est: ${KNOWN_MIN_TOTAL}m"
   exit 1
 }
 
@@ -47,16 +46,14 @@ step setup 2 ./testbed/setup.sh
 SS="${SEED_START:-200}"; SN="${SEEDS:-10}"
 for sc in s1_iso_during_call s2_wan_drop s3_tv_and_gaming s4_capacity_recovery; do
   for arm in b0_fifo b1_cake95 b1_cake_oracle aciq; do
-    step "t4_${sc}__${arm}_seed${SS}_${SN}" 10 "$PY" run_experiments.py \
+    step "t4_${sc}__${arm}_seed${SS}_${SN}" 10 env PYTHONPATH=/home/mekarz/Desktop/Full-projects/TATA-ELXSI "$PY" run_experiments.py \
       --scenario "$sc" --system "$arm" --seed "$SS" --seeds "$SN" --no-setup
   done
 done
 
 # T6: S3 realism change — rerun ALL FOUR ARMS for S3 with the new config
-# (if T6 changes scenario config/workloads; rerun for fair comparison). Do
-# explicitly even if already present so the post-change evidence is fresh.
 for arm in b0_fifo b1_cake95 b1_cake_oracle aciq; do
-  step "t6_s3_${arm}_rerun" 10 "$PY" run_experiments.py \
+  step "t6_s3_${arm}_rerun" 10 env PYTHONPATH=/home/mekarz/Desktop/Full-projects/TATA-ELXSI "$PY" run_experiments.py \
     --scenario s3_tv_and_gaming --system "$arm" --seed "$SS" --seeds "$SN" --no-setup
 done
 
