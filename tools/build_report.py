@@ -155,14 +155,10 @@ def load_runs(runs_root: Path) -> tuple[list[dict], list[str]]:
             continue
         runs.append({"dir": d.name, "cfg": cfg, "wl": wl,
                      "res": res, "samples": samples})
-    # Matrix cells must be one contiguous seed family per (scenario, arm).
-    # Off-by-run evidence runs (the dashboard's seed42 rerun, an s5 probe
-    # named after its scenario) otherwise join cells silently as member #11
-    # and move every mean and CI against the audit. The LARGEST contiguous
-    # seed family per scenario-arm is the matrix; any other seed is skipped
-    # by name so the exclusion is visible.
+    # Matrix cells must track families explicitly (PRE-FIX vs POST-FIX)
+    runs_all = runs
     fam: dict[tuple[str, str], list[tuple[int, dict]]] = {}
-    for r in runs:
+    for r in runs_all:
         try:
             seed = int(r["cfg"].get("seed", 0))
         except (TypeError, ValueError) as e:
@@ -170,33 +166,51 @@ def load_runs(runs_root: Path) -> tuple[list[dict], list[str]]:
             continue
         fam.setdefault((r["cfg"].get("scenario", "?"), r["cfg"].get("system", "?")),
                        []).append((seed, r))
-    runs, dropped = [], []
+    runs_by_family: dict[tuple[str, str, str], list[dict]] = {}
+    dropped = []
     for (sc, sysname), members in sorted(fam.items()):
-        seeds = sorted(s for s, _ in members)
-        # Prefer the POST-FIX family if present (200-209). Otherwise fall
-        # back to the largest contiguous family (legacy).
-        post = [s for s in seeds if 200 <= s <= 209]
-        if post:
-            post_set = set(post)
-            best = sorted(post_set)
-        else:
-            best = cur = [seeds[0]] if seeds else []
-            for s in seeds[1:]:
-                if cur and s == cur[-1] + 1:
-                    cur.append(s)
-                else:
-                    cur = [s]
-                if len(cur) > len(best):
-                    best = cur
-            best = sorted(set(best))
-        keep = set(best)
+        seeds_all = sorted(s for s, _ in members)
+        post_seeds = sorted([s for s in seeds_all if 200 <= s <= 209])
+        pre_seeds = sorted([s for s in seeds_all if (0 <= s <= 9) or (42 <= s <= 51)])
+        for famname, fseeds in [("POST-FIX", post_seeds), ("PRE-FIX", pre_seeds)]:
+            if not fseeds:
+                continue
+            fset = set(fseeds)
+            kept = []
+            for s, r in members:
+                if s in fset:
+                    kept.append(r)
+            if kept:
+                runs_by_family[(sc, sysname, famname)] = kept
+        keep_any = set(post_seeds) | set(pre_seeds)
         for s, r in members:
-            if s in keep:
-                runs.append(r)
-            else:
-                dropped.append(f"{r['dir']} (outside matrix seed family: "
-                               f"cell uses seeds {min(keep)}..{max(keep)})")
+            if s not in keep_any:
+                dropped.append(f"{r['dir']} (outside tracked seed families: "
+                               f"not in POST-FIX 200-209 or PRE-FIX 0-9/42-51)")
     skipped.extend(sorted(dropped))
+    # Prefer POST-FIX as primary
+    runs = []
+    for k in runs_by_family:
+        if k[2] == "POST-FIX":
+            runs.extend(runs_by_family[k])
+    if not runs:
+        for k in runs_by_family:
+            if k[2] == "PRE-FIX":
+                runs.extend(runs_by_family[k])
+    if not runs:
+        runs = runs_all
+    # attach family info
+    for r in runs:
+        try:
+            s = int(r["cfg"].get("seed", 0))
+            if 200 <= s <= 209:
+                r["_seed_family"] = "POST-FIX"
+            elif 0 <= s <= 9 or 42 <= s <= 51:
+                r["_seed_family"] = "PRE-FIX"
+            else:
+                r["_seed_family"] = "OTHER"
+        except Exception:
+            r["_seed_family"] = "UNKNOWN"
     return runs, skipped
 
 
