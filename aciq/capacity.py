@@ -445,9 +445,36 @@ class CapacityEstimator:
             new = self._ewma + alpha * (target - self._ewma)
 
         # Hysteresis: below the band, do not move at all.
-        if self._ewma > 0.0 and abs(new - self._ewma) < HYSTERESIS * self._ewma:
-            self._confidence = min(1.0, self._confidence + 0.1)
-            return self._emit(mbps=self._ewma, saturated=True, changed=False, m=m)
+        #
+        # The comparison is the GAP TO THE TARGET, not the gap of the
+        # EWMA-mixed candidate. The old form (`abs(new - self._ewma)`) blocked
+        # any fall whose gap was smaller than HYSTERESIS / ALPHA_DOWN =
+        # 0.10 / 0.6 ~= 16.7%, forever: measured in the fix 17 diagnosis,
+        # estimates of 23.8 Mbps against delivered readings of 19.5-20.9 Mbps
+        # (a true 20 Mbps link) never moved again, and the estimate error sat
+        # at +19% for the rest of every s2/s4 run. With the gap itself as
+        # the test, a fall of 10-16.7% still smooths through ALPHA_DOWN on
+        # the next change; smaller falls are still noise and still blocked.
+        # Ascents keep the original candidate-based test: rising is the
+        # direction a mistake costs immediate latency, and the release path's
+        # own equally-original checks do not move.
+        if self._ewma > 0.0:
+            gap = self._ewma - target          # positive when falling
+            if gap > 0.0:
+                # A fall: judge the raw gap to the target. A step
+                # (FAST_DROP_RATIO) is real by construction and passes.
+                if gap >= HYSTERESIS * self._ewma:
+                    _move = True
+                elif target <= self._ewma * FAST_DROP_RATIO:
+                    _move = True
+                else:
+                    _move = False
+            else:
+                _move = abs(new - self._ewma) >= HYSTERESIS * self._ewma
+            if not _move:
+                self._confidence = min(1.0, self._confidence + 0.1)
+                return self._emit(mbps=self._ewma, saturated=True,
+                                  changed=False, m=m)
 
         # Dwell: not inside MIN_DWELL_S of the last reported change.
         if (

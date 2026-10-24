@@ -57,7 +57,8 @@ from .classify import FlowFeatures
 from .corrections import CorrectionStore
 from .metrics import ClassCounters, MetricsCollector
 from .model import Lease, RatePlan, TrafficClass
-from .policy import build_plan
+from .ratecap import GovernorDecision, RateGovernor
+from .policy import build_plan, floor_total_mbps
 from .shield import Shield
 from .verifier import bound_rate_change
 from .controller import Controller
@@ -223,6 +224,10 @@ class RunResult:
     #: distribution. Populated from the per-tick samples at end of run; None
     #: means the run recorded no ticks (dry runs), never "no overhead".
     resources: dict | None = None
+    #: M2.5 rate governor evidence: the config the run used and the full
+    #: per-tick decision log. None for runs that never reached adapt_step,
+    #: never "a governor with no decisions".
+    governor: dict | None = None
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2)
@@ -434,6 +439,11 @@ class Harness:
         #: The last Measurement handed to the estimator, kept so per-sample
         #: evidence can record what the estimator actually saw.
         self.last_measurement = None
+        #: M2.5 rate governor (aciq.ratecap): belief-as-ceiling + delay
+        #: ratchet. Its decision log goes into the run artefact.
+        self._governor = RateGovernor()
+        #: The governor's most recent decision, recorded per sample.
+        self.last_governor: GovernorDecision | None = None
         #: Every policy application this run attempted, with the rate the
         #: kernel was asked for, whether it committed, and what was read back.
         self.policy_change_log: list[dict] = []
@@ -974,8 +984,6 @@ class Harness:
             # estimator reads, so a verdict compares like with like
             self._controller.on_measurement(measurement, now)
         cap = self._estimator.observe(measurement)
-        if not cap.changed:
-            return None, False
 
         # THE LAW, from aciq.verifier: nothing reaches the tree until the
         # dwell and step bounds clear it. Standing behaviour when a bound
@@ -984,7 +992,31 @@ class Harness:
         # dwell/step permit an application.
         prev_rate = (self._current_plan.capacity_mbps
                      if self._current_plan is not None else None)
-        bound = bound_rate_change(prev_rate, cap.mbps, now,
+
+        # M2.5 -- the rate governor. The estimator's belief is a ceiling, not
+        # an application: the applied rate may not exceed cap_fraction x
+        # belief, and sustained bottleneck delay ratchets the tree down even
+        # when the estimate has stopped moving. See aciq.ratecap for the
+        # measured defect this closes (applied=belief left the tree above the
+        # link, and the out-of-band bottleneck's queue carried call packets
+        # for 240 ms).
+        gov = self._governor.observe(
+            belief=cap.mbps,
+            applied=prev_rate,
+            delivered=gbps,
+            backlog_bytes=measurement.bottleneck_backlog_bytes,
+            offered=offered,
+            now=now,
+            min_rate=self._governor_floor(cap.mbps))
+        self.last_governor = gov
+        want = gov.rate
+        if want is None:
+            return None, False
+        if not cap.changed and prev_rate is not None \
+                and want == prev_rate:
+            return None, False
+
+        bound = bound_rate_change(prev_rate, want, now,
                                   self._last_policy_change_t,
                                   drop_rate_per_s=measurement.drop_rate_per_s)
         if not bound:
@@ -1005,7 +1037,9 @@ class Harness:
         # The estimator's record stays untouched: `cap` is what was estimated,
         # `applied` is what the law permitted. Every log entry below records
         # BOTH, so a clamped step appears as clamped in the evidence.
-
+        # The governor's decision rides along in the change log: a rate the
+        # tree carries is only explainable through the ceiling and the delay
+        # ratchet that produced it.
         self.txn.remember_capacity(applied)
         # same timeline as the estimator, or the dwell window is measured wrong
         txr = self.txn.apply(plan, now=now)
@@ -1021,6 +1055,13 @@ class Harness:
             "t": round(now, 2),
             "intended_capacity_mbps": round(cap.mbps, 3),
             "intended_parent_rate_mbps": round(plan.capacity_mbps, 3),
+            "governor": {"rate": round(want, 3), "reason": gov.reason,
+                         "ceiling_mbps": (round(gov.ceiling_mbps, 3)
+                                          if gov.ceiling_mbps is not None
+                                          else None),
+                         "delay_ema_ms": (round(gov.delay_ema_ms, 2)
+                                          if gov.delay_ema_ms is not None
+                                          else None)},
             "law_bound_reason": bound.reason,
             "committed": bool(txr.committed),
             "ok": bool(txr.ok),
@@ -1097,6 +1138,10 @@ class Harness:
         self._estimator = CapacityEstimator()
         self._prev_counters = None
         self._prev_link = None
+        # The governor is rebuilt with the estimator: a fresh run must not
+        # inherit the previous run's delay EMA or clear streak.
+        self._governor = RateGovernor()
+        self.last_governor: GovernorDecision | None = None
         # Leaked across runs before: `_prev_delivered_bytes` kept run 1's
         # counter, so run 2's first bottleneck reading was a delta measured
         # against a number from a different experiment (or silently became
@@ -1107,6 +1152,17 @@ class Harness:
             del self._prev_delivered_bytes
         self.policy_change_log = []
         self.policy_changes = 0
+
+    def _governor_floor(self, capacity_mbps: float | None) -> float | None:
+        """The smallest legal parent rate: every class's floor, summed.
+
+        Feds the governor so it never proposes a rate the policy would have
+        to violate its own guarantees to carry. None (the belief itself was
+        None) means the governor has nothing to reason about.
+        """
+        if capacity_mbps is None or capacity_mbps <= 0.0:
+            return None
+        return floor_total_mbps(capacity_mbps, self._lease)
 
     def reset_for_run(self) -> None:
         """Full per-run reset.

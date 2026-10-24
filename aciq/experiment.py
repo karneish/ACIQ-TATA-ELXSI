@@ -25,7 +25,7 @@ import signal
 import subprocess
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from .bridge import count_flow_filters_text, enumerate_flow_filters
@@ -755,6 +755,22 @@ class ExperimentRunner:
                 # stated metric with nothing measuring it.
                 "max_rss_bytes": frame.max_rss_bytes,
                 "capacity_mbps": self.harness._estimator.current.mbps,
+                # The rate governor's (M2.5) decision this tick. Recorded so
+                # a tree rate in samples.jsonl is explainable through its
+                # ceiling and delay evidence, not just through the
+                # estimator's number -- applied==belief was exactly the
+                # defect fix 17 closes.
+                "governor": (lambda g: None if g is None else {
+                    "rate": round(g.rate, 3),
+                    "reason": g.reason,
+                    "ceiling_mbps": (round(g.ceiling_mbps, 3)
+                                     if g.ceiling_mbps is not None else None),
+                    "delay_ms": (round(g.delay_ms, 2)
+                                 if g.delay_ms is not None else None),
+                    "delay_ema_ms": (round(g.delay_ema_ms, 2)
+                                     if g.delay_ema_ms is not None else None),
+                    "changed": g.changed,
+                })(getattr(self.harness, "last_governor", None)),
                 # The result of the most recent transactional policy apply, as
                 # the transaction itself reported it. Recorded so the dashboard
                 # can show "last verified kernel state" and "policy failures /
@@ -902,6 +918,13 @@ class ExperimentRunner:
             estimator_mbps=round(est, 2) if est else None,
             resources=resources_of(samples,
                                    getattr(self.harness, "decision_latency", lambda: None)()),
+            # The governor's own evidence: its constants and every decision
+            # it made. A tree rate in this artefact is explainable without
+            # re-running anything.
+            governor=(lambda g: None if g is None else {
+                "config": asdict(g.cfg),
+                "decisions": g.log,
+            })(getattr(self.harness, "_governor", None)),
             # The WHOLE series, not the tail.
             #
             # This truncated to the last 3 samples, which discarded the entire

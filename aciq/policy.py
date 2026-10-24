@@ -57,6 +57,18 @@ def floor_mbps(capacity_mbps: float) -> float:
     return max(FLOOR_ABS_MBPS, FLOOR_FRACTION * capacity_mbps)
 
 
+def floor_total_mbps(capacity_mbps: float, lease: Lease | None = None) -> float:
+    """The sum of every class's floor: the smallest legal parent rate.
+
+    The rate governor uses this as its floor so it can never propose a parent
+    rate below the one the policy would have to violate to carry. Same input
+    classes as build_plan, same weights, same degradation semantics: this
+    merely exposes the number before a plan is needed.
+    """
+    n = len(effective_weights(lease))
+    return floor_mbps(capacity_mbps) * n
+
+
 def effective_weights(lease: Lease | None) -> dict[TrafficClass, float]:
     """Base weights, plus a bounded contribution from an active lease.
 

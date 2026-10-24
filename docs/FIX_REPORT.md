@@ -113,3 +113,31 @@ two deeper defects. Both are now closed with offline tests:
 - EMULATION framing: all numbers come from a three-namespace netem model;
   nothing here is a deployment measurement (`data/experiments/RESULTS.md`
   says this in the EMULATION section it prints on every run).
+
+## Headline-failure round (2026-10-24, fix 17) — ACIQ's applied rate never bound
+
+`docs/evidence/fix/diagnosis.md` (commit `ba7636a`) traced the headline
+failure (ACIQ s1 call p95 238.89 ms ~ B0's 250.71 vs CAKE-static 1.55,
+estimates of 23.8 stuck on a 20 Mbps link) to applied==estimator-belief in
+`Harness._adapt_step_inner`, plus a hysteresis test that froze every fall
+whose gap was under 0.10/0.6 ~= 16.7% forever. fix 17 closes it:
+
+- `aciq/ratecap.py` (`RateGovernor`): the applied rate is capped at
+  `cap_fraction x belief` (0.90 default, configurable 0.50-1.0, chosen
+  because the s2/s4 residual estimate error is +9% and 0.90 x 1.09 < 1);
+  bottleneck delay (backlog / delivered) above 20 ms ratchets the applied
+  rate down 10% per decision even when the estimate is static; after 10 s
+  of contiguous clear delay and offered demand > 1.05x applied it probes
+  up 2% per decision, always inside the ceiling; at most 6 generated
+  changes per rolling minute; every decision logs a reason into
+  result.json (`governor.config` + `governor.decisions`) and per-sample
+  (`samples.jsonl:governor`). The law is untouched: the governor proposes,
+  `bound_rate_change` still disposes (dwell, step, floor, emergency,
+  rollback/stand-down intact).
+- `aciq/capacity.py`: the hysteresis band is measured against the TARGET
+  gap on falls (a 10-16.7% fall now smooths instead of parking the
+  estimate at +19% forever); ascents unchanged.
+- 19 new tests (`tests/test_rate_governor.py`); suite 1418 OK
+  (skipped=10 live-kernel by design). No thresholds were tuned on
+  held-out live data; the cap fraction and thresholds are constants
+  documented against the diagnosis's measured numbers.
