@@ -475,8 +475,19 @@ def summary_tiles(rows: Sequence[dict]) -> list[tuple[str, str, str]]:
 def detect_events(rows: Sequence[dict], configured: Sequence[dict] = ()) -> list[dict]:
     """Marks worth drawing. Configured events are honoured first; the drop is
     then inferred from where the link rate first falls, so a run that was
-    launched without --drop-at still shows what happened."""
-    events = [dict(e) for e in configured]
+    launched without --drop-at still shows what happened. Untimed entries
+    (e.g. run notes, which are prose rather than marks) are skipped here --
+    the axis can only place a mark where it has a time."""
+    cfg = []
+    for e in configured:
+        if not isinstance(e, dict):
+            continue
+        try:
+            t = float(e.get("t"))
+        except (TypeError, ValueError):
+            continue
+        cfg.append({"t": t, "label": str(e.get("label", ""))})
+    events = list(cfg)
     have = {round(float(e["t"]), 1) for e in events}
 
     # Infer the drop: the first sample after which throughput never returns to
