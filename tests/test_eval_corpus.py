@@ -125,5 +125,54 @@ class TestScoring(unittest.TestCase):
                          + res["strict"]["confident_or_wrong"], 2)
 
 
+class TestPerClassTable(unittest.TestCase):
+    """T6 wording: per-class precision/recall/F1/support, support honest.
+
+    A class that never lands in the held-out half must still APPEAR in its
+    table with support 0 — it may not be silently averaged out, and its
+    absence may not read as a perfect score.
+    """
+
+    def _run_eval(self, corpus: Path):
+        res = ec.evaluate(corpus)
+        out = Path("/tmp/opencode/eval_out2.json")
+        ec.write_eval(out, res)
+        return res, json.loads(out.read_text())
+
+    def test_absent_class_shows_support_zero_and_null_metrics(self):
+        corpus = Path("/tmp/opencode/corpus_absent.jsonl")
+        # two labels ONLY; cloud_backup never sampled
+        _mk_corpus(corpus, [4100, 4101, 4102, 4103],
+                   ["bulk_download"] * 2 + ["video_call_voice"] * 2)
+        res, _ = self._run_eval(corpus)
+        per = res["confusion_heldout"]["per_class"]
+        self.assertIn("cloud_backup", per.keys())
+        m = per["cloud_backup"]
+        self.assertEqual(m["support"], 0)
+        self.assertIsNone(m["recall"])
+        self.assertIsNone(m["f1"])
+
+    def test_support_field_equals_tp_plus_fn(self):
+        corpus = Path("/tmp/opencode/corpus_support.jsonl")
+        _mk_corpus(corpus, list(range(4200, 4210)),
+                   ["bulk_download"] * 5 + ["video_call_voice"] * 5)
+        res, _ = self._run_eval(corpus)
+        for cls, m in res["confusion_full"]["per_class"].items():
+            self.assertEqual(m["support"], m["tp"] + m["fn"])
+
+    def test_case_counts_count_ambiguous_rows_separately(self):
+        corpus = Path("/tmp/opencode/corpus_ambig.jsonl")
+        rows = [_rec("bulk_download", 4300 + i) for i in range(4)]
+        rows[0]["case"] = "ambiguous"
+        rows[1]["case"] = "ambiguous"
+        corpus.write_text("".join(json.dumps(r) + "\n" for r in rows))
+        res, _ = self._run_eval(corpus)
+        self.assertEqual(res["case_counts"]["ambiguous"], 2)
+        self.assertEqual(res["case_counts"]["canonical"], 2)
+        # ambiguous rows are scored like any other row of their label —
+        # never filtered out of either accuracy table
+        self.assertEqual(res["strict"]["n"], 4)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -34,6 +34,7 @@ from aciq.classify import classify  # noqa: E402
 from aciq.features import Flow, FlowFeatures  # noqa: E402
 from aciq.classify import TrustStore  # noqa: E402
 from aciq.model import TrafficClass  # noqa: E402
+import tools.gen_corpus as g  # noqa: E402
 
 #: The rule base is defined by exactly this file and its constants. Written
 #: into eval.json so the report can name the frozen rule set, not 'rules'.
@@ -100,14 +101,18 @@ def evaluate(corpus_path: Path, seed: int = 7) -> dict:
                 f"(fixed={len(fixed)}, heldout={len(heldout)}; "
                 f"need >=1 record in BOTH; collected {len(rows)} flows)"}
 
+    corpus_classes = sorted({r["label"] for r in rows})
     out: dict = {
         "n_corpus": len(rows), "n_fixed": len(fixed),
         "n_heldout": len(heldout), "paths_fixed": FIXED_SOURCES,
+        "corpus_classes": corpus_classes,
+        "case_counts": {
+            "canonical": sum(1 for r in rows if r.get("case") != "ambiguous"),
+            "ambiguous": sum(1 for r in rows if r.get("case") == "ambiguous"),
+        },
         "capacity_note":
             "capacity_mbps travels with each record; bulk is relative to it",
     }
-    for name, part in (("strict", "abstain_is_error"),):
-        pass
     out["strict"] = _score(fixed + heldout, abstention=False)
     out["strict_fixed"] = _score(fixed, abstention=False)
     out["strict_heldout"] = _score(heldout, abstention=False)
@@ -115,9 +120,15 @@ def evaluate(corpus_path: Path, seed: int = 7) -> dict:
     out["accept_abstain_fixed"] = _score(fixed, abstention=True)
     out["accept_abstain_heldout"] = _score(heldout, abstention=True)
     conf = {}
+    # the class universe is the committed collection plan: labels the plan
+    # declares must appear in every per-class table even with support 0
+    plan_labels = sorted({**g.CORPUS_PLAN, **g.AMBIGUOUS_PLAN})
     for target_name, part in (("confusion_full", fixed + heldout),
                               ("confusion_heldout", heldout)):
-        conf[target_name] = _confusion(part)
+        # every corpus class present in the per-class table, support 0
+        # included — an absent class must be visible, not silently averaged
+        # out of honesty.
+        conf[target_name] = _confusion(part, plan_labels)
     out.update(conf)
     return out
 
@@ -160,10 +171,12 @@ def _score(records: list[dict], abstention: bool) -> dict:
     }
 
 
-def _confusion(records: list[dict]) -> dict:
+def _confusion(records: list[dict], all_classes: list[str] | None = None) -> dict:
     rows = _rows(records)
     classes = sorted({r["label"] for r in rows} |
                      {r["got"] for r in rows if r["got"]})
+    if all_classes:
+        classes = sorted(set(classes) | set(all_classes))
     conf = {t: {p: 0 for p in classes if p != t} | {t: 0}
             | {ABSTAIN: 0} for t in classes}
     for r in rows:
@@ -179,6 +192,8 @@ def _confusion(records: list[dict]) -> dict:
             rec = tp / (tp + fn)
             f1 = None
         else:
+            # support 0: the class never appears — reported as absent, NOT
+            # as a perfect score, so an unseen class cannot inflate the mean.
             rec = None
             f1 = None
         if tp + fp:
@@ -189,6 +204,7 @@ def _confusion(records: list[dict]) -> dict:
         if rec is not None and prec is not None and rec + prec:
             f1 = 2 * rec * prec / (rec + prec)
         per[t] = {"tp": tp, "fp": fp, "fn": fn,
+                  "support": tp + fn,
                   "precision": prec, "recall": rec, "f1": f1}
     return {"classes": classes, "matrix": conf, "per_class": per}
 
@@ -210,11 +226,27 @@ def main() -> int:
     if "fatal" in result:
         print(f"eval NOT ABLE to run: {result['fatal']}")
         print(f"(reason recorded in {a.out})")
-    else:
-        strict = result["strict_heldout"]
-        print(f"held-out strict acc: "
-              f"{strict['accuracy_strict']:.3f} over n={strict['n']}")
-        print(f"eval.json -> {a.out}")
+        return 0
+    strict = result["strict_heldout"]
+    print(f"held-out strict acc: "
+          f"{strict['accuracy_strict']:.3f} over n={strict['n']}")
+    ab = result["accept_abstain_heldout"]
+    print(f"held-out accept-abstain acc: "
+          f"{ab['accuracy_excl_abstain']} "
+          f"(abstained {ab['abstained']}/{ab['n']})")
+    bad: list[str] = []
+    for cls, m in result["confusion_heldout"]["per_class"].items():
+        if m["support"]:
+            shown = (f"{m['f1']:.3f}" if m["f1"] is not None else "abstained")
+            print(f"  {cls}: n={m['support']} f1={shown}")
+            if m["f1"] is None or m["f1"] < 0.5:
+                bad.append(cls)
+        else:
+            print(f"  {cls}: support 0 (not sampled held-out)")
+    if bad:
+        print("WEAK CLASSES (f1 < 0.5 or never correct) — reported as measured:",
+              ", ".join(bad))
+    print("eval.json ->", a.out)
     return 0
 
 

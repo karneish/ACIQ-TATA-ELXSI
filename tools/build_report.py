@@ -32,6 +32,10 @@ from aciq.fairness import (flow_rates, jain, minimum_over_time,  # noqa: E402
 
 NOT_AVAILABLE = "NOT AVAILABLE"
 
+#: T6 acceptance: at least 30 flows per class; the corpus collector enforces
+#: the same floor, and the report declares it verbatim when not met.
+CORPUS_MIN_PER_CLASS = 30
+
 #: Student-t, two-sided 95%. For an n with no table row below the mean IS
 #: still reported and the CI cell says why; nothing widens silently.
 _T95 = {2: 12.706, 3: 4.303, 4: 3.182, 5: 2.776, 6: 2.571, 7: 2.447,
@@ -533,6 +537,33 @@ def build_report(runs_root: Path, out_md: Path,
                 add(f"- {key}: `{json.dumps(ev[key])}`")
         if "fatal" in ev and len(ev) == 1:
             add(f"- {NOT_AVAILABLE}: {ev['fatal']}")
+        # honesty floor: per-class counts from the collector, verbatim.
+        # A corpus below the per-class floor must be DECLARED in the report
+        # (the first live corpus was 9 flows and an n=1 held-out — the
+        # report has to say that, not bury it inside numbers).
+        counts_path = eval_json.with_name("counts.json")
+        if counts_path.exists():
+            try:
+                counts = json.loads(counts_path.read_text())
+                below = {lab: n
+                         for lab, n in counts.get("per_label", {}).items()
+                         if n < CORPUS_MIN_PER_CLASS}
+                if below:
+                    add(f"- SPEC GAP (per-class floor "
+                        f"{CORPUS_MIN_PER_CLASS} not met): "
+                        f"`{json.dumps(below, sort_keys=True)}` — the live "
+                        "corpus step must re-run; per-class metrics below "
+                        "carry the exact counts and are not extrapolated")
+                else:
+                    add(f"- per-class floor {CORPUS_MIN_PER_CLASS}: met "
+                        f"(counts: `{json.dumps(counts.get('per_label',
+                                                             {}))}`)")
+            except json.JSONDecodeError as e:
+                add(f"- counts.json unreadable: {e}")
+        if ev.get("n_heldout", 0) < CORPUS_MIN_PER_CLASS // 2:
+            add(f"- SPEC GAP (held-out half thin): n_heldout="
+                f"{ev.get('n_heldout')} < {CORPUS_MIN_PER_CLASS // 2} — "
+                "per-class CIs are not meaningful at this size")
         add("")
         add(f"Source: `{eval_json}` (written by the corpus evaluator, whose "
             "failure table is copied verbatim).")

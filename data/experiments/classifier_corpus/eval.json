@@ -1,6 +1,6 @@
 {
- "n_corpus": 7,
- "n_fixed": 6,
+ "n_corpus": 9,
+ "n_fixed": 8,
  "n_heldout": 1,
  "paths_fixed": [
   "aciq/classify.py",
@@ -8,143 +8,202 @@
  ],
  "capacity_note": "capacity_mbps travels with each record; bulk is relative to it",
  "strict": {
-  "n": 7,
-  "correct": 2,
+  "n": 9,
+  "correct": 5,
   "abstained": 0,
-  "confident_or_wrong": 5,
-  "accuracy_strict": 0.2857142857142857,
-  "accuracy_excl_abstain": 0.2857142857142857
+  "confident_or_wrong": 4,
+  "accuracy_strict": 0.5555555555555556,
+  "accuracy_excl_abstain": 0.5555555555555556
  },
  "strict_fixed": {
-  "n": 6,
-  "correct": 1,
+  "n": 8,
+  "correct": 5,
   "abstained": 0,
-  "confident_or_wrong": 5,
-  "accuracy_strict": 0.16666666666666666,
-  "accuracy_excl_abstain": 0.16666666666666666
+  "confident_or_wrong": 3,
+  "accuracy_strict": 0.625,
+  "accuracy_excl_abstain": 0.625
  },
  "strict_heldout": {
   "n": 1,
-  "correct": 1,
+  "correct": 0,
   "abstained": 0,
-  "confident_or_wrong": 0,
-  "accuracy_strict": 1.0,
-  "accuracy_excl_abstain": 1.0
+  "confident_or_wrong": 1,
+  "accuracy_strict": 0.0,
+  "accuracy_excl_abstain": 0.0
  },
  "accept_abstain": {
-  "n": 7,
-  "correct": 2,
+  "n": 9,
+  "correct": 5,
   "abstained": 0,
-  "confident_or_wrong": 5,
-  "accuracy_strict": 0.2857142857142857,
-  "accuracy_excl_abstain": 0.2857142857142857
+  "confident_or_wrong": 4,
+  "accuracy_strict": 0.5555555555555556,
+  "accuracy_excl_abstain": 0.5555555555555556
  },
  "accept_abstain_fixed": {
-  "n": 6,
-  "correct": 1,
+  "n": 8,
+  "correct": 5,
   "abstained": 0,
-  "confident_or_wrong": 5,
-  "accuracy_strict": 0.16666666666666666,
-  "accuracy_excl_abstain": 0.16666666666666666
+  "confident_or_wrong": 3,
+  "accuracy_strict": 0.625,
+  "accuracy_excl_abstain": 0.625
  },
  "accept_abstain_heldout": {
   "n": 1,
-  "correct": 1,
+  "correct": 0,
   "abstained": 0,
-  "confident_or_wrong": 0,
-  "accuracy_strict": 1.0,
-  "accuracy_excl_abstain": 1.0
+  "confident_or_wrong": 1,
+  "accuracy_strict": 0.0,
+  "accuracy_excl_abstain": 0.0
  },
  "confusion_full": {
   "classes": [
    "adaptive_video_streaming",
    "bulk_download",
    "cloud_backup",
-   "software_update"
+   "interactive_gaming",
+   "software_update",
+   "video_call_voice"
   ],
   "matrix": {
    "adaptive_video_streaming": {
     "bulk_download": 0,
     "cloud_backup": 0,
+    "interactive_gaming": 0,
     "software_update": 0,
+    "video_call_voice": 0,
     "adaptive_video_streaming": 1,
     "?abstain": 0
    },
    "bulk_download": {
     "adaptive_video_streaming": 0,
     "cloud_backup": 0,
+    "interactive_gaming": 0,
     "software_update": 0,
+    "video_call_voice": 0,
     "bulk_download": 1,
     "?abstain": 0
    },
    "cloud_backup": {
-    "adaptive_video_streaming": 0,
-    "bulk_download": 3,
+    "adaptive_video_streaming": 1,
+    "bulk_download": 1,
+    "interactive_gaming": 0,
     "software_update": 0,
+    "video_call_voice": 0,
+    "cloud_backup": 1,
+    "?abstain": 0
+   },
+   "interactive_gaming": {
+    "adaptive_video_streaming": 0,
+    "bulk_download": 0,
     "cloud_backup": 0,
+    "software_update": 0,
+    "video_call_voice": 1,
+    "interactive_gaming": 0,
     "?abstain": 0
    },
    "software_update": {
     "adaptive_video_streaming": 0,
-    "bulk_download": 2,
+    "bulk_download": 1,
     "cloud_backup": 0,
+    "interactive_gaming": 0,
+    "video_call_voice": 0,
+    "software_update": 1,
+    "?abstain": 0
+   },
+   "video_call_voice": {
+    "adaptive_video_streaming": 0,
+    "bulk_download": 0,
+    "cloud_backup": 0,
+    "interactive_gaming": 0,
     "software_update": 0,
+    "video_call_voice": 1,
     "?abstain": 0
    }
   },
   "per_class": {
    "adaptive_video_streaming": {
     "tp": 1,
-    "fp": 0,
+    "fp": 1,
     "fn": 0,
-    "precision": 1.0,
+    "precision": 0.5,
     "recall": 1.0,
-    "f1": 1.0
+    "f1": 0.6666666666666666
    },
    "bulk_download": {
     "tp": 1,
-    "fp": 5,
+    "fp": 2,
     "fn": 0,
-    "precision": 0.16666666666666666,
+    "precision": 0.3333333333333333,
     "recall": 1.0,
-    "f1": 0.2857142857142857
+    "f1": 0.5
    },
    "cloud_backup": {
+    "tp": 1,
+    "fp": 0,
+    "fn": 2,
+    "precision": 1.0,
+    "recall": 0.3333333333333333,
+    "f1": 0.5
+   },
+   "interactive_gaming": {
     "tp": 0,
     "fp": 0,
-    "fn": 3,
+    "fn": 1,
     "precision": null,
     "recall": 0.0,
     "f1": null
    },
    "software_update": {
-    "tp": 0,
+    "tp": 1,
     "fp": 0,
-    "fn": 2,
-    "precision": null,
-    "recall": 0.0,
-    "f1": null
+    "fn": 1,
+    "precision": 1.0,
+    "recall": 0.5,
+    "f1": 0.6666666666666666
+   },
+   "video_call_voice": {
+    "tp": 1,
+    "fp": 1,
+    "fn": 0,
+    "precision": 0.5,
+    "recall": 1.0,
+    "f1": 0.6666666666666666
    }
   }
  },
  "confusion_heldout": {
   "classes": [
-   "adaptive_video_streaming"
+   "interactive_gaming",
+   "video_call_voice"
   ],
   "matrix": {
-   "adaptive_video_streaming": {
-    "adaptive_video_streaming": 1,
+   "interactive_gaming": {
+    "video_call_voice": 1,
+    "interactive_gaming": 0,
+    "?abstain": 0
+   },
+   "video_call_voice": {
+    "interactive_gaming": 0,
+    "video_call_voice": 0,
     "?abstain": 0
    }
   },
   "per_class": {
-   "adaptive_video_streaming": {
-    "tp": 1,
+   "interactive_gaming": {
+    "tp": 0,
     "fp": 0,
+    "fn": 1,
+    "precision": null,
+    "recall": 0.0,
+    "f1": null
+   },
+   "video_call_voice": {
+    "tp": 0,
+    "fp": 1,
     "fn": 0,
-    "precision": 1.0,
-    "recall": 1.0,
-    "f1": 1.0
+    "precision": 0.0,
+    "recall": null,
+    "f1": null
    }
   }
  }

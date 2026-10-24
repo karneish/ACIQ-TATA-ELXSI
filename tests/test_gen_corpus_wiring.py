@@ -11,6 +11,7 @@ Pinned here:
 
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -63,12 +64,13 @@ class TestWiring(unittest.TestCase):
         self.launches.append(cmd)
         return _Proc(cmd)
 
-    def _collect(self, label, plan, tracker):
+    def _collect(self, label, plan, tracker, **kw):
         return g.collect_window(
             label, plan, g.NSEnv(),
             duration_s=0.2, poll_s=0.05,
             workloads_dir="testbed/workloads", capacity_mbps=100.0,
-            tracker=tracker, source=type("S", (), {"read": lambda self: ""})())
+            tracker=tracker, source=type("S", (), {"read": lambda self: ""})(),
+            **kw)
 
     def test_listener_and_sender_are_both_launched(self):
         rows = self._collect("video_call_voice", ("call.py", "call.py", 5001,
@@ -93,6 +95,112 @@ class TestWiring(unittest.TestCase):
         senders = [c for c in self.launches if "--dst" in c]
         self.assertIn("--rate-cap", senders[0])
         self.assertEqual(senders[0][senders[0].index("--rate-cap") + 1], "8")
+
+    def test_multi_flow_window_launches_one_pair_per_flow_on_distinct_ports(self):
+        """T6 volume: 30 flows per class requires one fly-by pair per flow.
+
+        The first live corpus shipped NINE rows total because one window ran
+        one flow. The collector must launch N listener/sender pairs and put
+        flow i on base_port+i so a stale conntrack entry from flow i can
+        never be re-read as flow i+1's data.
+        """
+        rows = self._collect(
+            "bulk_download", ("bulk.py", "bulk.py", 5004, [], False),
+            FlowTracker(), flows=3)
+        self.assertEqual(rows, [])
+        listeners = [c for c in self.launches if "--listen" in c]
+        senders = [c for c in self.launches if "--dst" in c]
+        self.assertEqual(len(listeners), 3)
+        self.assertEqual(len(senders), 3)
+        self.assertEqual({c[-1] for c in listeners}, {"5004", "5005", "5006"})
+        for i, s in enumerate(senders):
+            self.assertIn("--port", s)
+            self.assertIn(str(5004 + i), s)
+
+
+class TestAmbiguousPlan(unittest.TestCase):
+    """The ambiguous windows must exist BY CONSTRUCTION, not by luck."""
+
+    def test_ambiguous_windows_are_declared_for_three_classes(self):
+        labels = set(g.AMBIGUOUS_PLAN)
+        self.assertIn("bulk_download", labels)
+        self.assertIn("adaptive_video_streaming", labels)
+        self.assertIn("software_update", labels)
+
+    def _extra(self, label):
+        return g.AMBIGUOUS_PLAN[label][0][3]
+
+    def test_ambiguous_bulk_sits_below_the_frac_floor_by_rate(self):
+        extra = self._extra("bulk_download")
+        self.assertIn("--rate-cap", extra)
+        self.assertEqual(extra[extra.index("--rate-cap") + 1], "40")
+        _, n = g.AMBIGUOUS_PLAN["bulk_download"]
+        self.assertGreaterEqual(n, 10)
+
+    def test_ambiguous_update_is_low_rate_and_labeled_by_its_class(self):
+        extra = self._extra("software_update")
+        self.assertEqual(extra[extra.index("--rate-cap") + 1], "3")
+        _, n = g.AMBIGUOUS_PLAN["software_update"]
+        self.assertGreaterEqual(n, 10)
+
+
+class TestPerClassFloor(unittest.TestCase):
+    """The corpus must FAIL LOUDLY below 30 flows per class.
+
+    The first live corpus quietly shipped 9 flows and an n=1 eval; the
+    floor makes quiet fail into loud fail.
+    """
+
+    def test_missing_or_short_class_is_reported(self):
+        msg = g.enforce_min_counts({"bulk_download": 9}, 30, ["bulk_download"])
+        self.assertIn("bulk_download=9<30", msg)
+        self.assertIsNone(g.enforce_min_counts(
+            {"bulk_download": 30}, 30, ["bulk_download"]))
+        absent = g.enforce_min_counts({}, 30, ["cloud_backup"])
+        self.assertIn("cloud_backup=0<30", absent)
+
+    def test_collect_all_refuses_to_write_a_short_corpus(self):
+        calls: list[tuple[str, int, str]] = []
+
+        def fake(label, plan, env, duration_s, poll_s, wl, cap, flows=0,
+                 case="canonical"):
+            calls.append((label, flows, case))
+            return [{"label": label, "case": case} for _ in range(flows)]
+
+        orig = g.collect_window
+        g.collect_window = fake
+        out = Path("/tmp/opencode/corpus_short/corpus.jsonl")
+        try:
+            rc = g.collect_all(out, flows_per_class=3, min_per_class=30)
+        finally:
+            g.collect_window = orig
+        self.assertEqual(rc, 1)
+        counts = json.loads(
+            (out.parent / "counts.json").read_text())
+        self.assertEqual(counts["n_total"],
+                         sum(f for _, f, _ in calls))
+        # canonical windows ran with the class floor they were ASKED for
+        for label, flows, case in calls:
+            if case == "canonical":
+                self.assertEqual(flows, 3)
+            else:
+                self.assertEqual(case, "ambiguous")
+
+    def test_collect_all_passes_at_the_floor(self):
+        def fake(label, plan, env, duration_s, poll_s, wl, cap, flows=0,
+                 case="canonical"):
+            return [{"label": label, "case": case} for _ in range(flows)]
+
+        orig = g.collect_window
+        g.collect_window = fake
+        out = Path("/tmp/opencode/corpus_ok/corpus.jsonl")
+        try:
+            rc = g.collect_all(out, flows_per_class=30, min_per_class=30)
+        finally:
+            g.collect_window = orig
+        self.assertEqual(rc, 0)
+        counts = json.loads((out.parent / "counts.json").read_text())
+        self.assertGreaterEqual(counts["per_label"]["bulk_download"], 30)
 
 
 class TestDirectionTracker(unittest.TestCase):

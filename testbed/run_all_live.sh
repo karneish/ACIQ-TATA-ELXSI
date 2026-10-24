@@ -13,7 +13,7 @@ cd "$(dirname "$0")/.."
 VENV="${ACIQ_VENV:-/home/mekarz/aciq-venv}"
 PY="$VENV/bin/python"; [ -x "$PY" ] || PY=python3
 STATUS_DIR="data/live_status"; mkdir -p "$STATUS_DIR" testbed/logs
-T0=$(date +%s); KNOWN_TIME_TOTAL=10800
+T0=$(date +%s); KNOWN_TIME_TOTAL=10200
 SEEDS="${SEEDS:-10}"
 
 step() {  # step <id> <estimated min> <cmd...>
@@ -78,7 +78,7 @@ step s5_live       25 ./testbed/s5_live.sh
 #    extra to execute.
 
 # -- classifier corpus ------------------------------------------------------
-step corpus      5  ./testbed/corpus_live.sh
+step corpus      40  ./testbed/corpus_live.sh
 
 # -- dashboard evidence -----------------------------------------------------
 step dashboard   3  ./testbed/dashboard_evidence.sh

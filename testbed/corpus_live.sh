@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # testbed/corpus_live.sh — collect the router-vantage classifier corpus.
-# Needs the live testbed (sudo -- make setup first). ~150 s at defaults.
+# Needs the live testbed (sudo -- make setup first). ~35 min at defaults
+# (6 classes x 30 one-flow windows + 3 ambiguous windows x 10 flows; the
+# per-flow serial design exists because bulk.py's listener serves
+# connections one at a time — concurrent senders would sit in the accept
+# backlog and fabricate near-zero "bulk" rows). Fails loudly if any class
+# lands under 30 flows.
 #   sudo env ACIQ_VENV=/home/mekarz/aciq-venv ./testbed/corpus_live.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -12,7 +17,7 @@ mkdir -p data/experiments/classifier_corpus
 testbed/cleanup.sh 2>/dev/null || true
 testbed/setup.sh >/dev/null
 
-echo "[corpus] windows: 6 classes x 20 s"
+echo "[corpus] per-flow windows: 6 classes x 30 flows + 3 ambiguous x 10, ~6 s each (~35 min)"
 "$PY" tools/gen_corpus.py --out "$OUT" \
   2>&1 | tee testbed/logs/corpus-$(date +%Y%m%d-%H%M%S).log
 echo "[corpus] offline evaluation (thresholds were fixed before this data existed)"

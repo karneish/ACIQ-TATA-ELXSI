@@ -120,6 +120,54 @@ class TestOnRepoRuns(unittest.TestCase):
         self.assertIn("EMULATION statement", md)
 
 
+class TestClassificationSection(unittest.TestCase):
+    """T6 honesty: a corpus below the per-class floor must be DECLARED."""
+
+    def _write(self, tmp: Path, per_label, n_heldout=None):
+        (Path(tmp) / "empty-runs").mkdir()
+        ev = {"n_corpus": sum(per_label.values()),
+              "n_heldout": n_heldout or sum(per_label.values()) // 2,
+              "strict": {"n": 1}}
+        evalp = Path(tmp) / "eval.json"
+        evalp.write_text(json.dumps(ev) + "\n")
+        counts = Path(tmp) / "counts.json"
+        counts.write_text(json.dumps({"per_label": per_label,
+                                      "n_total": sum(per_label.values())})
+                          + "\n")
+        return evalp, counts
+
+    def test_missing_floor_is_declared_not_buried(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            evalp, _ = self._write(Path(tmp),
+                                   {"bulk_download": 9, "cloud_backup": 0})
+            out = Path(tmp) / "r.md"
+            build_report(Path(tmp) / "empty-runs", out, eval_json=evalp)
+            md = out.read_text()
+        self.assertIn("SPEC GAP (per-class floor 30 not met)", md)
+        self.assertIn('"bulk_download": 9', md)
+        self.assertIn('"cloud_backup": 0', md)
+        self.assertIn("not extrapolated", md)
+
+    def test_met_floor_prints_the_counts_verbatim(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            evalp, _ = self._write(Path(tmp),
+                                   {"bulk_download": 40, "cloud_backup": 31})
+            out = Path(tmp) / "r.md"
+            build_report(Path(tmp) / "empty-runs", out, eval_json=evalp)
+            md = out.read_text()
+        self.assertNotIn("SPEC GAP (per-class floor", md)
+        self.assertIn("per-class floor 30: met", md)
+
+    def test_thin_heldout_half_is_declared(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            evalp, _ = self._write(Path(tmp),
+                                   {"bulk_download": 3}, n_heldout=1)
+            out = Path(tmp) / "r.md"
+            build_report(Path(tmp) / "empty-runs", out, eval_json=evalp)
+            md = out.read_text()
+        self.assertIn("SPEC GAP (held-out half thin)", md)
+
+
 class TestAdaptationOnAppliedTree(unittest.TestCase):
     def test_adaptation_counts_apply_not_belief(self):
         run = {"cfg": {"drop_at_s": 10.0, "drop_mbps": 20.0},
