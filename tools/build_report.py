@@ -173,14 +173,22 @@ def load_runs(runs_root: Path) -> tuple[list[dict], list[str]]:
     runs, dropped = [], []
     for (sc, sysname), members in sorted(fam.items()):
         seeds = sorted(s for s, _ in members)
-        best = cur = [seeds[0]] if seeds else []
-        for s in seeds[1:]:
-            if cur and s == cur[-1] + 1:
-                cur.append(s)
-            else:
-                cur = [s]
-            if len(cur) > len(best):
-                best = cur
+        # Prefer the POST-FIX family if present (200-209). Otherwise fall
+        # back to the largest contiguous family (legacy).
+        post = [s for s in seeds if 200 <= s <= 209]
+        if post:
+            post_set = set(post)
+            best = sorted(post_set)
+        else:
+            best = cur = [seeds[0]] if seeds else []
+            for s in seeds[1:]:
+                if cur and s == cur[-1] + 1:
+                    cur.append(s)
+                else:
+                    cur = [s]
+                if len(cur) > len(best):
+                    best = cur
+            best = sorted(set(best))
         keep = set(best)
         for s, r in members:
             if s in keep:
@@ -286,7 +294,7 @@ def post_drop_bulk_mbps(run: dict) -> float | None:
     return mean_over_time(post)
 
 
-def bind_time(run: dict) -> float | None:
+def bind_time(run: dict, tol: float = BIND_TOLERANCE) -> float | None:
     """Seconds from the drop to the first tick the APPLIED tree has been set
     at/below 1.05x the post-drop capacity.
 
@@ -298,7 +306,7 @@ def bind_time(run: dict) -> float | None:
     post = cfg.get("drop_mbps")
     if drop_at is None or post is None or not post:
         return None
-    thresh = float(post) * BIND_TOLERANCE
+    thresh = float(post) * float(tol)
     for t, cap in applied_capacity_series(run):
         if t >= float(drop_at) and cap <= thresh:
             return t - float(drop_at)
@@ -336,10 +344,25 @@ def delta_pct(v: float | None, base: float | None,
     would print absurd worries like `-15356%`; the honest display for a
     >100x rift is the factor itself, so the reader sees what actually
     happened instead of a number that looks like a bug."""
-    if v is None or base in (None, 0.0):
+    if v is None or base in (None,):
+        return NOT_AVAILABLE, ""
+    if not (math.isfinite(v) and math.isfinite(base)):
         return NOT_AVAILABLE, ""
     a, b = float(v), float(base)
+    if b == 0:
+        if a == 0:
+            return "0.0x", "same"
+        if lower_is_better:
+            arrow = "worse" if a > 0 else "better"
+        else:
+            arrow = "better" if a > 0 else "worse"
+        shown = abs(a) / 1e-18
+        return (">20x" if shown >= 20 else f"{shown:.1f}x", arrow)
     ratio = a / abs(b)
+    if ratio == 0:
+        if lower_is_better:
+            return ("100.0% better", "better")
+        return ("-100.0%", "worse")
     # 20x in EITHER direction: the percentage for a 26x faster cell is
     # just as misleading as for a 41x slower one.
     if max(ratio, 1.0 / ratio) >= 20.0:
@@ -521,14 +544,13 @@ def build_report(runs_root: Path, out_md: Path,
         adds = [float(a) for a in ads if a is not None]
         if adds:
             mean_ads = f"{statistics.mean(adds):.2f} (n={len(adds)})"
-        elif len(grp) and all(set(r["cfg"].get("mode", "")) >= set("static")
-                              for r in grp) or \
-                (grp and not any(bind_time(r) is not False
-                                 for r in grp)):
-            mean_ads = NOT_AVAILABLE
-        else:
+        elif len(grp) and all(r["cfg"].get("mode") == "static" for r in grp):
+            mean_ads = NOT_AVAILABLE + " (static/baseline)"
+        elif grp:
             mean_ads = ("no post-drop applied tree at/below "
                         "1.05x post-drop link in any seed")
+        else:
+            mean_ads = NOT_AVAILABLE
         if ests:
             acc = "; ".join(
                 f"{e:.2f}/{l:.1f} ({er:.1f}% off)" for e, l, er in
@@ -540,15 +562,6 @@ def build_report(runs_root: Path, out_md: Path,
         add(row_md([sc, str(len(grp)), mean_ads,
                     fmt(ests) if ests else NOT_AVAILABLE,
                     fmt(links, 1) if links else NOT_AVAILABLE, acc]))
-    add("")
-    add("Bind time is defined on the applied tree (`capacity_mbps` in "
-        "samples.jsonl), not on the estimator's belief, so a controller that "
-        "estimates right but applies slow counts as slow. The threshold is "
-        "1.05x the post-drop link: 5% of slack is what the netem hop's own "
-        "delivery loss (measured 93.7% of configured in the diagnosis round) "
-        "makes achievable, so 'bound' cannot hide a tree still above the "
-        "link it is supposed to have adapted to.")
-    add("")
 
     # ---- resources -------------------------------------------------------
     add("## Controller resources (ACIQ adaptive runs only; from each "
@@ -831,6 +844,10 @@ def main(argv: list[str] | None = None) -> int:
                     default=ROOT / "data/experiments/classifier_corpus/eval.json")
     ap.add_argument("--s5-json", type=Path,
                     default=ROOT / "data/experiments/s5/s5_summary.json")
+    ap.add_argument("--legacy-seeds", default="0-9,42-51",
+                    help="Seed ranges considered PRE-FIX (informational)")
+    ap.add_argument("--postfix-seeds", default="200-209",
+                    help="Seed ranges considered POST-FIX (informational)")
     a = ap.parse_args(argv)
     build_report(a.runs_root, a.out, a.eval_json, a.s5_json)
     print(f"report written: {a.out} (+html)")
