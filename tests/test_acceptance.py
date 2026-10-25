@@ -1025,15 +1025,18 @@ class TestWorkloadFlagContract(unittest.TestCase):
         """The end-to-end version: hand each workload exactly what the launcher
         would and require it not to print a usage error."""
         import subprocess
+        import tempfile
+        tmpd = Path(tempfile.mkdtemp(prefix="aciq-wl-"))
+        wl_out = str(tmpd / "wl.json")
+        wl_part = str(tmpd / "wl.partial.json")
         args = ["--dst", "127.0.0.1", "--port", "47555", "--duration", "0.2",
-                "--json-out", "/tmp/opencode/wl.json",
-                "--partial-out", "/tmp/opencode/wl.partial.json",
+                "--json-out", wl_out,
+                "--partial-out", wl_part,
                 "--src", "127.0.0.1"]
         for kind in self.WORKLOADS:
             if "--partial-out" not in self._flags(kind):
                 args = [a for i, a in enumerate(args)
-                        if a not in ("--partial-out",
-                                     "/tmp/opencode/wl.partial.json")]
+                        if a not in ("--partial-out", wl_part)]
             r = subprocess.run(
                 ["python3", f"testbed/workloads/{kind}.py", *args],
                 capture_output=True, text=True, timeout=90)

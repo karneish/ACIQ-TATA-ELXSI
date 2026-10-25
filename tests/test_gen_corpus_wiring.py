@@ -20,6 +20,12 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import tools.gen_corpus as g  # noqa: E402
+
+import tempfile  # noqa: E402
+
+# was a hardcoded path into the agent sandbox scratch dir; a per-test
+# temp dir is portable
+BASE = Path(tempfile.mkdtemp(prefix="aciq-gen-"))
 from aciq.flowtrack import FlowTracker  # noqa: E402
 
 
@@ -169,7 +175,8 @@ class TestPerClassFloor(unittest.TestCase):
 
         orig = g.collect_window
         g.collect_window = fake
-        out = Path("/tmp/opencode/corpus_short/corpus.jsonl")
+        out = BASE / "corpus_short" / "corpus.jsonl"
+        out.parent.mkdir(parents=True, exist_ok=True)
         try:
             rc = g.collect_all(out, flows_per_class=3, min_per_class=30)
         finally:
@@ -193,7 +200,8 @@ class TestPerClassFloor(unittest.TestCase):
 
         orig = g.collect_window
         g.collect_window = fake
-        out = Path("/tmp/opencode/corpus_ok/corpus.jsonl")
+        out = BASE / "corpus_ok" / "corpus.jsonl"
+        out.parent.mkdir(parents=True, exist_ok=True)
         try:
             rc = g.collect_all(out, flows_per_class=30, min_per_class=30)
         finally:
