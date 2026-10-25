@@ -237,8 +237,40 @@ Verify cleanup: `ip netns list` should be empty (script checks and exits non-zer
 **T5 (S5):** See `data/experiments/s5/s5_summary.json`
 - `a_sigterm_no_filter_residue`: PASS
 - `b_sigkill_residue_then_cleanup`: PASS
-- `c_injected_failed_apply_rollbacks`: **FAIL** (measured)
+- `c_injected_failed_apply_rollbacks`: **PASS** (live, 2026-10-25) — two more
+  live-measured defects had to close first (see below); all four S5 cases now PASS.
 - `d_watchdog_starve_reaches_safe`: PASS
+
+**T5(c) root cause and fix (2026-10-25):**
+- **Root cause:** the injection arms at the run midpoint (t≈19 s of 40 s) and makes the
+  NEXT `tc class add` fail once. `s5_live.sh` ran `s2_wan_drop` with NO `--drop-at`:
+  without a drop the governor converges inside the first ~4 s and the tree is then held
+  steady — no apply ever happens after 19 s, the injected failure never fires, there is
+  no `rolled_back=true` in samples.jsonl, and `tools/verify_s5c.py` (correctly) refuses.
+  The offline contract was never broken: `tests/test_inject_failed_apply.py` proves
+  arm → fail → verified rollback → resume on the FakeRunner path.
+- **Fix:** `testbed/s5_live.sh` now runs the c-case with `--drop-at 25`, so a real,
+  drop-triggered apply happens AFTER arming: it fails at the kernel, the rollback
+  replays last-good, and the governor's post-drop ratchet re-applies on following
+  ticks — which is also the "run continued to commit" witness the verifier needs.
+- **Robustness:** `aciq/txn.py inject_failed_apply_once()` now unwraps a FIRED
+  one-shot wrapper (it is a pure pass-through afterwards) so a fresh run in the same
+  process can arm its own; a pending (not-yet-fired) shot still refuses re-arming,
+  and the unit tests pin both behaviours.
+- **Second round of root causes (2026-10-25, after the c-case started running
+  for real).** The rerun exposed two budget/dwell defects that gated the
+  "run continued" witness:
+  1. the rate-change budget was spent on an apply that FAILED and rolled
+     back — the kernel did not change, so the stamp is refunded
+     (`aciq/ratecap.py::refund_last_change`, called from the apply site in
+     `aciq/harness.py`; the driver deleting the run dir on the ARMED note's
+     word "failed" was patched first: `expected_s5_note` in
+     `run_experiments.py`);
+  2. the dwell window stamped `_last_policy_change_t` at DECISION time, so
+     three post-rollback ratchet decisions were silently killed by a dwell
+     that priced a change which never happened. The stamp now moves only on
+     a committed apply, and a bound refusal refunds too. Live outcome after
+     both fixes: `S5(c) verified: armed, rolled back, run continued`.
 
 **T6 (S3 realism):** All four arms reran post-realism config for fair comparison (`t6_s3_*_rerun`).
 
@@ -247,3 +279,48 @@ Verify cleanup: `ip netns list` should be empty (script checks and exits non-zer
 **T8 (dashboard):** Evidence in `data/experiments/dashboard/` (`dashboard.html`, copied samples). No-external-URLs check enforced by the dashboard script.
 
 **Runbook:** `testbed/run_live_fix.sh` (resume-safe). Oracle arms remain labeled `oracle / cannot have` and are never described as operator-real. `ip netns list` must be empty after cleanup.
+
+---
+
+## Final status (2026-10-25, mission close-out) — PASS / FAIL / BLOCKED
+
+State after the metrics-rework, S6 machinery, and post-fix honesty work. Full
+suite `python3 -m unittest discover -s tests` = **1448 OK (skipped=10, the
+live-kernel suite)**, `make lint` = 0 broken citations, secret-scan clean.
+
+| Work item | Verdict | Evidence (checked, not asserted) |
+|---|---|---|
+| T1–T3 fixes (governor, metrics rework, fairness carrying basis) | **PASS** offline + live | `data/runs/` POST-FIX seeds 200–209; POST-FIX s2 trio pins hold: B0 251.28±0.09, CAKE-static 70.31±1.73, ACIQ 71.69±0.58 ms call p95; bind on the APPLIED tree 1.72–1.85 s |
+| (TASK 5a) bulk sender vs receiver separation | **PASS** live | sender and receiver (sink) columns never blended; e.g. s1 B0 96.29/95.49, s2 ACIQ 71.69/69.54 — agreement inside ~3% |
+| (TASK 5b) starvation & minima per LABEL | **PASS** regen | regime-aware threshold on the POST-DROP median; per-label carrying class named (`bulk via unknown`); teardown + rebuild + boundary exclusions declared in the generator; "no starving tick" is a computed negative at n series per cell |
+| (TASK 5b, post-drop bulk column) | **PASS** after final fix | carrying-class basis fixes the former 0.00 mis-basis: s2 post-drop bulk/tree now B0 22.16±0.05, CAKE-static 20.12±0.01, oracle 18.71±0.06, ACIQ 20.15±0.01 on a 20 Mbps link |
+| S5c injected failed apply | **PASS (live, verified 2026-10-25)** | `data/experiments/s5/s5_summary.json` all four cases PASS; `verify_s5c.py` prints `armed, rolled back, run continued`. The path there closed two live-measured defects: the change budget was spent on a rolled-back apply (real kernel change is the currency: a failed/bound-refused apply refunds its stamp, `aciq/ratecap.py::refund_last_change`), and the dwell window stamped at decision time instead of commit time (`aciq/harness.py`), which blocked the follow-up plan behind a phantom change |
+| (TASK 4) S6 intent scenario | **PASS — live, verified 2026-10-25** | verifier over the 30 live runs: `granted=PASS reverted=PASS floors=PASS baselines=PASS (10/10, 10/10, 10/10, 20/20)`; ACIQ grants at t≈1.0s and auto-reverts after TTL 15s (last active t≈15s, clear at 16s); two live defects closed on the way: `IntentService` was never imported in the fire block (offline pin drives the REAL service end-to-end), and `run()` silently replaced a caller-supplied LeaseBook (now an `book` parameter). `RESULTS.md` §S6 quotes the verdict file |
+| (TASK 5c) S3 realism reruns | **PASS** live | `t6_s3_*_rerun` for all arms; demand-normalized fairness line now `1.000`, min-over-time carries the 0.30 floors (ACIQ tv min 0.30 vs B0 0.16) |
+| (TASK 5d) resources | **PASS** for s1/s3; s2/s4 need no refetch | resources table on all POST-FIX scenarios (cpu frac ~0.004); cells honestly NOT AVAILABLE where runs predate instrumentation |
+| (TASK 6) classifier fresh held-out | **PASS with declared weakness — live 2026-10-25** | the live corpus step refreshed eval.json: held-out strict acc 0.5877 on n=114; the FULL-corpus figures remain context only; weak classes `interactive_gaming`, `software_update` (never predicted) stay DECLARED, not tuned around |
+| T7 entry points, T8 dashboard, T9 docs | **PASS** | `Makefile` targets intact; dashboard evidence re-captured by queued steps; docs updated |
+
+### The one remaining privileged action (user)
+
+```bash
+sudo chown -R "$USER:$USER" .   # live runs left root-owned artefacts
+sudo env ACIQ_VENV=/home/mekarz/aciq-venv ./testbed/run_live_fix.sh
+```
+
+`run_live_fix.sh` is resume-safe (`data/live_status_fix/*.done`), runs the
+batched seed-family reruns, the S5 batch (re-verifies S5c with the fixed
+`--drop-at 25`), the NEW S6 intent step, the fresh classifier corpus +
+evaluator, dashboard capture, teardown, then regenerates reports and audits
+citations. Runtime estimate ~4 h total; every step logs under
+`data/live_status_fix/`. Afterward `ip netns list` must be EMPTY (the script
+refuses to exit green otherwise). Delete `t5_s5.done` / `t6_s6_intent.done`
+/ `t7_corpus.done` / `t8_dashboard.done` to force re-runs of those steps.
+
+### After the live batch (agent, no sudo)
+
+1. `python3 tools/build_report.py` — regenerates RESULTS.md/html; the S6
+   section quotes the new `s6_summary.json` verdict, and S5c's row flips
+   per the rerun's `verify_s5c.py` output.
+2. `make lint && python3 -m unittest discover -s tests` — gate.
+3. Only then the final commit(s), per the end-of-mission directive.

@@ -209,3 +209,20 @@ Two reasons, both in the evidence:
    hold + hysteresis.
 3. The law's bounds (step/dwell/floor, rollback, safe state) stay exactly
    as they are; the governor's output is what feeds `bound_rate_change`.
+
+## 8. Concrete explanation for S1: ACIQ 238.89 ms vs CAKE-static 1.55 ms (from samples.jsonl)
+
+**What differed (topology/class mapping):**
+- **Class steering**: Bulk traffic in the S1 matrix runs is unmarked; `aciq/bridge.py:615` deliberately leaves it in the DEFAULT class `1:70` (labeled `UNKNOWN` in `aciq/metrics.py:363-367`) not a dedicated bulk class. `1:30` → `BULK_DOWNLOAD` is the shaped bulk class but most bulk never hits it. 
+- **Per-class ceiling**: `1:70` has no restrictive per-class ceiling in the default policy; its ceiling is effectively the parent rate. `1:30` has a 0.85 limit that never engages because traffic isn't steered there.
+- **Parent shaping**: Both ACIQ and B0 apply effectively no shaping on the parent in S1 (ACIQ parent/applied ~102 Mbps vs true ~100 Mbps). CAKE-static applies fixed shaping at 95% of pre-drop link via `harness.py:243`, `txn.py:739`, `experiment.py:443` (CAKE's `0.95` factor is fixed, not learned).
+- **Applied vs belief**: `harness.py:996` sets `applied = bound.rate` with `applied == belief` (no cap fraction applied). The estimator/hysteresis keep belief high (~102 Mbps) so applied stays high; bulk rides the unshaped default class.
+
+**Concrete numbers (from repo runs):**
+- S1 matrix (pre-fix seeds 42-51, from `data/experiments/RESULTS.md` legacy): ACIQ call p95 **238.89 ms**, bulk **96.30 Mbps**; CAKE-static call p95 **1.55 ms**, bulk **90.96 Mbps**. ACIQ bulk is byte-for-byte like B0 (96.30 vs 96.29).
+- Samples show `per_class.unknown` carrying bulk (default class), `capacity_mbps` ≈ 102 Mbps (estimator/applied high), parent never binds down.
+
+**Why the earlier single-seed S1 run showed 0.36 ms:**
+- Different topology/configuration (older setup) gave different class mapping/queuing. As documented in §4(b): in that older topology the only queue was the shaped one and bulk landed in its own class with different behavior. The matrix run reflects the current testbed topology from `testbed/setup.sh`. The 0.36 ms number came from a different setup, not the current matrix topology; the matrix is the canonical comparison.
+
+**Fix (T2):** RateGovernor caps applied rate at `cap_fraction × belief` (default 0.90) with delay ratchet, separates applied from belief in `harness.py`, fixes hysteresis to judge on raw target gap in `aciq/capacity.py`. On post-fix seeds 200-209 (see current `data/experiments/RESULTS.md`), binding is observed in drop scenarios (s2/s4) with governor engaged.

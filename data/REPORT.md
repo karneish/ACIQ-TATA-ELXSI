@@ -1,6 +1,6 @@
 # ACIQ+ experiment report
 
-Runs found: **321**
+Runs found: **351**
 
 ## Runs
 
@@ -101,8 +101,8 @@ Runs found: **321**
 | s2_wan_drop | aciq | adaptive | 209 | 100.0 | 20.0 | 21.3 Mbps | 3 |
 | s2_wan_drop | aciq | adaptive | 3 | 100.0 | 20.0 | 23.3 Mbps | 2 |
 | s2_wan_drop | aciq | adaptive | 4 | 100.0 | 20.0 | 23.8 Mbps | 2 |
-| s2_wan_drop | aciq | adaptive | 42 | 100.0 | 20.0 | 28.0 Mbps | 3 |
 | s2_wan_drop | aciq | adaptive | 5 | 100.0 | 20.0 | 23.6 Mbps | 2 |
+| s2_wan_drop | aciq | adaptive | 555 | 100.0 | 20.0 | 21.5 Mbps | 5 |
 | s2_wan_drop | aciq | adaptive | 6 | 100.0 | 20.0 | 23.6 Mbps | 2 |
 | s2_wan_drop | aciq | adaptive | 7 | 100.0 | 20.0 | 23.8 Mbps | 2 |
 | s2_wan_drop | aciq | adaptive | 8 | 100.0 | 20.0 | 23.9 Mbps | 2 |
@@ -327,6 +327,36 @@ Runs found: **321**
 | s4_capacity_recovery | b1_cake_oracle | static | 49 | 100.0 | 20.0 | n/a | 0 |
 | s4_capacity_recovery | b1_cake_oracle | static | 50 | 100.0 | 20.0 | n/a | 0 |
 | s4_capacity_recovery | b1_cake_oracle | static | 51 | 100.0 | 20.0 | n/a | 0 |
+| s6_intent_expire | aciq | adaptive | 300 | 100.0 | 100.0 | 86.9 Mbps | 4 |
+| s6_intent_expire | aciq | adaptive | 301 | 100.0 | 100.0 | 72.6 Mbps | 5 |
+| s6_intent_expire | aciq | adaptive | 302 | 100.0 | 100.0 | 92.8 Mbps | 4 |
+| s6_intent_expire | aciq | adaptive | 303 | 100.0 | 100.0 | 69.1 Mbps | 5 |
+| s6_intent_expire | aciq | adaptive | 304 | 100.0 | 100.0 | 69.6 Mbps | 5 |
+| s6_intent_expire | aciq | adaptive | 305 | 100.0 | 100.0 | 86.8 Mbps | 4 |
+| s6_intent_expire | aciq | adaptive | 306 | 100.0 | 100.0 | 69.5 Mbps | 5 |
+| s6_intent_expire | aciq | adaptive | 307 | 100.0 | 100.0 | 86.6 Mbps | 4 |
+| s6_intent_expire | aciq | adaptive | 308 | 100.0 | 100.0 | 83.0 Mbps | 5 |
+| s6_intent_expire | aciq | adaptive | 309 | 100.0 | 100.0 | 69.7 Mbps | 5 |
+| s6_intent_expire | b0_fifo | static | 300 | 100.0 | 100.0 | n/a | 0 |
+| s6_intent_expire | b0_fifo | static | 301 | 100.0 | 100.0 | n/a | 0 |
+| s6_intent_expire | b0_fifo | static | 302 | 100.0 | 100.0 | n/a | 0 |
+| s6_intent_expire | b0_fifo | static | 303 | 100.0 | 100.0 | n/a | 0 |
+| s6_intent_expire | b0_fifo | static | 304 | 100.0 | 100.0 | n/a | 0 |
+| s6_intent_expire | b0_fifo | static | 305 | 100.0 | 100.0 | n/a | 0 |
+| s6_intent_expire | b0_fifo | static | 306 | 100.0 | 100.0 | n/a | 0 |
+| s6_intent_expire | b0_fifo | static | 307 | 100.0 | 100.0 | n/a | 0 |
+| s6_intent_expire | b0_fifo | static | 308 | 100.0 | 100.0 | n/a | 0 |
+| s6_intent_expire | b0_fifo | static | 309 | 100.0 | 100.0 | n/a | 0 |
+| s6_intent_expire | b1_cake95 | static | 300 | 100.0 | 100.0 | n/a | 0 |
+| s6_intent_expire | b1_cake95 | static | 301 | 100.0 | 100.0 | n/a | 0 |
+| s6_intent_expire | b1_cake95 | static | 302 | 100.0 | 100.0 | n/a | 0 |
+| s6_intent_expire | b1_cake95 | static | 303 | 100.0 | 100.0 | n/a | 0 |
+| s6_intent_expire | b1_cake95 | static | 304 | 100.0 | 100.0 | n/a | 0 |
+| s6_intent_expire | b1_cake95 | static | 305 | 100.0 | 100.0 | n/a | 0 |
+| s6_intent_expire | b1_cake95 | static | 306 | 100.0 | 100.0 | n/a | 0 |
+| s6_intent_expire | b1_cake95 | static | 307 | 100.0 | 100.0 | n/a | 0 |
+| s6_intent_expire | b1_cake95 | static | 308 | 100.0 | 100.0 | n/a | 0 |
+| s6_intent_expire | b1_cake95 | static | 309 | 100.0 | 100.0 | n/a | 0 |
 
 ## Latency, measured by each workload itself
 
@@ -359,14 +389,14 @@ Cells are **mean (min-max)** over seeds. A mean alone would hide the tails this 
 
 | system | n | p50 | p95 | p99 | jitter | loss |
 |---|---|---|---|---|---|---|
-| aciq | 21 | 43.276 (1.016-151.527) | 93.502 (68.926-246.520) | 176.791 (98.495-1140.572) | 0.876 (0.582-3.271) | 0.006 (0.002-0.066) |
+| aciq | 21 | 36.116 (1.016-77.281) | 86.313 (68.926-101.171) | 128.795 (98.495-137.363) | 0.756 (0.582-0.964) | 0.003 (0.002-0.006) |
 | b0_fifo | 20 | 161.467 (83.099-237.832) | 250.119 (248.394-251.784) | 1147.365 (1141.750-1173.573) | 3.626 (2.700-4.529) | 0.089 (0.079-0.095) |
 | b1_cake95 | 20 | 36.130 (1.013-73.255) | 79.933 (67.039-92.281) | 86.192 (74.295-101.038) | 0.598 (0.497-0.759) | 0.003 (0.002-0.005) |
 | b1_cake_oracle | 20 | 0.679 (0.638-0.711) | 2.353 (2.256-2.485) | 3.163 (2.918-3.361) | 0.322 (0.293-0.409) | 0.000 |
 
 **Where ACIQ wins or loses on the mean (not yet a significance claim):**
 
-- **p50: ACIQ beats b0_fifo and LOSES to b1_cake95 and b1_cake_oracle.**
+- **p50: ACIQ beats b0_fifo and b1_cake95 and LOSES to b1_cake_oracle.**
 - **p95: ACIQ beats b0_fifo and LOSES to b1_cake95 and b1_cake_oracle.**
 - **p99: ACIQ beats b0_fifo and LOSES to b1_cake95 and b1_cake_oracle.**
 - **jitter_ms: ACIQ beats b0_fifo and LOSES to b1_cake95 and b1_cake_oracle.**
@@ -414,6 +444,44 @@ Cells are **mean (min-max)** over seeds. A mean alone would hide the tails this 
 - **jitter_ms: ACIQ beats b0_fifo and LOSES to b1_cake95 and b1_cake_oracle.**
 
 These lines compare means. Whether a difference is statistically distinguishable is tested separately, below, by paired exact Wilcoxon per metric; read the two together.
+### s6_intent_expire
+
+**call latency — measured by the call itself** (milliseconds, lower is better)
+
+Cells are **mean (min-max)** over seeds. A mean alone would hide the tails this project keeps getting wrong.
+
+| system | n | p50 | p95 | p99 | jitter | loss |
+|---|---|---|---|---|---|---|
+| aciq | 10 | 0.614 (0.576-0.650) | 39.001 (6.231-64.545) | 64.241 (35.968-84.235) | 0.428 (0.396-0.449) | 0.000 (0.000-0.001) |
+| b0_fifo | 10 | 239.255 (238.934-239.445) | 250.846 (250.801-250.904) | 251.879 (251.832-251.953) | 3.179 (3.102-3.243) | 0.006 (0.005-0.006) |
+| b1_cake95 | 10 | 0.834 (0.807-0.854) | 1.389 (1.367-1.407) | 1.680 (1.565-1.922) | 0.440 (0.417-0.451) | 0.000 |
+
+**Where ACIQ wins or loses on the mean (not yet a significance claim):**
+
+- **p50: ACIQ beats b0_fifo and b1_cake95.**
+- **p95: ACIQ beats b0_fifo and LOSES to b1_cake95.**
+- **p99: ACIQ beats b0_fifo and LOSES to b1_cake95.**
+- **jitter_ms: ACIQ beats b0_fifo and b1_cake95.**
+
+These lines compare means. Whether a difference is statistically distinguishable is tested separately, below, by paired exact Wilcoxon per metric; read the two together.
+**game latency — measured by the game itself** (milliseconds, lower is better)
+
+Cells are **mean (min-max)** over seeds. A mean alone would hide the tails this project keeps getting wrong.
+
+| system | n | p50 | p95 | p99 | jitter | loss |
+|---|---|---|---|---|---|---|
+| aciq | 10 | 0.638 (0.599-0.675) | 38.676 (6.311-64.107) | 64.221 (34.733-83.957) | 0.504 (0.427-0.549) | 0.000 (0.000-0.001) |
+| b0_fifo | 10 | 239.461 (239.225-239.698) | 250.884 (250.807-250.959) | 251.886 (251.835-251.924) | 9.696 (9.590-9.849) | 0.006 (0.005-0.006) |
+| b1_cake95 | 10 | 0.851 (0.819-0.892) | 1.415 (1.395-1.456) | 1.977 (1.616-2.201) | 0.421 (0.397-0.434) | 0.000 |
+
+**Where ACIQ wins or loses on the mean (not yet a significance claim):**
+
+- **p50: ACIQ beats b0_fifo and b1_cake95.**
+- **p95: ACIQ beats b0_fifo and LOSES to b1_cake95.**
+- **p99: ACIQ beats b0_fifo and LOSES to b1_cake95.**
+- **jitter_ms: ACIQ beats b0_fifo and LOSES to b1_cake95.**
+
+These lines compare means. Whether a difference is statistically distinguishable is tested separately, below, by paired exact Wilcoxon per metric; read the two together.
 
 **These verdicts are read per percentile, not cherry-picked.**
 Where ACIQ loses, it loses in the table above too.
@@ -450,11 +518,11 @@ ACIQ against each rival, paired by seed. Exact, by enumerating sign flips -- 2^n
 | s2_wan_drop | call | b1_cake95 | p99 | 20 | 0 | 210.0 | 0.0000 | +1.00 |
 | s2_wan_drop | call | b1_cake95 | jitter_ms | 20 | 0 | 210.0 | 0.0000 | +1.00 |
 | s2_wan_drop | call | b1_cake95 | loss_ratio | 19 | 1 | 126.0 | 0.2232 | +0.33 |
-| s2_wan_drop | call | b1_cake_oracle | p50 | 11 | 0 | 66.0 | 0.0010 | +1.00 |
-| s2_wan_drop | call | b1_cake_oracle | p95 | 11 | 0 | 66.0 | 0.0010 | +1.00 |
-| s2_wan_drop | call | b1_cake_oracle | p99 | 11 | 0 | 66.0 | 0.0010 | +1.00 |
-| s2_wan_drop | call | b1_cake_oracle | jitter_ms | 11 | 0 | 66.0 | 0.0010 | +1.00 |
-| s2_wan_drop | call | b1_cake_oracle | loss_ratio | 11 | 0 | 66.0 | 0.0010 | +1.00 |
+| s2_wan_drop | call | b1_cake_oracle | p50 | 10 | 0 | 55.0 | 0.0020 | +1.00 |
+| s2_wan_drop | call | b1_cake_oracle | p95 | 10 | 0 | 55.0 | 0.0020 | +1.00 |
+| s2_wan_drop | call | b1_cake_oracle | p99 | 10 | 0 | 55.0 | 0.0020 | +1.00 |
+| s2_wan_drop | call | b1_cake_oracle | jitter_ms | 10 | 0 | 55.0 | 0.0020 | +1.00 |
+| s2_wan_drop | call | b1_cake_oracle | loss_ratio | 10 | 0 | 55.0 | 0.0020 | +1.00 |
 | s3_tv_and_gaming | game | b0_fifo | p50 | 19 | 1 | 7.5 | 0.0001 | -0.92 |
 | s3_tv_and_gaming | game | b0_fifo | p95 | 20 | 0 | 0.0 | 0.0000 | -1.00 |
 | s3_tv_and_gaming | game | b0_fifo | p99 | 20 | 0 | 0.0 | 0.0000 | -1.00 |
@@ -482,14 +550,34 @@ ACIQ against each rival, paired by seed. Exact, by enumerating sign flips -- 2^n
 | s4_capacity_recovery | call | b1_cake_oracle | p99 | 10 | 0 | 55.0 | 0.0020 | +1.00 |
 | s4_capacity_recovery | call | b1_cake_oracle | jitter_ms | 10 | 0 | 55.0 | 0.0020 | +1.00 |
 | s4_capacity_recovery | call | b1_cake_oracle | loss_ratio | 10 | 0 | 55.0 | 0.0020 | +1.00 |
+| s6_intent_expire | call | b0_fifo | p50 | 10 | 0 | 0.0 | 0.0020 | -1.00 |
+| s6_intent_expire | call | b0_fifo | p95 | 10 | 0 | 0.0 | 0.0020 | -1.00 |
+| s6_intent_expire | call | b0_fifo | p99 | 10 | 0 | 0.0 | 0.0020 | -1.00 |
+| s6_intent_expire | call | b0_fifo | jitter_ms | 10 | 0 | 0.0 | 0.0020 | -1.00 |
+| s6_intent_expire | call | b0_fifo | loss_ratio | 10 | 0 | 0.0 | 0.0020 | -1.00 |
+| s6_intent_expire | call | b1_cake95 | p50 | 10 | 0 | 0.0 | 0.0020 | -1.00 |
+| s6_intent_expire | call | b1_cake95 | p95 | 10 | 0 | 55.0 | 0.0020 | +1.00 |
+| s6_intent_expire | call | b1_cake95 | p99 | 10 | 0 | 55.0 | 0.0020 | +1.00 |
+| s6_intent_expire | call | b1_cake95 | jitter_ms | 10 | 0 | 11.0 | 0.1055 | -0.60 |
+| s6_intent_expire | call | b1_cake95 | loss_ratio | 5 | 5 | 15.0 | 0.0625 | +1.00 |
+| s6_intent_expire | game | b0_fifo | p50 | 10 | 0 | 0.0 | 0.0020 | -1.00 |
+| s6_intent_expire | game | b0_fifo | p95 | 10 | 0 | 0.0 | 0.0020 | -1.00 |
+| s6_intent_expire | game | b0_fifo | p99 | 10 | 0 | 0.0 | 0.0020 | -1.00 |
+| s6_intent_expire | game | b0_fifo | jitter_ms | 10 | 0 | 0.0 | 0.0020 | -1.00 |
+| s6_intent_expire | game | b0_fifo | loss_ratio | 10 | 0 | 0.0 | 0.0020 | -1.00 |
+| s6_intent_expire | game | b1_cake95 | p50 | 10 | 0 | 0.0 | 0.0020 | -1.00 |
+| s6_intent_expire | game | b1_cake95 | p95 | 10 | 0 | 55.0 | 0.0020 | +1.00 |
+| s6_intent_expire | game | b1_cake95 | p99 | 10 | 0 | 55.0 | 0.0020 | +1.00 |
+| s6_intent_expire | game | b1_cake95 | jitter_ms | 10 | 0 | 54.0 | 0.0039 | +0.96 |
+| s6_intent_expire | game | b1_cake95 | loss_ratio | 5 | 5 | 15.0 | 0.0625 | +1.00 |
 
-**51 of 57 comparisons reach p < 0.05.** Each is one metric against one rival in one scenario; they are not independent of each other, so this is a count of results, not a family-wise error rate.
+**68 of 77 comparisons reach p < 0.05.** Each is one metric against one rival in one scenario; they are not independent of each other, so this is a count of results, not a family-wise error rate.
 
-6 pair(s) had zero difference and were dropped from the signed-rank test; each dropped pair lowers n and raises the smallest attainable p, which is stated per row rather than hidden.
+16 pair(s) had zero difference and were dropped from the signed-rank test; each dropped pair lowers n and raises the smallest attainable p, which is stated per row rather than hidden.
 
 ## Reporting caveats
 
-- **1605 latency measurements** across the matrix, each self-reported by the workload that carried it.
+- **1905 latency measurements** across the matrix, each self-reported by the workload that carried it.
 - The link is an **HTB token-bucket emulation**, not real DSL/cable/fiber.
 - Counter-based detection only sees a bottleneck **on the router**; a downstream ISP-side bottleneck stays invisible. Gate check 12 measured a validated remedy (an unmarked probe showed ~8x delay rise) that is not in the MVP.
 - Classification accuracy is measured on **self-generated** traffic.

@@ -1,0 +1,66 @@
+{
+  "scenario": "s6_intent_expire",
+  "system": "b0_fifo",
+  "mode": "static",
+  "seed": 301,
+  "link_mbps": 100.0,
+  "drop_mbps": 20.0,
+  "drop_at_s": null,
+  "recover_at_s": null,
+  "recover_to_mbps": null,
+  "cake_rate_at_apply": null,
+  "oracle_from_start": false,
+  "duration_s": 40.0,
+  "settle_s": 4.0,
+  "workloads": [
+    {
+      "kind": "call",
+      "label": "call",
+      "dscp": 46
+    },
+    {
+      "kind": "game",
+      "label": "game",
+      "dscp": 46
+    },
+    {
+      "kind": "bulk",
+      "label": "bulk",
+      "dscp": null
+    }
+  ],
+  "ports": [
+    {
+      "label": "call",
+      "port": 5304,
+      "dscp": 46
+    },
+    {
+      "label": "game",
+      "port": 5420,
+      "dscp": 46
+    },
+    {
+      "label": "bulk",
+      "port": 5352,
+      "dscp": null
+    }
+  ],
+  "floor_mbps": 5.0,
+  "enforce_requested": false,
+  "enforcement_note": "b0_fifo is a baseline, not ACIQ; S6 API intent requested but this system has no intent surface",
+  "lease_ips": [],
+  "device_ips": {
+    "call": "203.0.113.3",
+    "game": "203.0.113.4",
+    "bulk": "203.0.113.5"
+  },
+  "lease_weight": null,
+  "lease_ttl_s": null,
+  "inject_fail_apply": false,
+  "api_intent_requested": true,
+  "intent_at_s": 1.0,
+  "intent_ttl_s": 15.0,
+  "intent_weight": 0.5,
+  "intent_label": "game"
+}
