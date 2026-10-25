@@ -55,13 +55,24 @@ def teardown() -> None:
 
 # All three scenarios from the brief. s2 needs --drop-at to be meaningful.
 # s4 is the rising edge: without --recover-at/--recover-to it behaves like s2.
+# s6 is the intent scenario: --api-intent requested at t~1, TTL inside the run.
 ALL_SCENARIOS = ["s1_iso_during_call", "s2_wan_drop", "s3_tv_and_gaming",
-                 "s4_capacity_recovery"]
+                 "s4_capacity_recovery", "s6_intent_expire"]
 #: Scenarios that only do something interesting with an explicit drop time.
 #: s4 needs it too -- there is no recovery without a drop first.
 NEEDS_DROP_AT = {"s2_wan_drop", "s4_capacity_recovery"}
 ALL_SYSTEMS = [SystemSpec.B0, SystemSpec.B1, SystemSpec.B1_ORACLE,
                SystemSpec.ACIQ]
+
+
+def expected_s5_note(note: str) -> bool:
+    """True for the S5(c) ARMED note: its word "failed" NAMES the injection
+    being exercised. The driver that deletes a run dir on a "failed" note
+    must not delete the very evidence S5(c) exists to produce; judging the
+    armed run (rollback replayed, run continued) is verify_s5c's job on the
+    artefacts. The NOT-armed counterpart is absent here on purpose: it means
+    the injection silently did nothing, which stays a failure."""
+    return "ARMED at t=" in note
 
 
 def main() -> int:
@@ -118,6 +129,21 @@ def main() -> int:
     ap.add_argument("--lease-ttl-s", type=float, default=None,
                     help="defaults to the whole run, so the measurement is of "
                          "the effect and not of the expiry")
+    ap.add_argument("--api-intent", action="store_true",
+                    help="S6: request one intent through the real API surface "
+                         "(IntentService, POST /intent) at --intent-at for "
+                         "ACIQ runs; baselines declare no intent support")
+    ap.add_argument("--intent-at", type=float, default=1.0,
+                    help="run time (s) when the API intent is requested "
+                         "(default 1.0)")
+    ap.add_argument("--intent-ttl", type=float, default=15.0,
+                    help="intent TTL (s). Default 15.0 on a 40 s scenario "
+                         "scope: the TTL expires INSIDE the run so the auto-"
+                         "revert is measured, not assumed")
+    ap.add_argument("--intent-weight", type=float, default=0.5)
+    ap.add_argument("--intent-label", default="game",
+                    help="which workload's device the intent reserves for "
+                         "(default: game)")
     ap.add_argument("--results-dir", default=str(RESULTS_DIR))
     ap.add_argument("--no-stamp", action="store_true",
                     help="do not record the revision in the results "
@@ -276,12 +302,18 @@ def main() -> int:
                         recover_to_mbps=args.recover_to,
                         lease_ips=args.lease, lease_weight=args.lease_weight,
                         lease_ttl_s=args.lease_ttl_s,
-                        inject_fail_apply=args.inject_fail_apply)
+                        inject_fail_apply=args.inject_fail_apply,
+                        api_intent=args.api_intent,
+                        intent_at_s=args.intent_at,
+                        intent_ttl_s=args.intent_ttl,
+                        intent_weight=args.intent_weight,
+                        intent_label=args.intent_label)
                     for n in res.notes:
                         # only real problems get a warning marker; a note like
                         # "no capacity drop" is informational and alarming it
                         # would make every successful run look like a failure
-                        warn = "failed" in n.lower() or "error" in n.lower()
+                        warn = (("failed" in n.lower() or "error" in n.lower())
+                                and not expected_s5_note(n))
                         if warn:
                             print(f"    ! {n}")
                             warned.append(n)

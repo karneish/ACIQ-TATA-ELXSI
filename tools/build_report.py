@@ -27,10 +27,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from aciq.fairness import (assigned_classes, flow_rates, jain,  # noqa: E402
-                           mean_over_time, minimum_over_time,
-                           per_class_series, run_demand_fairness,
-                           run_fairness, starved_ticks)
+from aciq.fairness import (assigned_classes, class_of_label, flow_rates,  # noqa: E402
+                           jain, label_carrying, mean_over_time,
+                           minimum_over_time, per_class_series,
+                           run_demand_fairness, run_fairness, starved_ticks)
 
 NOT_AVAILABLE = "NOT AVAILABLE"
 
@@ -41,6 +41,10 @@ NOT_AVAILABLE = "NOT AVAILABLE"
 #: at t >= 2.0 s. It only ever REMOVES early ticks; it never touches any
 #: value at or after the mark.
 WARMUP_S = 2.0
+#: A per-tick rate computed over dt beyond this is a mean over a genuine
+#: poll/reset gap, not a rate; at ~1 s ticks nothing legitimate lives past
+#: 3 s. Declared constant, never tuned.
+TICK_GAP_MAX_S = 3.0
 
 #: Post-drop bind threshold for `bind_time`: the applied tree counts as
 #: bound once it has been set to at most 1.05x the post-drop configured
@@ -153,7 +157,7 @@ def load_runs(runs_root: Path) -> tuple[list[dict], list[str]]:
             skipped.append(d.name + " (special-condition run: "
                            + ", ".join(special) + ")")
             continue
-        runs.append({"dir": d.name, "cfg": cfg, "wl": wl,
+        runs.append({"dir": d.name, "path": d, "cfg": cfg, "wl": wl,
                      "res": res, "samples": samples})
     # Matrix cells must track families explicitly (PRE-FIX vs POST-FIX)
     runs_all = runs
@@ -169,6 +173,14 @@ def load_runs(runs_root: Path) -> tuple[list[dict], list[str]]:
     runs_by_family: dict[tuple[str, str, str], list[dict]] = {}
     dropped = []
     for (sc, sysname), members in sorted(fam.items()):
+        # S6 runs on their own 300-309 family: they are neither a PRE-FIX
+        # repeat nor a POST-FIX rerun of an existing family; their purpose
+        # (intent grant/revert) does not depend on the fix timeline.
+        if sc == "s6_intent_expire":
+            keep_any = set(s for s, _ in members)
+            runs_by_family[(sc, sysname, "POST-FIX")] = [r for _, r in members]
+            dropped.extend([])
+            continue
         seeds_all = sorted(s for s, _ in members)
         post_seeds = sorted([s for s in seeds_all if 200 <= s <= 209])
         pre_seeds = sorted([s for s in seeds_all if (0 <= s <= 9) or (42 <= s <= 51)])
@@ -203,7 +215,9 @@ def load_runs(runs_root: Path) -> tuple[list[dict], list[str]]:
     for r in runs:
         try:
             s = int(r["cfg"].get("seed", 0))
-            if 200 <= s <= 209:
+            if r["cfg"].get("scenario") == "s6_intent_expire":
+                r["_seed_family"] = "POST-FIX"
+            elif 200 <= s <= 209:
                 r["_seed_family"] = "POST-FIX"
             elif 0 <= s <= 9 or 42 <= s <= 51:
                 r["_seed_family"] = "PRE-FIX"
@@ -232,6 +246,115 @@ def bulk_mbps(wl: dict) -> float | None:
         if isinstance(wl.get(k), dict):
             return wl[k].get("sender_mbps")
     return None
+
+
+_SINK_RE = re.compile(r"\[([\w.-]+) sink\]\s+(\d+)\s+bytes\s+([\d.]+)\s+Mbps")
+
+
+def sink_mbps(run: dict, label: str) -> tuple[float | None, str]:
+    """Receiver-side delivered Mbps for one label, from `<label>.sink.log`.
+
+    The sink (receiver) is the only party that knows what actually ARRIVED;
+    sender_mbps says what was pushed. Returns (mbps, basis-note); the note
+    says how many sink lines the figure came from, because a label with N
+    parallel connections prints N lines and the receiver total is their sum.
+    Missing file/line -> (None, reason) and the caller prints NOT AVAILABLE,
+    never a fabricated zero.
+    """
+    p = run.get("path")
+    if p is None:
+        return None, "no run path recorded"
+    logp = Path(p) / f"{label}.sink.log"
+    if not logp.exists():
+        return None, f"no {logp.name} in the run dir"
+    hits = _SINK_RE.findall(logp.read_text(errors="replace"))
+    if not hits:
+        return None, "sink log has no receiver total line"
+    total = sum(float(h[2]) for h in hits)
+    basis = ("1 sink line" if len(hits) == 1
+             else f"sum of {len(hits)} sink lines")
+    return total, basis
+
+
+_SINK_TS_RE = re.compile(r"\[\s*([\w.-]+) sink\]\s+t=(\S+)\s+cum=(\d+)\s+"
+                         r"bytes\s+inst=(\S+) Mbps")
+
+#: The sink process starts 1.0 s (launcher's bind sleep) + the scenario's
+#: settle time BEFORE the driver's t=0, so the sink's own clock runs AHEAD
+#: of the run clock by that much. Declared constant, never fitted.
+SINK_CLOCK_LEAD_S = 1.0
+
+
+def sink_inst_series(run: dict, label: str) -> tuple[
+        list[tuple[float, float]], str]:
+    """Per-second receiver-side instant rate series for one label (TASK 4).
+
+    Source: the sampler every sink prints since sinksample.py --
+    `[<kind> sink] t=<s> cum=<b> bytes inst=<Mbps> Mbps`. The sampler's own
+    contract: printed inst k measures the interval SINCE the previous print,
+    the first print's interval starting at sink-clock 0. inst k therefore
+    covers (t[k-1], t[k]] with t[0] = 0, and the pair carries the interval's
+    START: (t[k-1], inst[k]). Every start is remapped to the RUN clock (the
+    sink was born SINK_CLOCK_LEAD_S + settle before the run's t=0), and
+    pairs whose interval started before the run are dropped uniformly --
+    they measure lab startup, not the run. Declared in the note, never
+    tuned per run.
+    """
+    p = run.get("path")
+    if p is None:
+        return [], "no run path recorded"
+    logp = Path(p) / f"{label}.sink.log"
+    if not logp.exists():
+        return [], f"no {logp.name} in the run dir"
+    ts: list[float] = []
+    vs: list[float] = []
+    for hit in _SINK_TS_RE.finditer(logp.read_text(errors="replace")):
+        try:
+            t_v = float(hit.group(2))
+            v_v = float(hit.group(4))
+        except ValueError:
+            continue        # t and inst are appended TOGETHER or not at all
+        ts.append(t_v)
+        vs.append(v_v)
+    if len(vs) < 2:
+        return [], (f"sink log has {len(vs)} usable sampler line(s); need >=2")
+    lead = SINK_CLOCK_LEAD_S
+    wl = run.get("cfg") if isinstance(run.get("cfg"), dict) else {}
+    settle = wl.get("settle_s")
+    if isinstance(settle, (int, float)):
+        lead += float(settle)
+    starts = [0.0] + ts[:-1]
+    pairs = [(starts[i] - lead, vs[i])
+             for i in range(len(vs)) if starts[i] - lead >= 0.0]
+    return pairs, (f"{len(pairs)} per-second intervals on the run clock "
+                   f"(sink clock lead {lead:.1f}s; pre-run intervals "
+                   "dropped)")
+
+
+def starvation_threshold(series: list[tuple[float, float]],
+                         drop_at: float | None) -> float:
+    """0.2 x median, computed over the SAME regime the verdict reads.
+
+    A run with a mid-run capacity drop has two regimes; a whole-window
+    median mixes them so every post-drop tick reads as starved against a
+    pre-drop median. Where the run declares a drop, the median is the
+    post-drop regime's own median -- otherwise the whole window's.
+    """
+    vals = [v for t, v in series
+            if drop_at is None or t >= float(drop_at)]
+    if not vals:
+        vals = [v for _, v in series]
+    return 0.2 * statistics.median(vals)
+
+def run_sink_rates(run: dict) -> dict[str, tuple[float | None, str]]:
+    """Receiver-side delivered Mbps per label (TASK 5a: keep tree counters
+    separate; the sender/tree numbers stay in their own columns)."""
+    out: dict[str, tuple[float | None, str]] = {}
+    for label, rep in sorted((run["wl"] or {}).items()):
+        if not isinstance(rep, dict):
+            continue
+        out[label] = sink_mbps(run, label)
+    return out
 
 
 def applied_capacity_series(run: dict) -> list[tuple[float, float]]:
@@ -276,6 +399,124 @@ def warmup(series: list[tuple[float, float]]) -> list[tuple[float, float]]:
     return [(t, v) for t, v in series if t >= WARMUP_S]
 
 
+def warmup_all(samples: list[dict]) -> list[dict]:
+    """Drop the declared warm-up SAMPLE ROWS (not a value series).
+
+    Same constant, applied one level up so `label_carrying` can pick its
+    carrying class from only the post-warm-up ticks."""
+    out = []
+    for s in samples:
+        t = s.get("t")
+        if isinstance(t, (int, float)) and t >= WARMUP_S:
+            out.append(s)
+    return out
+
+
+#: A tree rebuild DELETES and re-adds the qdisc, which resets EVERY counter on
+#: the device. The tick that straddles a rebuild therefore houses a link
+#: whose rx/tx bytes went BACKWARDS -- a measured, clock-free signature of
+#: "attributed goodput at this tick is a reset artefact, not silence".
+def analysis_samples(run: dict) -> list[dict]:
+    """Sample rows the per-tick verdicts are computed over, exclusions DECLARED:
+
+    1. warm-up (t >= WARMUP_S) -- counter-ramp artefact, diagnosis fix 17;
+    2. t <= configured duration -- post-run tail excluded (workload finished);
+    3. ticks whose link counters went BACKWARDS -- the qdisc was rebuilt
+       between ticks (del/re-add resets every counter), so all per-class
+       goodput at that tick is attribution reset, not a delivery gap;
+    4. the raw tick right after such a reset -- the collector computed its
+       rate from the reset-tick counters, so the number spans the reset gap
+       and is a rebuild artefact, not the rate of those seconds;
+    5. gap rates: a tick whose recorded rate was computed over
+       dt > TICK_GAP_MAX_S is regime-mixed (poll gap or reset recovery);
+       at ~1 s ticks a rate past 3 s is a mean over a gap, not a rate;
+    6. boundaries: a tick whose rate interval (t - dt_raw, t] crosses a
+       scenario boundary (the capacity drop at `drop_at_s`, or the recovery
+       step) straddles two regimes, so it is neither pre nor post value;
+       excluded from BOTH sides symmetrically.
+
+    dt is taken from the RAW sample chain -- the collector computed the
+    rates against raw[i-1], so that is the only dt the rate facts speak
+    for. Every exclusion above is printed with the tables that use it.
+    """
+    raw = run["samples"]
+    if not raw:
+        return []
+    dur = run["cfg"].get("duration_s")
+    bound = sorted({float(v) for key in ("drop_at_s", "recover_at_s")
+                    for v in (run["cfg"].get(key),)
+                    if isinstance(v, (int, float))})
+    # rate facts per raw index (the collector's own arithmetic, replayed)
+    meta: list[tuple[float | None, bool, bool]] = []   # dt, rate_invalid, crossed
+    for i, x in enumerate(raw):
+        t = x.get("t")
+        if not isinstance(t, (int, float)) or i == 0:
+            meta.append((None, False, False))       # no rate fact at raw[0]
+            continue
+        pt = raw[i - 1].get("t")
+        dt = (t - pt) if isinstance(pt, (int, float)) else None
+        prx = (raw[i - 1].get("link") or {}).get("rx_bytes")
+        rx = (x.get("link") or {}).get("rx_bytes")
+        spans_reset = (isinstance(prx, (int, float))
+                       and isinstance(rx, (int, float)) and rx < prx)
+        invalid = (dt is None or dt <= 0 or dt > TICK_GAP_MAX_S
+                   or spans_reset)
+        crossed = (dt is not None and any(pt < b <= t for b in bound))
+        meta.append((dt, invalid, crossed))
+    # deferred rule: the POST-reset tick keeps its place but its rate was
+    # computed from the reset's own counters, so mark it too
+    rate_bad: list[bool] = [m[1] for m in meta]
+    for i, (_, spans_reset, _) in enumerate(meta):
+        if spans_reset and i + 1 < len(raw):
+            rate_bad[i + 1] = True
+    out: list[dict] = []
+    for i, x in enumerate(raw):
+        t = x.get("t")
+        if isinstance(dur, (int, float)) and isinstance(t, (int, float)) \
+                and t > float(dur):
+            continue
+        if isinstance(t, (int, float)) and t < WARMUP_S:
+            continue
+        if rate_bad[i] or meta[i][2]:
+            continue
+        out.append(x)
+    return out
+
+
+#: Grace before a generator's own stop: the last second of a workload's life
+#: is teardown (rate collapse on sender exit) and it hit every arm at the
+#: same tick, so it is excluded uniformly. Declared, uniform, never tuned.
+TEARDOWN_GRACE_S = 1.0
+
+
+def label_window(run: dict, label: str,
+                 base: list[dict] | None = None) -> list[dict]:
+    """Per-LABEL time window: up to the label generator's own lifetime.
+
+    `elapsed_s` in workloads.json is the generator's own measured runtime. A
+    verdict about a label measured after its own traffic stopped describes
+    nothing about the label. Capped also by the run's configured duration.
+    TEARDOWN_GRACE_S (=1.0, declared) trims the final second of the sender's
+    own life as well: the last tick before a generator stops is teardown
+    (rate collapse on fin/sender exit) and it hit EVERY arm at the same tick,
+    so it is excluded uniformly rather than scored.
+    """
+    if base is None:
+        base = analysis_samples(run)
+    rep = (run["wl"] or {}).get(label)
+    el = rep.get("elapsed_s") if isinstance(rep, dict) else None
+    dur = run["cfg"].get("duration_s")
+    hi = None
+    for v in (el, dur):
+        if isinstance(v, (int, float)):
+            hi = float(v) - TEARDOWN_GRACE_S if hi is None \
+                else min(hi, float(v) - TEARDOWN_GRACE_S)
+    if hi is None:
+        return list(base)
+    return [x for x in base
+            if isinstance(x.get("t"), (int, float)) and x["t"] < hi]
+
+
 def _post_drop(series: list[tuple[float, float]],
                drop_at: float) -> list[tuple[float, float]]:
     return [(t, v) for t, v in series if t >= float(drop_at) and t >= WARMUP_S]
@@ -286,22 +527,24 @@ def _post_drop(series: list[tuple[float, float]],
 #: sampled under `unknown` (BASELINE_HANDLE_MAP); artefacts from before it
 #: stored the same aggregate under `software_update`, so the fallback is
 #: legacy-labelled and the report says so wherever it is used.
-_BULK_TICK_KEYS = ("bulk_download", "unknown", "software_update")
-
-
 def bulk_tick_series(run: dict) -> tuple[str, list[tuple[float, float]]] | None:
-    """(key, post-drop bulk per-tick series) for one run, or None.
+    """(carrying class, per-tick series) for the bulk label, or None.
 
-    Nothing invents a window: the caller decides drop vs whole-run. The key
-    is returned so every consumer can print WHICH sheet the number came
-    from -- an aggregate labelled as bulk would be the exact misattribution
-    this report exists to prevent."""
-    for key in _BULK_TICK_KEYS:
-        series = per_class_series(run["samples"], key,
-                                  field="goodput_mbps")
-        if series:
-            return key, series
-    return None
+    CARRYING, not assigned-first. A no-enforcement run steers the whole link
+    into the router's `unknown`/legacy aggregate while the assigned
+    `bulk_download` sheet reads an empty queue; picking assigned-first
+    reported a solid "0.00 Mbps post-drop bulk" for exactly those runs --
+    an empty sheet mistaken for an unmeasured transfer. Same carrying rules
+    as the starvation/minima tables (`label_carrying`: assigned + fallback
+    classes, winner by highest mean). The key is returned so every consumer
+    prints WHICH sheet the number came from."""
+    base = analysis_samples(run)
+    rep = (run.get("wl") or {}).get("bulk") or {"kind": "bulk"}
+    cand = label_carrying(base, "bulk", rep)
+    if cand is None:
+        return None
+    _mean, key, series = cand
+    return key, series
 
 
 def post_drop_bulk_mbps(run: dict) -> float | None:
@@ -420,7 +663,8 @@ def row_md(cells: list[str]) -> str:
 
 def build_report(runs_root: Path, out_md: Path,
                  eval_json: Path | None = None,
-                 s5_json: Path | None = None) -> str:
+                 s5_json: Path | None = None,
+                 s6_json: Path | None = None) -> str:
     runs, skipped = load_runs(runs_root)
     scen = scenarios_of(runs)
     sys_of_run = lambda r: r["cfg"].get("system", "")
@@ -463,14 +707,21 @@ def build_report(runs_root: Path, out_md: Path,
     add("## Delay and throughput, every scenario x arm (mean +/- 95% CI over "
         "seeds; t(9)=2.262 for n=10)")
     add("")
+    add("Bulk has TWO columns on purpose (TASK 5a): `sender` is what the "
+        "generator pushed, `receiver/sink` is what the receiver's sink log "
+        "totalled -- the delivered number, used for any bulk claim. The "
+        "post-drop column stays on the TREE counters and is named so: the "
+        "three are different instruments and are never blended.")
+    add("")
     for sc in scen:
         add(f"### {sc}")
         add("")
         add(row_md(["arm", "n", "call p95 ms", "call jitter ms",
-                    "call loss %", "game p95 ms", "bulk Mbps",
+                    "call loss %", "game p95 ms", "bulk Mbps (sender)",
+                    "bulk Mbps (receiver/sink)",
                     "post-drop bulk (tree)",
                     "jain (workload-rate Jain)", "jain (demand-normalized)"]))
-        add(row_md(["---"] * 10))
+        add(row_md(["---"] * 11))
         for arm in arms:
             grp = per_arm(sc, arm, runs)
             if not grp:
@@ -478,6 +729,10 @@ def build_report(runs_root: Path, out_md: Path,
             calls = [call_metrics(r["wl"]) for r in grp]
             games = [game_p95(r["wl"]) for r in grp]
             bulks = [bulk_mbps(r["wl"]) for r in grp]
+            # TASK 5(a): the receiver's own delivered figure, from the label's
+            # sink log. Reported NEXT TO the sender number, never blended:
+            # "what was pushed" and "what arrived" are different facts.
+            sinks = [sink_mbps(r, "bulk")[0] for r in grp]
             pd_bulks = [post_drop_bulk_mbps(r) for r in grp]
             jains = [run_fairness(r["wl"]) for r in grp]
             djains = [run_demand_fairness(r["wl"]) for r in grp]
@@ -489,6 +744,7 @@ def build_report(runs_root: Path, out_md: Path,
                 fmt([c["loss_pct"] for c in calls], 3),
                 fmt(games),
                 fmt(bulks),
+                fmt(sinks),
                 fmt(pd_bulks) if any(v is not None for v in pd_bulks) \
                     else "(no drop scenario)",
                 fmt(jains, 3),
@@ -660,7 +916,7 @@ def build_report(runs_root: Path, out_md: Path,
     add("")
     add(row_md(["scenario", "arm", "n", "jain mean +/- CI",
                 "demand-jain mean +/- CI", "flows used",
-                "min over time (classes+ticks)"]))
+                "min over time (per label, via carrying class)"]))
     add(row_md(["---"] * 6 + ["---"]))
     add("demand-jain: Jain over per-flow satisfied-demand ratios "
         "(achieved/demand, demand self-reported by the generator; elastic "
@@ -684,20 +940,28 @@ def build_report(runs_root: Path, out_md: Path,
             jains = [run_fairness(r["wl"]) for r in grp]
             djains = [run_demand_fairness(r["wl"]) for r in grp]
             nf = [len(flow_rates(r["wl"])) for r in grp]
-            mins: list[float] = []
+            mins: list[str] = []
             for r in grp:
                 if not r["samples"]:
                     continue
-                # ONLY the classes the scenario assigned work. The samples
-                # sheet emits every class key for every mode; iterating it
-                # directly was how absent classes printed min=0 and
-                # fabricated identical fake-starvation rows for every arm.
-                for cls in assigned_classes(r["wl"]):
-                    series = warmup(per_class_series(
-                        r["samples"], cls, field="goodput_mbps"))
+                # Per LABEL (TASK 5b): the class the router's data says
+                # actually carried the label, not the class the policy map
+                # claims. POST-FIX S1's bulk rode `unknown` while its
+                # assigned class read 0 -- a per-assigned-class min of 0
+                # described the empty queue, not the download.
+                for label, rep in sorted((r["wl"] or {}).items()):
+                    if not isinstance(rep, dict):
+                        continue
+                    cand = label_carrying(label_window(r, label),
+                                          label, rep)
+                    if cand is None:
+                        continue
+                    _m, via, series = cand
                     v = minimum_over_time(series)
                     if v is not None:
-                        mins.append(f"{cls}={v:.3g}")
+                        suffix = "" if via == (class_of_label(label, rep) or "") \
+                            else f" via {via}"
+                        mins.append(f"{label}{suffix}={v:.3g}")
             add(row_md([sc, ARM_LABELS.get(arm, arm), str(len(grp)),
                         fmt(jains, 3), fmt(djains, 3),
                         fmt([float(x) for x in nf], 1),
@@ -705,13 +969,18 @@ def build_report(runs_root: Path, out_md: Path,
                         (NOT_AVAILABLE + " (no assigned-class series in this"
                          " arm's samples)")]))
     add("")
-    add("Starvation: a class starved in tick t if its per-tick goodput "
-        "fell below 20% of its own run median (threshold computed from the "
-        "run's own series); the cell lists the starved timestamps. Only "
-        "ASSIGNED classes are considered — a class the scenario never gave "
-        "traffic to cannot be starved in it.")
+    add("Starvation (TASK 5b, fixed basis): per LABEL, over the class the "
+        "data says carried the traffic (assigned class, or the router's "
+        "`unknown`/legacy aggregate when the label's traffic rode there -- "
+        "chosen by highest mean, and the carrying class is named). A label "
+        "starved in tick t if its per-tick goodput fell below 20% of its "
+        "REGIME median -- in a drop scenario the median is the POST-DROP "
+        "regime's own median, so the shaped link rate can never masquerade "
+        "as starvation; without a drop it is the whole window's. The cell "
+        "lists the starved timestamps counted over seeds. With no series at "
+        "all the cell prints NOT AVAILABLE, never an empty claim.")
     add("")
-    add(row_md(["scenario", "arm", "starved ticks per class"]))
+    add(row_md(["scenario", "arm", "starved ticks per label (via carrying class)"]))
     add(row_md(["---"] * 3))
     st_any = False
     row_cache: list[str] = []
@@ -721,22 +990,43 @@ def build_report(runs_root: Path, out_md: Path,
             if not grp or not any(r["samples"] for r in grp):
                 continue
             cells = []
+            counted: dict[str, list[int]] = {}
+            first_ts: dict[str, float] = {}
+            n_series = 0            # seeds where the carrying series exists
             for r in grp:
-                for cls in assigned_classes(r["wl"]):
-                    series = warmup(per_class_series(
-                        r["samples"], cls, field="goodput_mbps"))
-                    if not series:
+                for label, rep in sorted((r["wl"] or {}).items()):
+                    if not isinstance(rep, dict):
                         continue
-                    vals = [v for _, v in series]
-                    thr = 0.2 * statistics.median(vals)
+                    cand = label_carrying(label_window(r, label), label, rep)
+                    if cand is None:
+                        continue
+                    n_series += 1
+                    _m, via, series = cand
+                    thr = starvation_threshold(
+                        series, r["cfg"].get("drop_at_s"))
                     ts = starved_ticks(series, thr)
+                    key = f"{label} via {via}"
                     if ts:
-                        cells.append(f"{cls}: {len(ts)} ticks"
-                                     f" (first t={ts[0]:.1f})")
-            if cells:
+                        counted.setdefault(key, []).append(len(ts))
+                        first_ts.setdefault(key, ts[0])
+            for key in sorted(counted):
                 st_any = True
+                cells.append(f"{key}: {sum(counted[key])} ticks over "
+                             f"{len(counted[key])} seed(s), "
+                             f"first t={first_ts[key]:.1f}")
+            if not cells:
+                # A computed negative is a RESULT, not missing data: say so
+                # with the evidence count, and reserve NOT AVAILABLE for the
+                # case where there is no series to judge at all.
+                if n_series:
+                    cells = [f"no starving tick in {n_series} seed x label "
+                             "series (regime-aware threshold, declared "
+                             "window)"]
+                else:
+                    cells = [NOT_AVAILABLE + " (no carrying-class series in "
+                             "this arm's samples)"]
             row_cache.append(row_md([sc, ARM_LABELS.get(arm, arm),
-                                     "; ".join(cells[:8]) or "(none)"]))
+                                     "; ".join(cells[:8])]))
     lines.extend(row_cache)
     if not st_any:
         add(row_md(["-", "-", "no run in this root has per-tick samples"]))
@@ -748,6 +1038,144 @@ def build_report(runs_root: Path, out_md: Path,
         "those ticks removes nothing else. The window boundary is a "
         "declared constant in this generator, not a per-run choice.")
     add("")
+    add(f"Further declared exclusions (TASK 5b): (1) ticks at or beyond the "
+        f"label generator's own measured lifetime (`elapsed_s`, capped by the "
+        f"scenario duration) -- a verdict about a label after its traffic "
+        f"stopped describes nothing about the label; (2) ticks whose link "
+        f"counters went BACKWARDS -- a qdisc del/re-add resets every counter "
+        f"on the device, so that tick's per-class goodput is a reset "
+        f"artefact, not a delivery gap. Stars and minima are computed over "
+        f"what remains; nothing is excluded silently.")
+    add("")
+
+    # ---- S6: the intent scenario (TASK 4) ---------------------------------
+    if any(r["cfg"].get("scenario") == "s6_intent_expire" for r in runs):
+        add("## S6 intent scenario (TASK 4: real API intent, TTL expiry "
+            "inside the run, auto-revert)")
+        add("")
+        add("One intent is requested at t~1s on the operator's real surface "
+            "(IntentService, the exact upstream-declared code path the HTTP "
+            "handler calls: POST /intent, target device, weight 0.5, TTL "
+            "15s). The 40s scenario makes the TTL expire INSIDE the run, so "
+            "both endpoints of the intent's life are measured: held while "
+            "live, auto-reverted at expiry (LeaseBook's implicit sweep plus "
+            "the per-tick sync_lease). Receiver evidence is the per-second "
+            "sink sampler; the floors line is a FLOOR line, not a preference "
+            "claim: on a healthy link a reserve must not starve the other "
+            "classes, and the reserved device must actually receive bytes. "
+            "The s6 summary file is quoted when present; the table never "
+            "infers what the verifier measured.")
+        add("")
+        add(row_md(
+            ["arm",
+             "intent (verdict from result.json)",
+             "auto-revert (lease_active evidence, ticks)",
+             "receiver inst in window: game min / bulk min (floors)",
+             "declared"]))
+        add(row_md(["---"] * 5))
+        if s6_json and Path(s6_json).exists():
+            try:
+                s6sum = json.loads(Path(s6_json).read_text())
+                add(f"- verifier verdict (tools/verify_s6.py, via "
+                    f"`{s6_json}`): "
+                    f"`{json.dumps({k: v for k, v in s6sum.items()})}`")
+            except json.JSONDecodeError as e:
+                add(f"- s6 summary unreadable: {e}")
+        elif any(r["cfg"].get("scenario") == "s6_intent_expire"
+                 for r in runs):
+            add(f"- s6 summary: {NOT_AVAILABLE} "
+                "(no `data/experiments/s6/s6_summary.json`; the live "
+                "script writes it after the verifier runs)")
+        add("")
+        for arm in arms:
+            grp = [x for x in runs if x["cfg"].get("scenario")
+                   == "s6_intent_expire"
+                   and x["cfg"].get("system") == arm]
+            if not grp:
+                add(row_md([ARM_LABELS.get(arm, arm),
+                            "NOT AVAILABLE (no s6 run dir)", "-", "-",
+                            "declared intent-incapable"]))
+                continue
+            def _collapse(cells: list[str]) -> str:
+                if len(set(cells)) == 1:
+                    return f"{cells[0]} (n={len(cells)} seeds)"
+                return "; ".join(cells)
+            granted_c: list[str] = []
+            revert_c: list[str] = []
+            floor_c: list[str] = []
+            for r in grp:
+                res = r.get("res") if isinstance(r.get("res"), dict) else {}
+                intent = res.get("intent") or {}
+                s = r["samples"]
+                fired = intent.get("fired_at_run_t_s")
+                held = intent.get("in_effect_s")
+                ttl = r["cfg"].get("intent_ttl_s") or 15.0
+                if res.get("system") != "aciq":
+                    gran = ("declared: no intent surface"
+                            if intent.get("supported") is False
+                            else NOT_AVAILABLE + " (no declaration)")
+                    granted_c.append(gran)
+                    revert_c.append("-")
+                    floor_c.append("-")
+                    continue
+                note = intent.get("note") or ""
+                if fired is None or not isinstance(fired, (int, float)):
+                    granted_c.append(NOT_AVAILABLE + " (" + note[:50] + ")")
+                    revert_c.append("-")
+                    floor_c.append("-")
+                    continue
+                if "GRANTED" not in note:
+                    granted_c.append(f"NOT granted at t={fired:.1f}s "
+                                     f"({note[:60]})")
+                    revert_c.append("-")
+                    floor_c.append("-")
+                    continue
+                granted_c.append(f"granted t={fired:.1f}s, in-effect "
+                                 f"{held if held is not None else 0:.0f}s "
+                                 f"(TTL {ttl:.0f}s)")
+                inside = sorted(x["t"] for x in s
+                                if x.get("lease_active") is True
+                                and fired <= x["t"] <= fired + ttl)
+                after = sorted(x["t"] for x in s
+                               if x.get("lease_active") is True
+                               and x["t"] > fired + ttl + 2.5)
+                if inside and not after:
+                    revert_c.append(
+                        f"ok: last active t={inside[-1]:.0f}s, clear after "
+                        f"{fired + ttl:.0f}s")
+                elif inside and after:
+                    revert_c.append(f"FAILED: still active at t={after[0]:.0f}s")
+                else:
+                    revert_c.append(NOT_AVAILABLE
+                                    + " (lease never observed active)")
+                c_game, _bg = sink_inst_series(r, "game")
+                c_bulk, _bb = sink_inst_series(r, "bulk")
+
+                def _in(sr, lo, hi):
+                    return [v for t, v in sr if lo <= t <= hi]
+
+                gvals = _in(c_game, fired, fired + ttl)
+                bvals = _in(c_bulk, fired, fired + ttl)
+                pre_bulk = _in(c_bulk, 0.0, fired)
+                med = statistics.median(pre_bulk) if pre_bulk else 0.0
+                if gvals and bvals:
+                    bulk_ok = (med <= 0) or (min(bvals) >= 0.1 * med)
+                    floor_c.append(
+                        f"game {min(gvals):.2f} Mbps "
+                        f"(>0: {'PASS' if min(gvals) > 0 else 'FAIL'}); "
+                        f"bulk {min(bvals):.2f} Mbps (>=10% of pre-median "
+                        f"{med:.2f}: {'PASS' if bulk_ok else 'FAIL'})")
+                else:
+                    floor_c.append(NOT_AVAILABLE
+                                   + " (no per-second sink sampler data in "
+                                   "the window)")
+            add(row_md([ARM_LABELS.get(arm, arm),
+                        _collapse(granted_c) if granted_c else "-",
+                        _collapse(revert_c) if revert_c else "-",
+                        _collapse(floor_c) if floor_c else "-",
+                        "ACIQ: intent surface" if arm == "aciq" else
+                        "declared intent-incapable"]))
+        add("")
 
     # ---- classification --------------------------------------------------
     add("## Classifier (router-vantage corpus, thresholds fixed before "
@@ -758,7 +1186,18 @@ def build_report(runs_root: Path, out_md: Path,
             ev = json.loads(eval_json.read_text())
         except json.JSONDecodeError as e:
             ev = {"fatal": f"unreadable: {e}"}
-        for key in ("strict", "accept_abstain", "confusion",
+        if "strict_heldout" in ev and not ev.get("fatal"):
+            sho = ev["strict_heldout"]
+            add(f"- HEADLINE (fresh held-out, tuple-split by flow, no "
+                f"threshold tuned on this half): strict accuracy "
+                f"{sho.get('accuracy_strict')} on n={sho.get('n')} "
+                f"({sho.get('correct')} correct, {sho.get('abstained')} "
+                f"abstained). The FULL-corpus figures below are context, "
+                "not the verdict: the held-out half is the one the "
+                "classifier never shaped.")
+        for key in ("strict", "strict_fixed", "strict_heldout",
+                    "accept_abstain", "accept_abstain_heldout",
+                    "confusion", "confusion_heldout",
                     "paths_fixed", "n_corpus", "n_heldout"):
             if key in ev:
                 add(f"- {key}: `{json.dumps(ev[key])}`")
@@ -903,12 +1342,14 @@ def main(argv: list[str] | None = None) -> int:
                     default=ROOT / "data/experiments/classifier_corpus/eval.json")
     ap.add_argument("--s5-json", type=Path,
                     default=ROOT / "data/experiments/s5/s5_summary.json")
+    ap.add_argument("--s6-json", type=Path,
+                    default=ROOT / "data/experiments/s6/s6_summary.json")
     ap.add_argument("--legacy-seeds", default="0-9,42-51",
                     help="Seed ranges considered PRE-FIX (informational)")
     ap.add_argument("--postfix-seeds", default="200-209",
                     help="Seed ranges considered POST-FIX (informational)")
     a = ap.parse_args(argv)
-    build_report(a.runs_root, a.out, a.eval_json, a.s5_json)
+    build_report(a.runs_root, a.out, a.eval_json, a.s5_json, a.s6_json)
     print(f"report written: {a.out} (+html)")
     return 0
 

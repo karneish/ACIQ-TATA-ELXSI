@@ -171,6 +171,24 @@ SCENARIOS: dict[str, Scenario] = {
         ),
         duration_s=40.0,
     ),
+    # The intent scenario (TASK 4). Background bulk + call + gaming on a
+    # healthy link; a REAL API intent (the same IntentService.handle surface
+    # the HTTP layer wraps) reserves a share for one device at t~1s, and its
+    # TTL expires INSIDE the run, so the harness must show the reserve being
+    # HELD for its life and AUTO-REVERTED after expiry, with the receiver-side
+    # per-second series proving who actually got bytes. The baselines have no
+    # intent surface at all -- their arms declare that incapability in
+    # result.json rather than silently running without it.
+    "s6_intent_expire": Scenario(
+        name="s6_intent_expire",
+        workloads=(
+            Workload("call", "call", 1, dscp=46),
+            Workload("game", "game", 1, dscp=46),
+            Workload("bulk", "bulk", 1),
+        ),
+        duration_s=40.0,
+        settle_s=4.0,
+    ),
 }
 
 
@@ -1020,6 +1038,9 @@ class Harness:
                                   self._last_policy_change_t,
                                   drop_rate_per_s=measurement.drop_rate_per_s)
         if not bound:
+            # the budget's currency is real kernel change; the dwell refusal
+            # means nothing reaches the tree, so the stamp goes back.
+            self._governor.refund_last_change()
             return None, False
         # The estimator's OBJECT stays untouched: `cap` is what was estimated.
         # `applied` is what the law permitted to reach the tree. Every log
@@ -1028,7 +1049,13 @@ class Harness:
         applied = bound.rate
         plan = build_plan(applied, self._lease)
         self._current_plan = plan
-        self._last_policy_change_t = now
+        # The dwell window measures REAL changes: the stamp moves here --
+        # when the apply has committed -- and not at decision time. A
+        # rolled-back apply never changed the tree; stamping the window at
+        # decision time left the follow-up plan blocked behind a dwell that
+        # priced a change which never happened, and NO committed apply
+        # could then follow (measured live on seed s2/555; this also gives
+        # verify_s5c.py its "run continued" witness a point).
         self._bound_reason = bound.reason
         if bound.emergency:
             self.law_events.append({
@@ -1043,6 +1070,19 @@ class Harness:
         self.txn.remember_capacity(applied)
         # same timeline as the estimator, or the dwell window is measured wrong
         txr = self.txn.apply(plan, now=now)
+        if not txr.ok:
+            # the budget's currency is real kernel change; an apply that the
+            # transaction did not commit left the tree as it was, so the
+            # change stamp this decision took is refunded. Without this an
+            # injected failed apply swallows the budget and no committed
+            # apply can ever follow it (the S5(c) "run continued" witness
+            # had nothing to point at; measured live on seed s2/555).
+            was_refunded = self._governor.refund_last_change()
+            if was_refunded:
+                self.law_events.append({
+                    "t": round(now, 2), "wanted": round(want, 3),
+                    "allowed": round(prev_rate, 3),
+                    "note": "apply not committed: change budget refunded"})
         # Record what the KERNEL actually has, not just what was asked for.
         #
         # The Option A acceptance criteria require the recovery evidence to show
@@ -1076,6 +1116,8 @@ class Harness:
         })
         if txr.committed:
             self.policy_changes += 1
+            # dwell window anchored on the REAL committed change (see above)
+            self._last_policy_change_t = now
             if self._controller is not None:
                 self._controller.notify_change(now)
         # Same rule as sync_lease: a rebuild attempt destroys every per-flow

@@ -13,6 +13,12 @@ VENV="${ACIQ_VENV:-/home/mekarz/aciq-venv}"
 PY="$VENV/bin/python"; [ -x "$PY" ] || PY=python3
 OUT=data/experiments/s5; mkdir -p "$OUT"
 SUMMARY="$OUT/s5_summary.json"; : >"$SUMMARY"
+# Per-step stdout of the live runs. /tmp/opencode was the agent sandbox's
+# scratch dir and never existed on a plain host: the redirect failed BEFORE
+# the run started, so a (SIGTERM/SIGKILL/injection) case reported on a run
+# that never launched. mktemp gives each step its own writable dir.
+LOGDIR="$(mktemp -d /tmp/aciq-s5-XXXXXXXX)"
+echo "[s5] scratch: $LOGDIR"
 
 note() { echo "[$1] $2"; }
 s5a=FAIL; s5b=FAIL; s5c=FAIL; s5d=FAIL
@@ -20,7 +26,7 @@ s5a=FAIL; s5b=FAIL; s5c=FAIL; s5d=FAIL
 # ---- (a) SIGTERM: run with enforcement so there IS a filter to outlive ----
 testbed/cleanup.sh >/dev/null 2>&1; testbed/setup.sh >/dev/null
 "$PY" run_experiments.py --scenario s2_wan_drop --system aciq --seeds 1 \
-        --no-setup --enforce >/tmp/opencode/s5a.out 2>&1 &
+        --no-setup --enforce >"$LOGDIR/s5a.out" 2>&1 &
 RUN_PID=$!
 # enforcement takes the whole first-half of the run (probes, verdicts);
 # give it long enough that an installed filter is certain, not assumed
@@ -38,7 +44,7 @@ fi
 
 # ---- (b) SIGKILL: residue expected; next cleanup removes it ---------------
 "$PY" run_experiments.py --scenario s2_wan_drop --system aciq --seeds 1 \
-        --no-setup --enforce >/tmp/opencode/s5b.out 2>&1 &
+        --no-setup --enforce >"$LOGDIR/s5b.out" 2>&1 &
 RUN_PID=$!
 sleep 20; kill -KILL $RUN_PID 2>/dev/null; wait $RUN_PID 2>/dev/null
 sleep 1
@@ -53,10 +59,21 @@ else
 fi
 
 # ---- (c) injected failed apply: tx path rolls back through the kernel -----
+# The injection arms at the run's midpoint (t ~= 19s of 40s) and fails the
+# NEXT class-add the transaction issues. Without a capacity drop the governor
+# converges inside the first ~4s and the tree is then held steady -- no apply
+# ever happens after 19s, the injected failure never fires, and there is no
+# rollback to verify. The drop at t=25 guarantees a real, drop-triggered apply
+# AFTER arming: it fails at the kernel, the rollback replays last-good, and
+# the governor's post-drop ratchet re-applies on the following ticks, which
+# is exactly the "run continued to commit" witness the verifier needs.
 testbed/setup.sh >/dev/null
-"$PY" run_experiments.py --scenario s2_wan_drop --system aciq --seeds 1 \
-        --no-setup --inject-fail-apply >/tmp/opencode/s5c.out 2>&1
-"$PY" tools/verify_s5c.py data/runs/s2_wan_drop__aciq__adaptive__seed*; \
+# a fresh UNUSED seed so the verifier judges exactly this injected run;
+# the family glob would sweep unwitnessed normal runs and fail the check.
+"$PY" run_experiments.py --scenario s2_wan_drop --system aciq \
+        --seed 555 --seeds 1 --no-setup --drop-at 25 \
+        --inject-fail-apply >"$LOGDIR/s5c.out" 2>&1
+"$PY" tools/verify_s5c.py data/runs/s2_wan_drop__aciq__adaptive__seed555; \
     rc_c=$?; [ $rc_c -eq 0 ] && s5c=PASS || note c "verify_s5c.py says NO (rc=$rc_c)"
 note c "S5(c) injection case complete"
 
@@ -65,7 +82,7 @@ note c "S5(c) injection case complete"
 # through REAL tc. PASS needs: shield latches SAFE_HELD, the safe tree is
 # actually installed under netns router on veth-lan, and safe_state_in_force
 # says so. Any refusal is the case's FAILURE, not a pass.
-"$PY" - <<'EOF' && s5d=PASS || note d "shield case refused: see /tmp/opencode/s5d.out"
+"$PY" - >"$LOGDIR/s5d.out" <<'EOF' && s5d=PASS || note d "shield case refused: see "$LOGDIR/s5d.out""
 import json, sys, time
 sys.path.insert(0, ".")
 from aciq.txn import Runner, TransactionManager

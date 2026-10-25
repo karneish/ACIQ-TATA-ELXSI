@@ -28,6 +28,58 @@ def harness(runner=None):
     return Harness(runner=runner or FakeRunner(auto_readback=True), clock=lambda: 0.0)
 
 
+class TestFailedApplyBudgetRefund(unittest.TestCase):
+    """S5(c) "run continued" witness used to be unreachable.
+
+    Measured live (seed s2/555): the injected `class add` failed once, the
+    transaction rolled back last-good -- and the change budget stayed spent
+    on that decision even though the kernel never changed. No committed
+    apply could follow, so verify_s5c.py found no `resumed` witness. The
+    budget's currency is real kernel change, so this pin covers both ends:
+    the harness calls refund_last_change() when an apply does not commit
+    (here), and the refund re-opens the budget (rates governor unit test
+    plus the false-injection apply cycle in test_inject_failed_apply.py).
+    """
+
+    def test_a_failed_apply_refunds_the_governor_stamp(self):
+        from aciq.ratecap import RateGovernor
+
+        class SpyGovernor(RateGovernor):
+            """The scaffolding of the pin is the budget REPLACEMENT, since the
+            offline exchange fixture has no delay telemetry to shape a
+            second changed decision; this spy proves the harness side."""
+            def __init__(self):
+                super().__init__()
+                self.refund_calls = 0
+
+            def refund_last_change(self):
+                self.refund_calls += 1
+                return super().refund_last_change()
+
+        h = harness()
+        h._governor = SpyGovernor()
+        h.adapt_step(counters(rx=0), dt=1.0, now=0.0, link=link())
+        h.adapt_step(counters(rx=0, overlimits=9000), dt=1.0, now=1.0,
+                     link=link(overlimits=9000))
+        self.assertTrue(h.txn.inject_failed_apply_once())
+        cap, changed = h.adapt_step(
+            counters(rx=2_500_000, overlimits=18000), dt=1.0, now=10.0,
+            link=link(overlimits=18000))
+        self.assertFalse(changed, "the injected apply must not report success")
+        failed = [e for e in h.policy_change_log if not e["ok"]]
+        self.assertTrue(failed, "the armed injection must fail the apply")
+        self.assertTrue(all(e["rolled_back"] for e in failed))
+        self.assertEqual(h._governor.refund_calls, 1,
+                         "a rolled-back apply must refund the change stamp")
+        before = h.policy_changes
+        # succeeded apply does NOT refund: drive a committed change the way
+        # the live drop session does.
+        h.txn._fired = True
+        cap2, changed2 = h.adapt_step(
+            counters(rx=0), dt=1.0, now=11.0, link=link())
+        self.assertEqual(h._governor.refund_calls, 1)
+
+
 def saturating(now, rx, over_before, over_after):
     return counters(rx=rx, overlimits=over_after)
 

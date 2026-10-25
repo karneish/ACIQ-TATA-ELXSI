@@ -1625,3 +1625,42 @@ class TestTheLeaseNoteReportsCoverageNotEndState(unittest.TestCase):
         r._lease_effective_s = 0.0
         note = r._lease_note_text()
         self.assertIn("NEVER INSTALLED", note)
+
+
+class TestS6ApiIntentFireOffline(unittest.TestCase):
+    """The S6 fire path, offline, with the REAL IntentService surface.
+
+    The first live S6 batch lost every ACIQ run to a NameError inside the
+    fire block (`IntentService` used but never imported in experiment.py).
+    This pins the whole request path offline: the POST the driver makes is
+    handled by the service an external caller would reach, the granted
+    steering appears in the samples, and the TTL expiry reverts it.
+    """
+
+    def test_the_s6_intent_fires_grants_and_auto_reverts(self):
+        # The offline loop spends ~0.05 s of process time on 41 ticks, so a
+        # TTL of 15 real seconds can never expire inside it. The book takes
+        # a clock, and time dilation is consistent for creation AND sweep:
+        # monotonic x 1000 makes the lease age 1000x faster, so TTL 15
+        # emulates ~15 ms and expires a few ticks after the grant.
+        dilated = LeaseBook(clock=lambda: time.monotonic() * 1000.0)
+        res = ExperimentRunner(
+            launcher=_LiveishLauncher(),
+            harness=Harness(runner=FakeRunner(auto_readback=True),
+                            clock=lambda: 0.0),
+            results_dir=Path(tempfile.mkdtemp()), real_time=False, tick_s=1.0,
+            bridge_executor=_Exec()
+        ).run("s6_intent_expire", ACIQ,
+              api_intent=True, intent_at_s=1.0, intent_ttl_s=15.0,
+              book=dilated)
+        notes = " | ".join(res.notes)
+        self.assertIn("GRANTED", notes,
+                      f"the API intent must be granted: {notes}")
+        s = res.samples
+        lease = [x.get("lease_active") for x in s
+                 if x.get("lease_active") is not None]
+        self.assertTrue(any(lease), "the granted lease must steer")
+        late = [x for x in s if x.get("t", 0) > 18.0]
+        self.assertTrue(
+            all(not x.get("lease_active") for x in late),
+            "the intent must revert by its own TTL")

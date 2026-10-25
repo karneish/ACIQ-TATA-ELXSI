@@ -7,10 +7,15 @@ if nothing happened. This pins the fixed contract:
   - a healthy run exits 0 and leaves its run dir in place;
   - a run whose apply fails exits 1, removes its own incomplete run dir
     (so no pair of config+result masquerading under a later report as data),
-    and the pipeline step then kills the pipeline properly.
+    and the pipeline step then kills the pipeline properly;
+  - an ARMED S5(c) injection note is NOT a failure: its word "failed" names
+    the feature under test, and the driver once deleted the seed555 run
+    dir -- the evidence -- before verify_s5c could read it. The armed run's
+    dir stays; judging it belongs to tools/verify_s5c.py.
 """
 
 import json
+import run_experiments
 import subprocess
 import sys
 import tempfile
@@ -41,20 +46,27 @@ class DriverExit(unittest.TestCase):
             report = (r / "REPORT.md").read_text()
             self.assertIn("estimator", report.lower())
 
-    def test_failed_apply_exits_nonzero_and_removes_the_dead_dir(self):
+    def test_armed_s5_injection_note_keeps_the_evidence(self):
+        # the injected run used to be DELETED by the driver (the ARMED note
+        # contains the word "failed") -- verify_s5c then found no dir and
+        # S5(c) reported NO for a run that had actually rolled back. The
+        # armed run's dir is evidence; it must survive.
         with tempfile.TemporaryDirectory() as tmp:
             r = Path(tmp)
             p = self._run(r, r / "REPORT.md", "--inject-fail-apply")
-            self.assertNotEqual(p.returncode, 0, p.stdout + p.stderr)
-            self.assertIn("removed incomplete run dir", p.stdout)
-            # the poisoned pair (config+result, no samples, estimator=None)
-            # does not survive: a directory listing with it would read as data
-            self.assertFalse(self.run_dir(r).exists())
-            # and the failure is machine-readable: the report written from
-            # that dir says zero runs, not one dead run repackaged as data
-            self.assertTrue((r / "REPORT.md").exists())
-            rep = (r / "REPORT.md").read_text()
-            self.assertIn("No runs found", rep)
+            self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+            self.assertTrue(self.run_dir(r).joinpath("result.json").exists())
+
+    def test_expected_s5_note_predicate(self):
+        # only the success-part marker is carved out; "NOT armed" and plain
+        # failure notes keep the destructive warning behaviour.
+        armed = ("S5(c) injected failed apply ARMED at "
+                 "t=19.0s")
+        self.assertTrue(run_experiments.expected_s5_note(armed))
+        self.assertFalse(run_experiments.expected_s5_note(
+            "S5(c) injection NOT armed (re-called?)"))
+        self.assertFalse(run_experiments.expected_s5_note(
+            "apply failed: refused"))
 
     def test_report_only_never_leaves_a_clobbered_report(self):
         # --report-only is the unprivileged rebuild path: it must not shell out

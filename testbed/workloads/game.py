@@ -47,12 +47,16 @@ def main() -> int:
                     help="write the summary-so-far here, repeatedly, so the "
                          "driver can ingest latency DURING the run instead of "
                          "only at exit")
+    ap.add_argument("--sample-every", type=float, default=1.0,
+                    help="receiver-side per-second sampling cadence (s); "
+                         "0 disables the per-second sink lines")
     args = ap.parse_args()
 
     family = socket.AF_INET6 if args.ipv6 else socket.AF_INET
 
     if args.listen:
-        sink = EchoSink(args.port, family=family).start()
+        sink = EchoSink(args.port, family=family,
+                        sample_every=args.sample_every, kind="game").start()
         print(f"game sink listening on :{args.port}", flush=True)
         try:
             while True:

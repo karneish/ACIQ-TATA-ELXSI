@@ -68,7 +68,8 @@ def jain_fairness(values: list[float]) -> float:
 class EchoSink:
     """Listens on a UDP port and echoes the sequence number back to the sender."""
 
-    def __init__(self, port: int, host: str = "0.0.0.0", family: int = socket.AF_INET):
+    def __init__(self, port: int, host: str = "0.0.0.0", family: int = socket.AF_INET,
+                 sample_every: float = 1.0, kind: str = "udp"):
         self.family = family
         self.sock = socket.socket(family, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -77,6 +78,13 @@ class EchoSink:
         self.packets = 0
         self.bytes = 0
         self.thread = threading.Thread(target=self._run, daemon=True)
+        # Per-second receiver series, same format as the TCP sinks'. The echo
+        # sink measures what ARRIVED (echo retries aside), so its inst rate is
+        # arrival rate, not forwarded goodput; the report says so.
+        if sample_every > 0:
+            import sinksample
+            sinksample.sampler(kind, lambda: self.bytes, sample_every,
+                               self._stop, monotonic=time.monotonic)
 
     def _run(self) -> None:
         self.sock.settimeout(0.2)

@@ -325,12 +325,19 @@ class TransactionManager:
         genuine `tc` call -- the proof is the kernel's own non-zero exit --
         but the marker never changes the shape of the tree being applied.
 
-        Returns True if injection armed (idempotent: arming twice is a bug the
-        caller must not paper over -- a second arming replaces the wrapper
-        without firing, and the "failure" would be silently deferred).
+        Returns True if injection armed (idempotent: arming twice while the
+        previous shot is still pending is refused -- a second arming would
+        replace the wrapper without firing and the "failure" would be silently
+        deferred). A wrapper that HAS already fired is unwrapped back to its
+        base first, so a fresh run in the same process can arm its own: the
+        fired wrapper is a no-op pass-through, and leaving it in place would
+        make every subsequent run report "NOT armed" and skip the injection.
         """
-        if getattr(self.runner, "_aciq_fail_once", False):
-            return False
+        base = self.runner
+        while getattr(base, "_aciq_fail_once", False):
+            if not getattr(base, "_fired", False):
+                return False          # armed, shot still pending: refuse
+            base = base._base         # fired: unwrap to the real runner
 
         class _FailOnceRunner:
             _aciq_fail_once = True
@@ -350,7 +357,7 @@ class TransactionManager:
         # Proved by the standalone live check; a qdisc apply that never
         # touched the kernel could only prove the wrapper.
         last_reason = self.last_reason
-        self.runner = _FailOnceRunner(self.runner)
+        self.runner = _FailOnceRunner(base)
         self.last_reason = last_reason
         return True
 

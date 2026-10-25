@@ -29,7 +29,14 @@ STEP_S = 6.0
 CHUNK = 64 * 1024
 
 
-def sink(port: int, out: dict, stop: threading.Event | None = None) -> None:
+def sink(port: int, out: dict, stop: threading.Event | None = None,
+         sample_every: float = 1.0) -> None:
+    # Per-second receiver series: same incremental `live` counter as bulk's
+    # sink, updated per chunk read instead of per connection close.
+    live = {"bytes": out.get("bytes", 0)}
+    if sample_every > 0:
+        import sinksample
+        sinksample.sampler("video", lambda: live["bytes"], sample_every, stop)
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("0.0.0.0", port))
@@ -53,6 +60,7 @@ def sink(port: int, out: dict, stop: threading.Event | None = None) -> None:
             if not b:
                 break
             received += len(b)
+            live["bytes"] = out.get("bytes", 0) + received
         conn.close()
         dt = max(time.monotonic() - t0, 1e-9)
         out["bytes"] = out.get("bytes", 0) + received
@@ -71,12 +79,15 @@ def main() -> int:
     ap.add_argument("--src", default=None,
                     help="source address to bind, so this workload is a "
                          "distinct device for lease matching")
+    ap.add_argument("--sample-every", type=float, default=1.0,
+                    help="receiver-side per-second sampling cadence (s); "
+                         "0 disables the per-second sink lines")
     ap.add_argument("--json-out", default=None)
     args = ap.parse_args()
 
     if args.listen:
         print(f"video sink listening on :{args.port}", flush=True)
-        sink(args.port, {"bytes": 0})
+        sink(args.port, {"bytes": 0}, sample_every=args.sample_every)
         return 0
 
     # Retry: the sink runs as a separate process and may not have bound yet.

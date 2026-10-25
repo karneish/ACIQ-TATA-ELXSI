@@ -30,6 +30,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from .bridge import count_flow_filters_text, enumerate_flow_filters
+from .api import IntentService
 from .flowtrack import ConntrackSource, FlowTracker
 from .intent import IntentError, LeaseBook
 from .harness import SCENARIOS, CapacityMode, Harness, RunResult, SystemSpec
@@ -115,8 +116,14 @@ class NetnsLauncher:
 
     def spawn_sink(self, kind: str, port: int, log_path: Path) -> subprocess.Popen:
         """Receiving end, always in the client namespace (the 'household')."""
+        # --sample-every 1.0: every sink prints one receiver line per second
+        # ("[<kind> sink] t=... cum=... inst=... Mbps"), the live per-second
+        # receiver-side series. Instruments EVERY run, not just the intent
+        # scenario: the same metric basis for every arm, and totals keep
+        # coming from connection-close lines (formats never collide).
         p = subprocess.Popen(
-            self._argv(self.ns_client, f"{kind}.py", "--listen", "--port", str(port)),
+            self._argv(self.ns_client, f"{kind}.py", "--listen",
+                       "--port", str(port), "--sample-every", "1.0"),
             stdout=open(log_path, "w"), stderr=subprocess.STDOUT,
             start_new_session=True)
         self.sink_procs.append(p)
@@ -297,6 +304,16 @@ class ExperimentRunner:
         self._lease_ips: list[str] = []
         self._lease_weight = 0.5
         self._lease_effective_s = 0.0
+        #: S6 API-intent state (session defaults; run() re-binds).
+        self._api_intent = False
+        self._intent_at_s = 1.0
+        self._intent_ttl_s = 15.0
+        self._intent_weight = 0.5
+        self._intent_label = "game"
+        self._intent_fired = False
+        self._intent_t: float | None = None
+        self._intent_note: str | None = None
+        self._intent_expiry: float | None = None
         #: Recent per-tick verdicts, newest last. Used to attribute a workload's
         #: probe traffic to the class it was steered into; bounded so a long run
         #: cannot grow it without limit.
@@ -326,11 +343,30 @@ class ExperimentRunner:
         lease_weight: float = 0.5,
         lease_ttl_s: float | None = None,
         inject_fail_apply: bool = False,
+        api_intent: bool = False,
+        intent_at_s: float = 1.0,
+        intent_ttl_s: float = 15.0,
+        intent_weight: float = 0.5,
+        intent_label: str = "game",
+        book: LeaseBook | None = None,
     ) -> RunResult:
         self._inject_fail_apply = bool(inject_fail_apply)
         self._inject_fail_applied = False
         self._inject_note = None
         self.enforce = enforce
+        # ---- S6 api-intent parameters -------------------------------------
+        # A requested API intent implies enforcement for ACIQ runs (a reserve
+        # is a policy change, not a report), which the run() body decides on
+        # from this value, not from a second flag someone has to pass in sync.
+        self._api_intent = bool(api_intent)
+        self._intent_at_s = intent_at_s
+        self._intent_ttl_s = intent_ttl_s
+        self._intent_weight = intent_weight
+        self._intent_label = intent_label
+        self._intent_fired = False
+        self._intent_t = None
+        self._intent_note = None
+        self._intent_expiry = None
         self._lease_ips = list(lease_ips)
         #: Seconds during which the lease class actually existed and could steer
         #: a flow. The old note read the *end* state, so a lease installed at
@@ -414,12 +450,21 @@ class ExperimentRunner:
         #: describes the end of the run or a moment before it changed.
         self._est_t: float | None = None
         self._cap_t: float | None = None
-        self._lease_book = LeaseBook()
+        # A run owns its own book (per-run leases must not leak), but an
+        # offline fixture may hand one in -- e.g. a clock-dilated book whose
+        # TTL expiry lands inside the fixture's tick loop.
+        self._lease_book = book if book is not None else LeaseBook()
         enforcement_why = "not requested"
         will_enforce = False
-        if self.enforce:
+        # A requested API intent implies enforcement on ACIQ: a reserve is a
+        # policy change, not a report. Baselines keep the refusal explicit.
+        needs_enforcement = self.enforce or self._api_intent
+        if needs_enforcement:
             if system is not SystemSpec.ACIQ:
-                enforcement_why = f"{system.value} is a baseline, not ACIQ"
+                enforcement_why = (f"{system.value} is a baseline, not ACIQ"
+                                   + ("; S6 API intent requested but this "
+                                      "system has no intent surface"
+                                      if self._api_intent else ""))
             elif isinstance(self.launcher, DryLauncher):
                 enforcement_why = "dry run launches no traffic"
             else:
@@ -477,6 +522,14 @@ class ExperimentRunner:
             "lease_weight": self._lease_weight if self._lease_ips else None,
             "lease_ttl_s": self._lease_ttl_s,
             "inject_fail_apply": bool(self._inject_fail_apply),
+            # S6: what the intent would ask for and when. Whether it was
+            # ACCEPTED is recorded in result.json after the run; this states
+            # the request before any kernel call.
+            "api_intent_requested": bool(self._api_intent),
+            "intent_at_s": self._intent_at_s if self._api_intent else None,
+            "intent_ttl_s": self._intent_ttl_s if self._api_intent else None,
+            "intent_weight": self._intent_weight if self._api_intent else None,
+            "intent_label": self._intent_label if self._api_intent else None,
         }
         paths.write_json("config.json", cfg)
 
@@ -704,6 +757,49 @@ class ExperimentRunner:
                     f"{elapsed:.1f}s" if armed
                     else "S5(c) injection NOT armed (re-called?)")
 
+            # ---- S6: the intent, requested through the REAL API surface ----
+            # Not LeaseBook.request directly: IntentService.handle IS what the
+            # HTTP handler delegates to, so a POST here goes through the same
+            # validation, audit and rate-limit path an external caller would.
+            # The request lands at t~=1.0s with a TTL short enough to expire
+            # INSIDE the run; the harness's per-flow enforce() consults the
+            # book every tick and LeaseBook's implicit sweep makes expiry a
+            # plan REVERT, so both ends of the intent's life are measured.
+            if (self._api_intent and system is SystemSpec.ACIQ
+                    and enforcement_on and not self._intent_fired
+                    and elapsed >= self._intent_at_s):
+                self._intent_fired = True
+                self._intent_t = elapsed
+                ip = (cfg.get("device_ips") or {}).get(self._intent_label)
+                try:
+                    svc = IntentService(book=self._lease_book)
+                    status, payload, _role = svc.handle(
+                        "POST", "/intent", json.dumps({
+                            "target": "device",
+                            "ip": ip,
+                            "weight": self._intent_weight,
+                            "ttl_s": self._intent_ttl_s,
+                        }).encode(), client="testbed-s6")
+                    if status == 201:
+                        self._intent_note = (
+                            f"S6 API intent GRANTED at t={elapsed:.1f}s "
+                            f"(target device {ip}, weight "
+                            f"{self._intent_weight:.2f}, TTL "
+                            f"{self._intent_ttl_s:.0f}s -> expires at "
+                            f"t~={elapsed + self._intent_ttl_s:.1f}s, "
+                            f"lease {payload.get('lease_id')})")
+                        self._intent_expiry = elapsed + self._intent_ttl_s
+                    else:
+                        self._intent_note = (
+                            f"S6 API intent REFUSED at t={elapsed:.1f}s by "
+                            f"the service (status {status}: "
+                            f"{json.dumps(payload)}) -- expected on baselines, "
+                            "a defect on ACIQ")
+                except Exception as e:  # noqa: BLE001 - recorded, not raised
+                    self._intent_note = (f"S6 API intent REQUEST FAILED at "
+                                         f"t={elapsed:.1f}s: {e!r}")
+                    self._intent_expiry = None
+
             # Probe telemetry has to be read *during* the run. It used to be
             # ingested once, after `launcher.collect()` returned, so every row
             # of samples.jsonl would have carried the same final value -- a step
@@ -789,7 +885,10 @@ class ExperimentRunner:
                 # real failure on a router, and "resource footprint" was a
                 # stated metric with nothing measuring it.
                 "max_rss_bytes": frame.max_rss_bytes,
-                "capacity_mbps": self.harness._estimator.current.mbps,
+                "capacity_mbps": (self.harness._current_plan.capacity_mbps
+                                  if getattr(self.harness, "_current_plan", None)
+                                  and getattr(self.harness._current_plan, "capacity_mbps", None)
+                                  else self.harness._estimator.current.mbps),
                 # The rate governor's (M2.5) decision this tick. Recorded so
                 # a tree rate in samples.jsonl is explainable through its
                 # ceiling and delay evidence, not just through the
@@ -982,10 +1081,35 @@ class ExperimentRunner:
                    + ([link_note] if link_note else [])
                    + ([self._capacity_note()] if self._capacity_change_failed else [])
                    + ([self._inject_note] if self._inject_note else [])
+                   + ([self._intent_note] if self._intent_note
+                       else ([f"S6 API intent DECLARED UNSUPPORTED: "
+                              f"{system.value} is a baseline with no intent "
+                              "surface"] if self._api_intent
+                          and system is not SystemSpec.ACIQ
+                          else ([f"S6 API intent NOT fired (enforcement off)"]
+                                if self._api_intent else [])))
                    + ([f"workload start offsets (seeded): "
                        f"{self._start_offsets}" ] if self._start_offsets else [])),
         )
-        paths.write_json("result.json", json.loads(res.to_json()))
+        # result.json carries the intent summary as a first-class key, so the
+        # report can distinguish "requested and granted", "requested and
+        # refused by validation" and "not supported by this system" without
+        # re-deriving any of it from samples.
+        result_payload = json.loads(res.to_json())
+        result_payload["intent"] = {
+            "requested": bool(self._api_intent),
+            "via": "IntentService.handle(POST /intent)" if self._api_intent else None,
+            "label": self._intent_label if self._api_intent else None,
+            "weight": self._intent_weight if self._api_intent else None,
+            "ttl_s": self._intent_ttl_s if self._api_intent else None,
+            "fired_at_run_t_s": self._intent_t,
+            "expiry_run_t_s": self._intent_expiry,
+            "note": self._intent_note,
+            "in_effect_s": (round(self._lease_effective_s, 2)
+                            if self._api_intent else None),
+            "supported": bool(system is SystemSpec.ACIQ),
+        }
+        paths.write_json("result.json", result_payload)
         return res
 
     def _policy_outcome(self) -> dict | None:

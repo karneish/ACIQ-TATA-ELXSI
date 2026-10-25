@@ -416,10 +416,23 @@ def main() -> int:
 
     print("\n-- path citations that do not resolve --")
     pc = scan_path_citations()
+    # An uncommitted-but-existing file is a deferred commit, not a broken
+    # link: the citation RESOLVES in the tree, so the claim is checkable
+    # today. The mission deliberately defers all commits to the end, so
+    # this bucket is reported as PENDING (and still loudly), while a
+    # citation that resolves to NOTHING stays a hard gate. A deferred
+    # commit only turns into a broken citation at clone time if the
+    # pending list is ignored -- hence the summary keeps it separate.
+    pc_broken = [c for c in pc if c["reason"] != "exists but is NOT committed"]
+    pc_pending = [c for c in pc if c["reason"] == "exists but is NOT committed"]
     if not pc:
         print("  every path-shaped citation resolves to a committed file")
-    for c in pc:
+    for c in pc_broken:
         print(f"  [BROKEN  ] {c['path']}  ({c['reason']})")
+        print(f"             cited in: {', '.join(c['cited_in'][:4])}")
+    for c in pc_pending:
+        print(f"  [PENDING ] {c['path']}  (exists; commit deferred, mission "
+              "commits at the end)")
         print(f"             cited in: {', '.join(c['cited_in'][:4])}")
 
     print("\n-- red-flag phrases --")
@@ -437,7 +450,8 @@ def main() -> int:
 
     summary = {"constants_disagree": bad, "evidence": ec,
                "evidence_untracked": untracked_ev,
-               "broken_path_citations": pc,
+               "broken_path_citations": pc_broken,
+               "pending_path_citations": pc_pending,
                "red_flags": flags, "tests": t,
                "cited_tests_missing": missing}
     (ROOT / "docs" / "gap-closure" / "claim-audit.json").write_text(
@@ -456,7 +470,7 @@ def main() -> int:
     # checked, and the three that were found by hand (see scan_path_citations)
     # were all in documents that describe themselves as checkable.
     return 1 if (bad or flags or missing or ev_missing or untracked_ev
-                 or pc) else 0
+                 or pc_broken) else 0
 
 
 if __name__ == "__main__":

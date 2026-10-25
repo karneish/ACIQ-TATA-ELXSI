@@ -216,6 +216,53 @@ def starved_ticks(series: Sequence[tuple[float, float]],
     return [t for t, v in series if v <= threshold]
 
 
+#: Per-class sheets the router may carry label traffic in besides the class
+#: the policy assigns. New artefacts put unmarked bulk on the DEFAULT class
+#: (`unknown`, leaf 1:70); legacy artefacts put the baselines' whole-link
+#: aggregate there under `software_update`. A starvation verdict measured on
+#: the ASSIGNED class while the traffic physically rode one of these is an
+#: artefact of steering, not evidence about the workload.
+CARRY_FALLBACK_CLASSES: tuple[str, ...] = ("unknown", "software_update")
+
+
+def class_of_label(label: str, rep: dict[str, Any]) -> str | None:
+    """The assigned TrafficClass value for one workload label."""
+    return _WORKLOAD_CLASS.get(_kind_of(label, rep))
+
+
+def label_carrying(samples: Iterable[dict[str, Any]], label: str,
+                   rep: dict[str, Any], field: str = "goodput_mbps",
+                   fallback: Sequence[str] = CARRY_FALLBACK_CLASSES,
+                   ) -> tuple[float | None, str, list[tuple[float, float]]] | None:
+    """The per-tick series of the class that actually CARRIED this label.
+
+    Candidates are the label's assigned class plus the router's fallback
+    classes (`unknown` / legacy `software_update`). The winner is chosen by
+    DATA -- highest mean over the ticks that reported -- never by an assumed
+    mapping, because the mapping is exactly what can be wrong: POST-FIX S1
+    showed bulk's assigned class at 0 Mbps while the label's traffic rode
+    `unknown` at the link rate. Reporting "bulk starved, min 0" there would
+    describe the empty queue, not the download.
+
+    Returns (mean_of_that_series, class_it_came_from, series), or None when
+    no candidate series reported a single tick.
+    """
+    cands: list[str] = []
+    cls = class_of_label(label, rep)
+    if cls:
+        cands.append(cls)
+    cands.extend(fallback)
+    best: tuple[float, str, list[tuple[float, float]]] | None = None
+    for cand in dict.fromkeys(cands):
+        series = per_class_series(samples, cand, field)
+        if not series:
+            continue
+        m = mean_over_time(series)
+        if best is None or m > best[0]:
+            best = (m, cand, series)
+    return best
+
+
 # --------------------------------------------------------------------------
 # demand-normalized fairness (fix 18)
 #

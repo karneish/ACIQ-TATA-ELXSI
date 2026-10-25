@@ -12,7 +12,7 @@ VENV="${ACIQ_VENV:-/home/mekarz/aciq-venv}"
 PY="$VENV/bin/python"; [ -x "$PY" ] || PY=python3
 STATUS_DIR="data/live_status_fix/"; mkdir -p "$STATUS_DIR" testbed/logs
 T0=$(date +%s)
-KNOWN_MIN_TOTAL=180
+KNOWN_MIN_TOTAL=250
 
 step() {  # id estm cmd...
   local id="$1"; local estm="$2"; shift 2
@@ -59,6 +59,11 @@ done
 
 # T5: S5 intent live (existing script is batched; ensure it runs)
 step t5_s5 30 ./testbed/s5_live.sh
+
+# TASK 4: S6 intent scenario — real API intent at t~1, TTL 15s inside the
+# 40s run, auto-revert measured; 10 seeds x 3 arms (ACIQ vs B0/CAKE-static,
+# which declare no intent surface). Verifier is evidence-only.
+step t6_s6_intent 40 ./testbed/run_s6.sh
 
 # T7: corpus DEV-split fixes then fresh held-out (use corpus_live if available)
 if [ -x ./testbed/corpus_live.sh ]; then

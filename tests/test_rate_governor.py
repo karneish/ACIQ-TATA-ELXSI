@@ -231,6 +231,31 @@ class TestChangeBudget(unittest.TestCase):
         self.assertFalse(d4.changed)
         self.assertIn("budget exhausted", d4.reason)
 
+    def test_refund_gives_the_budget_back_after_a_spin(self):
+        """An apply that never committed did not change the kernel, so its
+        decision stamp is refunded (the budget's currency is real change).
+        This is what makes an injected failed apply re-appliable within the
+        same minute instead of locking the post-drop plan out for 60 s."""
+        g = RateGovernor(config=GovernorConfig(max_changes_per_min=1))
+        g.observe(belief=102.45, applied=None, delivered=100.0,
+                  backlog_bytes=0, offered=99.0, now=0.0, min_rate=16.0)
+        d = g.observe(belief=102.45, applied=92.205, delivered=100.0,
+                      backlog_bytes=1_900_000, offered=99.0, now=5.0,
+                      min_rate=16.0)
+        self.assertTrue(d.changed)          # the only change of the minute
+        held = g.observe(belief=102.45, applied=d.rate, delivered=100.0,
+                         backlog_bytes=2_500_000, offered=99.0, now=10.0,
+                         min_rate=16.0)
+        self.assertIn("budget exhausted", held.reason)
+        # the apply for d never committed: refund it, and a further change
+        # becomes affordable immediately (same second, no expiry needed)
+        self.assertTrue(g.refund_last_change())
+        self.assertFalse(g.refund_last_change())     # nothing pending
+        next_ = g.observe(belief=102.45, applied=held.rate, delivered=100.0,
+                          backlog_bytes=2_500_000, offered=99.0, now=11.0,
+                          min_rate=16.0)
+        self.assertTrue(next_.changed)
+
     def test_changes_expire_after_a_minute(self):
         g = RateGovernor(config=GovernorConfig(max_changes_per_min=1,
                                                hold_clear_s=20.0))

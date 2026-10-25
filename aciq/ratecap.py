@@ -177,6 +177,25 @@ class RateGovernor:
         self.log: list[dict] = []
 
     # ------------------------------------------------------------------
+    def refund_last_change(self) -> bool:
+        """Give the budget back for a change that never touched the kernel.
+
+        The budget's currency is REAL change: the stamp is taken when a
+        decision differs from the applied rate. But an apply that fails (or a
+        transaction whose rollback replays last-good) leaves the kernel ex-
+        actly as it was -- an S5(c)-style injected failure would otherwise
+        spend the budget on nothing and leave the post-drop plan forever
+        un-ratcheted (seen live: seed s2/555 applied the drop plan once,
+        the injected `class add` failed, the rollback replayed last-good,
+        and the budget was gone -- no committed apply ever followed, so the
+        "run continued" witness had nothing to point at). Pops the most
+        recent stamp; returns True when one was removed.
+        """
+        if self._change_ts:
+            self._change_ts.pop()
+            return True
+        return False
+
     def observe(self, belief: float | None, applied: float | None,
                 delivered: float | None, backlog_bytes: int | None,
                 offered: float | None, now: float,

@@ -43,13 +43,21 @@ def rate_cap_pace(sent: int, t0: float, end, now: float, cap,
         sleep(min(owed, PACING_MAX_SLEEP))
 
 
-def sink(port: int, out: dict, stop: threading.Event | None = None) -> None:
+def sink(port: int, out: dict, stop: threading.Event | None = None,
+         sample_every: float = 1.0) -> None:
     """Listen in whatever namespace this process runs in.
 
     Deliberately a separate --listen mode: binding and connecting inside one
     process only works on a single host, and these workloads have to run on
     opposite sides of a router namespace.
     """
+    # The per-second receiver series needs the running count of bytes, so the
+    # recv loop updates `live` incrementally instead of only updating `out`
+    # when the connection closes.
+    live = {"bytes": out.get("bytes", 0)}
+    if sample_every > 0:
+        import sinksample
+        sinksample.sampler("bulk", lambda: live["bytes"], sample_every, stop)
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("0.0.0.0", port))
@@ -72,6 +80,7 @@ def sink(port: int, out: dict, stop: threading.Event | None = None) -> None:
             if not b:
                 break
             received += len(b)
+            live["bytes"] = out.get("bytes", 0) + received
         conn.close()
         dt = max(time.monotonic() - t0, 1e-9)
         out["bytes"] = out.get("bytes", 0) + received
@@ -96,12 +105,15 @@ def main() -> int:
     ap.add_argument("--src", default=None,
                     help="source address to bind, so this workload is a "
                          "distinct device for lease matching")
+    ap.add_argument("--sample-every", type=float, default=1.0,
+                    help="receiver-side per-second sampling cadence (s); "
+                         "0 disables the per-second sink lines")
     ap.add_argument("--json-out", default=None)
     args = ap.parse_args()
 
     if args.listen:
         print(f"bulk sink listening on :{args.port}", flush=True)
-        sink(args.port, {})
+        sink(args.port, {}, sample_every=args.sample_every)
         return 0
 
     # Retry: the sink runs as a separate process and may not have bound yet.
