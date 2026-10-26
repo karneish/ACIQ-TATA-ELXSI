@@ -538,7 +538,8 @@ class ExperimentRunner:
         # window, or run 2's opening policy change is vetoed as rate-limited.
         self.harness.reset_for_run()
         self.harness.set_lease(None, link_mbps)
-        if not self.harness.apply_system(system, start_capacity):
+        if not self.harness.apply_system(system, start_capacity,
+                                         launch=True):
             # Surface *why*. A bare "failed" is useless in a log.
             res = RunResult(sc.name, system.value, mode.value, seed,
                             link_mbps, link_mbps,
@@ -1227,6 +1228,11 @@ class ExperimentRunner:
                 "class": v.label, "confidence": round(v.classification.confidence, 2),
                 "tier": v.classification.tier, "corrected": v.corrected,
                 "changed": v.changed,
+                # Declared 2026-10-26 (#9): when a strict claim is hedged to
+                # the best-effort leaf, the would-have-been class travels
+                # with the verdict so the artefact explains the steering.
+                "hedged": v.classification.hedged,
+                "strict_class": v.classification.strict_class,
             }
         if any(v["changed"] for v in out.values()):
             self._enf_steered += 1

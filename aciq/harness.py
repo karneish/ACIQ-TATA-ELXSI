@@ -798,9 +798,18 @@ class Harness:
     _capacity_change_error: str = ""
 
     # ---------------- system setup ----------------
-    def apply_system(self, system: SystemSpec, capacity_mbps: float) -> bool:
+    def apply_system(self, system: SystemSpec, capacity_mbps: float,
+                     launch: bool = False) -> bool:
         """Build the full tree for a system. Required for every apply because
-        HTB's default class cannot be changed on a live qdisc."""
+        HTB's default class cannot be changed on a live qdisc.
+
+        `launch` marks the run's OPENING call: there the ACIQ tree must be
+        built already at `INITIAL_PARENT_FRACTION x capacity` (docs/evidence/
+        task2-params.md #4), so the launch ramp queues in the tree's own
+        per-flow leaves instead of in the out-of-band bottleneck's buffer. A
+        mid-run rebuild (the INFORMED oracle path) keeps the cached plan's
+        proportions -- M3 owns those, and a rebuild here would rescale them.
+        """
         self._configured_capacity = capacity_mbps
         # The capacity actually configured on the link right now. Every path
         # that applies a capacity passes through here, which is what makes it
@@ -813,8 +822,20 @@ class Harness:
             # ramp otherwise queues in the netem's own buffer for the first
             # tick before the governor's first commit lands at the same rate,
             # and S1's call p95 paid 82-84 ms for that one unshaped second.
+            # Amendment 2026-10-26 (#7) makes the declaration actually reach
+            # the kernel: `experiment.py` seeds `_current_plan` with a
+            # full-capacity plan (via set_lease) immediately before this
+            # call, and the cached plan then won over the shaped build --
+            # every post-fix run's audit shows commit #1 at rate=ceil=link
+            # (unshaped). The launch plan is built here unconditionally; a
+            # leased rebuild keeps its lease plan; a mid-run rebuild keeps
+            # the cached plan's proportions.
             applied = INITIAL_PARENT_FRACTION * capacity_mbps
-            plan = self._current_plan or build_plan(applied, self._lease)
+            plan = (build_plan(applied, self._lease) if launch
+                    and self._lease is None else
+                    (self._current_plan
+                     if self._current_plan is not None
+                     else build_plan(applied, self._lease)))
             # Record the plan that was applied. `apply_system` built it, handed it
             # to the transaction manager and then forgot it, so `_current_plan`
             # stayed None and anything asking which classes exist found nothing --

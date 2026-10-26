@@ -27,7 +27,7 @@ never runs on this file's sources: it runs once, later, on seeds 500-509.
 3. **The first second is unshaped, and S1 pays for it in warm-up.** ACIQ's
    tree is built at `start_capacity = link_mbps` (100), so the launch ramp
    burst (1.25-1.89 MB in the first ticks) queues in the netem's own buffer,
-   the delay reading spikes to 99-149 ms, and守法 the call's p95 lands at
+   the delay reading spikes to 99-149 ms, and the call's p95 lands at
    82-84 ms against CAKE-static's 1.45 ms. The first governor commit (90, at
    t~1 s) already lands at the rate the controller wanted all along - the
    transient is purely the pre-commit window.
@@ -43,6 +43,62 @@ never runs on this file's sources: it runs once, later, on seeds 500-509.
 | 4 | `INITIAL_PARENT_FRACTION` | = cap_fraction (0.90) | ratecap.py, used at launch | ACIQ's tree is built at 0.90 x the configured link at t=0 instead of 1.00, removing the unshaped warm-up window that produced S1's 82 ms p95. Uses the existing default cap_fraction; no new constant. |
 | 5 | `delivered_mbps` added to `GovernorDecision` | - | ratecap.py | Per-tick receiver-side (post-queue) delivered goodput recorded next to belief, so future artefacts can compare the controller's reference against the bottleneck's output per tick instead of only at run end. |
 | 6 | `CAPACITY_EMERGENCY_COLLAPSE_FRAC` | 0.5 | ratecap.py (amendment, declared from the DEV band, seeds 400-409, BEFORE any EVAL band run; the DEV gate FAIL 2026-10-26 measured the gap) | A ceiling at or below 0.5 x the applied root is a declared emergency in its own right: it shares the emergency cooldown and bypasses dwell + the law's step envelope for that one DOWN commit, like the delay emergency. Evidence: after s2's post-drop tick the ceiling was 0.21x the applied root while the delay EMA stayed at 37-72 ms (< DELAY_EMERGENCY_MS), so no declared bypass could fire; the law's walk-down (0.25x per commit, one per 5 s dwell) needs ~25 s, and s2's post-drop window (~10-14 s) ran out with the kernel at 51.5 Mbps = 2.57x the link on all ten dev seeds while s4 (60 s run) converged to 0.97x. |
+
+## Amendment 2026-10-26 (Task 2 round; declared from the seeds 500-509 EVAL
+## diagnosis BEFORE the next evaluation; no re-tuning of any earlier row)
+
+Declared from the offline diagnosis of `data/runs_eval` seeds 500-509, the
+instrumented `data/runs_diag` runs, and the code path audit:
+
+7. **The launch-shaping declaration (#4) must actually reach the kernel.**
+   The audit trail of every post-fix ACIQ run shows commit #1 at
+   `1:1 rate/ceil = [100.0, 100.0]` on a 100 Mbps link - an UNSHAPED first
+   second - exactly the transient row 4 was declared to remove. Cause, read
+   from the code: `experiment.py` calls `set_lease(None, link_mbps)` before
+   `apply_system(...)`, which pre-seeds `_current_plan` at the full link;
+   `apply_system` then takes `plan = self._current_plan or
+   build_plan(applied, self._lease)`, so the `INITIAL_PARENT_FRACTION`
+   plan never builds. Fix: `apply_system` builds the launch plan from
+   `INITIAL_PARENT_FRACTION x capacity` unconditionally for ACIQ runs with
+   no lease; a leased rebuild keeps its lease plan. No bound, dwell,
+   budget, rollback or safe-state path changes.
+8. **Provisional early classification, tier "P", confidence 0.50.** A flow
+   with an unambiguous mark at its FIRST sighting (packet DSCP EF, or a
+   well-known interactive signalling port from the `INTERACTIVE_PORTS`
+   public table - never the workload registry) is claimed provisionally
+   as `video_call` at 0.50 confidence, tier `P`, before `MIN_AGE_S`
+   maturity. It routes to the class's own fq_codel leaf, so no strict
+   priority is granted to any flow a mature verdict would deny, and the
+   per-tick maturity gate (2.0 s + 10 packets) still decides the final
+   class with the existing rules. On the conntrack-only enforcement path
+   (the shipped live path, `experiment.py:1149`) DSCP is deliberately not
+   forwarded, so this branch is inert there and the 2.0 s abstention stays
+   the declared behaviour; the provisional path activates wherever packet
+   evidence (the tap feed) is available. Declared, not invented live.
+9. **Hedge low-confidence strict claims into the fair best-effort leaf.**
+   `STRICT_MIN_CONFIDENCE = 0.60`: a tier-B claim of a strict class with
+   confidence below 0.60 is hedged to `UNKNOWN` for steering (the verdict
+   still records the would-have-been class). Never applied to corrections
+   (tier X) or leases (tier L): operator intent is not behaviour inference.
+   Evidence: on seeds 310-319 the 0.55 small-media branch claimed BOTH the
+   call and the game flows as `video_call` for the whole run (the game
+   mislabel is visible in every enforced seed's verdicts; gaming's true
+   class needs the header-observer hints, also already declared). Hedged
+   flows ride the default class, which carries `fq_codel` on its leaf -
+   per-flow fair by construction - so blockage between hedged flows is
+   structurally impossible.
+10. **Per-flow fair AQM on every leaf, including default, is a guard, not a
+    change.** `build_tree(leaf="fq_codel")` already attaches `fq_codel` to
+    all eight classes (1:1, 1:10, 1:20, 1:25, 1:30, 1:50, 1:60, 1:70); the
+    unknown/default `1:70` leaf is `fq_codel`. Added to the tests so it
+    cannot regress silently.
+
+Unchanged on purpose: `MIN_AGE_S = 2.0`, `MIN_PACKETS = 10`,
+`MIN_CONFIDENCE = 0.5`, the rate rules, bounds, dwell, budget, rollback and
+safe-state ladder - nothing in rows 7-10 re-tunes a number any earlier row
+declared. Evaluation happens ONCE on fresh seeds 800-809 after the DEV-band
+(700-709) shakedown; any further change after seeing EVAL data violates the
+brief.
 
 ## Unchanged on purpose
 

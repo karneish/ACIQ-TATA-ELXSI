@@ -114,6 +114,13 @@ class Classification:
     confidence: float
     tier: str
     evidence: str
+    #: Declared 2026-10-26 (docs/evidence/task2-params.md #9): a tier-B claim
+    #: below STRICT_MIN_CONFIDENCE is hedged out of its strict class into the
+    #: fair best-effort leaf. The would-have-been class is kept here so an
+    #: artefact can show what the hedge replaced; never set for operator
+    #: corrections (tier X) or leases (tier L).
+    hedged: bool = False
+    strict_class: str | None = None
 
 
 @dataclass(frozen=True)

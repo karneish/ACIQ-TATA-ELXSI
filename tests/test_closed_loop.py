@@ -170,8 +170,14 @@ class TestDecisionReachesTheKernel(unittest.TestCase):
         self.assertEqual(arg(got, "flowid"), tc.CLASS_IDS[v.cls], got)
 
     def test_ipv6_gets_its_own_priority(self):
+        # (2026-10-26 #9) hedge doc: a shape-only 0.55 claim is now hedged to
+        # best-effort and installs nothing, so this test steers with a bulk
+        # claim (0.75) -- still crossing the same v6 decision->filter join.
         e, exec_ = enforcer()
-        e.apply(mature(flow=Flow("fd00:1::2", 5000, "fd00:2::2", 3478, "udp")))
+        v = e.apply(mature(mbps=88.0, proto="tcp", dport=443,
+                           flow=Flow("fd00:1::2", 5000, "fd00:2::2", 3478,
+                                     "udp")))
+        self.assertEqual(v.cls, TrafficClass.BULK_DOWNLOAD)
         got = adds(exec_)[0]
         self.assertEqual(arg(got, "prio"), "6", "IPv6 flower filters live at prio 6")
 

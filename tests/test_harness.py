@@ -407,6 +407,84 @@ class TestApplySystem(unittest.TestCase):
         self.assertFalse(h.apply_system(SystemSpec.B0, 100.0))
 
 
+class TestLaunchedShapedRun(unittest.TestCase):
+    """docs/evidence/task2-params.md #4 + #7: the OPENING apply must build
+    the tree already shaped at INITIAL_PARENT_FRACTION x capacity.
+
+    The seeds 500-509 EVAL audit showed commit #1 at rate=ceil=link
+    (unshaped) on every ACIQ run, because set_lease(None, link) pre-seeded
+    `_current_plan` and the cached plan beat the shaped build. The launch
+    ramp (1.25-1.89 MB of netem backlog, S1 call p95 82-88 ms) is that
+    one-second window; this pin makes the declaration real.
+    """
+
+    def test_launch_builds_the_plan_at_INITIAL_PARENT_FRACTION(self):
+        from aciq.ratecap import INITIAL_PARENT_FRACTION
+        h = harness()
+        h.set_lease(None, 100.0)      # the pre-launch seed: full-capacity plan
+        self.assertTrue(h.apply_system(SystemSpec.ACIQ, 100.0, launch=True))
+        commits = [e for e in h.txn.audit if e.get("event") == "committed"]
+        self.assertTrue(commits)
+        first = commits[0]["applied"]["1:1"]
+        self.assertAlmostEqual(first[0], INITIAL_PARENT_FRACTION * 100.0, places=4,
+                               msg=f"first commit {first} must be shaped")
+        self.assertAlmostEqual(first[1], first[0], places=4,
+                               msg="rate == ceil: the parent must be the shaper")
+        self.assertLess(first[0], 100.0, "unshaped first second must not return")
+
+    def test_launch_with_a_lease_keeps_the_lease_plan(self):
+        from aciq.intent import Lease
+        h = harness()
+        lease = Lease(id="L1", target="device", ip="203.0.113.4")
+        h.set_lease(lease, 100.0)
+        before = dict(h._current_plan.rates)
+        self.assertTrue(h.apply_system(SystemSpec.ACIQ, 100.0, launch=True))
+        after = dict(h._current_plan.rates)
+        self.assertEqual(sorted(map(str, before)), sorted(map(str, after)),
+                         "a leased rebuild must keep the lease plan")
+
+    def test_midrun_rebuild_keeps_the_cached_plan(self):
+        """M3 owns the proportions: a mid-run apply_system (INFORMED oracle)
+        must not rescale them -- so the launch flag does not leak into it."""
+        h = harness()
+        h.apply_system(SystemSpec.ACIQ, 100.0)
+        before = dict(h._current_plan.rates)
+        h.apply_system(SystemSpec.ACIQ, 20.0)
+        after = dict(h._current_plan.rates)
+        self.assertEqual(sorted(map(str, before)), sorted(map(str, after)))
+
+
+class TestEveryLeafRunsFairAQM(unittest.TestCase):
+    """docs/evidence/task2-params.md #10: guard, not change. The default
+    class 1:70 (and every other leaf) already carries fq_codel; hedged and
+    unclassified flows share it per-flow, so neither can block the other.
+    Pinned so it cannot regress silently."""
+
+    def test_aciq_tree_attaches_fq_codel_to_every_leaf(self):
+        from aciq.policy import build_plan
+        from aciq import tc as tcm
+        plan = build_plan(100.0, None)
+        tree = tcm.build_tree(plan, with_filters=False)
+        self.assertIn("1:70", tcm.CLASS_IDS.values())
+        for cls in tree.classes:
+            cid = cls.classid
+            if cid == tcm.ROOT_CLASS_ID:
+                continue
+            spec = " ".join(tcm.leaf_args(cls.leaf))
+            self.assertTrue(spec.startswith("fq_codel"),
+                            f"leaf under {cid} is '{spec}', not fq_codel")
+
+    def test_rendered_plan_has_eight_leaf_qdiscs(self):
+        from aciq.policy import build_plan
+        from aciq import tc as tcm
+        plan = build_plan(100.0, None)
+        tree = tcm.build_tree(plan)
+        leaf_qdiscs = [c for c in tcm.render(tree) if c[-4:-2] == ("qdisc", "add") or
+                       ("qdisc" in c and "parent" in c)]
+        self.assertEqual(len(leaf_qdiscs), len(plan.rates),
+                         f"expected one leaf qdisc per class: {leaf_qdiscs}")
+
+
 def counters(rx=0, drops=0, overlimits=0, backlog=0):
     return {
         TrafficClass.VIDEO_CALL: ClassCounters(

@@ -1131,12 +1131,15 @@ class TestALeaseThatNeverLands(unittest.TestCase):
             results_dir=Path("/tmp"), real_time=False, tick_s=1.0,
             source=_Empty(), bridge_executor=_Exec())
         from aciq.flowtrack import FlowTracker
+        # (2026-10-26 #9: a shape-only ~4.8 Mbps flow is hedged to best-effort
+        # and installs no filter; to exercise the raise path the flow must
+        # still STEER, so it carries bulk-shaped counters, 45->50 MB/s.)
         ct = ("udp 17 29 src=203.0.113.2 dst=10.0.1.2 sport=1 dport=7001 "
-              "packets=9000 bytes=9000000 [UNREPLIED] src=10.0.1.2 "
+              "packets=9000 bytes=45000000 [UNREPLIED] src=10.0.1.2 "
               "dst=203.0.113.2 sport=7001 dport=1 packets=0 bytes=0 "
               "mark=0 use=1\n"
               "udp 17 29 src=203.0.113.2 dst=10.0.1.2 sport=1 dport=7001 "
-              "packets=9500 bytes=9500000 [UNREPLIED] src=10.0.1.2 "
+              "packets=9500 bytes=50000000 [UNREPLIED] src=10.0.1.2 "
               "dst=203.0.113.2 sport=7001 dport=1 packets=0 bytes=0 "
               "mark=0 use=1\n")
         runner._tracker = FlowTracker()

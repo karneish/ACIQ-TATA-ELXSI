@@ -116,6 +116,23 @@ BULK_PORTS = frozenset({873, 3389})  # rsync, RDP-ish bulk
 #: Never guessed.
 MIN_CONFIDENCE = 0.5
 
+#: Declared 2026-10-26 (docs/evidence/task2-params.md #9): a strict-class
+#: claim that only reached tier B and carries less confidence than this is
+#: hedged to the fair best-effort leaf instead of steered into the strict
+#: class. 0.60 clears the declarations the rulebase asserts at 0.60 and
+#: above (streaming 0.60, bulk 0.75, port-backed interactive 0.85, mature EF
+#: 0.95) and hedges exactly the shape-only claims measured too weak to fire
+#: a per-flow priority (small-media video_call at 0.55, software_update at
+#: 0.55). Operator corrections and leases are never hedged.
+STRICT_MIN_CONFIDENCE = 0.60
+
+#: Tier "P" marks a PROVISIONAL claim (docs/evidence/task2-params.md #8): a
+#: first-packet verdict from an unambiguous mark or public signalling port,
+#: issued before `MIN_AGE_S` maturity. It routes to the class's own
+#: per-flow fq_codel leaf, and the mature rules decide the final class from
+#: the moment the per-tick evidence clears them.
+PROVISIONAL_TIER = "P"
+
 # ---------------------------------------------------------------------------
 # Rate thresholds, as a FRACTION OF MEASURED CAPACITY
 # ---------------------------------------------------------------------------
@@ -345,6 +362,47 @@ def classify(f: FlowFeatures, capacity_mbps: float = 100.0,
     frac = f.rate_mbps / cap
     mature = f.age_s >= MIN_AGE_S and f.packets >= MIN_PACKETS
 
+    # ---- not enough history yet --------------------------------------------
+    if not mature:
+        # Provisional (declared, #8): an unambiguous MARK or public signalling
+        # PORT claims its class from the first packet, when the claim is one
+        # the mature rule would also grant on rate evidence. Confidence 0.50,
+        # tier "P"; the hedge (#9) leaves tier P alone and the per-tick
+        # maturity gate decides the final class. A gaming-shaped flow is
+        # pulled out first, exactly as the mature EF rule does, and a gaming
+        # claim needs its timing hints like the mature one does. A flow
+        # without such a signal stays in the default class, whose leaf is
+        # per-flow fair.
+        if _looks_like_game(f) and f.dscp == DSCP_EF:
+            return Classification(
+                flow=f.flow, cls=TrafficClass.GAMING, confidence=0.50,
+                tier=PROVISIONAL_TIER,
+                evidence=(
+                    "provisional before maturity: dscp=ef, gaming shape "
+                    f"(median {f.pkt_size_median:.0f}B @ {f.pps:.0f}pps)"),
+            )
+        if ((f.dscp == DSCP_EF and f.rate_mbps <= EF_PLAUSIBLE_MAX_MBPS)
+                or (f.flow.dport in INTERACTIVE_PORTS
+                    and f.rate_mbps <= EF_PLAUSIBLE_MAX_MBPS)):
+            return Classification(
+                flow=f.flow, cls=TrafficClass.VIDEO_CALL, confidence=0.50,
+                tier=PROVISIONAL_TIER,
+                evidence=(
+                    "provisional before maturity: "
+                    + (f"dscp=ef({DSCP_EF})" if f.dscp == DSCP_EF
+                       else f"interactive port {f.flow.dport}")
+                    + f", rate {f.rate_mbps:.3f} Mbps, age "
+                    f"{f.age_s:.1f}s pkts {f.packets}"),
+            )
+        # Not enough evidence yet. Every flow starts here, which is why an
+        # unmarked flow spends its first ~2 s in the default class. Stated as a
+        # limitation rather than hidden.
+        return Classification(
+            flow=f.flow, cls=None, confidence=0.35, tier="C",
+            evidence=(f"immature: age={f.age_s:.1f}s pkts={f.packets} "
+                      f"(need {MIN_AGE_S}s and {MIN_PACKETS} pkts)"),
+        )
+
     # ---- Tier A: a claimed DSCP mark, weighed against observed behaviour ----
     if f.dscp == DSCP_EF:
         trust.record_claim(source)
@@ -435,17 +493,6 @@ def classify(f: FlowFeatures, capacity_mbps: float = 100.0,
                 tier="A", evidence=f"dscp=ef({DSCP_EF}), trust={t:.2f}",
             )
         # falls through to the maturity check and the rate rules
-
-    # ---- not enough history yet --------------------------------------------
-    if not mature:
-        # Not enough evidence yet. Every flow starts here, which is why an
-        # unmarked flow spends its first ~2 s in the default class. Stated as a
-        # limitation rather than hidden.
-        return Classification(
-            flow=f.flow, cls=None, confidence=0.35, tier="C",
-            evidence=(f"immature: age={f.age_s:.1f}s pkts={f.packets} "
-                      f"(need {MIN_AGE_S}s and {MIN_PACKETS} pkts)"),
-        )
 
     # ---- Tier B: rate-relative behaviour, BEFORE the port tables ------------
     # Order matters. A saturating flow is bulk whatever port it uses, so the rate
@@ -614,8 +661,27 @@ def finalise(c: Classification) -> Classification:
 
     Separate from classify() so a raw score can be inspected for analysis
     without a mislabelled flow ever reaching enforcement.
+
+    Declared 2026-10-26 (#9): a strict-class claim that never rose above tier
+    B and carries less confidence than STRICT_MIN_CONFIDENCE is hedged to the
+    fair best-effort leaf. The hedge NEVER touches an operator correction
+    (tier X) or lease (tier L) -- intent is not inference -- and never a
+    provisional claim, whose risk policy is per-flow fair routing itself.
+    The would-have-been class survives in `strict_class` for the artefact.
     """
     if c.cls is not None and c.confidence >= MIN_CONFIDENCE:
+        hedge = (c.tier == "B"
+                 and c.confidence < STRICT_MIN_CONFIDENCE
+                 and not c.hedged)
+        if hedge:
+            return Classification(
+                flow=c.flow, cls=TrafficClass.UNKNOWN,
+                confidence=c.confidence, tier=c.tier,
+                evidence=f"{c.evidence} -> hedged below "
+                         f"{STRICT_MIN_CONFIDENCE} to the fair best-effort "
+                         f"leaf ({c.cls.name})",
+                hedged=True, strict_class=c.cls.name,
+            )
         return c
     return Classification(
         flow=c.flow, cls=TrafficClass.UNKNOWN, confidence=c.confidence,

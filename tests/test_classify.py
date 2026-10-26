@@ -345,15 +345,115 @@ class TestUserCorrection(unittest.TestCase):
 
 class TestImmatureFlows(unittest.TestCase):
     def test_new_flow_is_not_guessed(self):
-        c = classify(feats(dscp=None, avg_packet_bytes=300, packets=1, age_s=0.2))
+        """(2026-10-26 #8: an interactive-port flow claims PROVISIONALLY; a
+        flow with neither a mark nor a signalling port is still declined.)"""
+        c = classify(feats(dscp=None, avg_packet_bytes=300, packets=1,
+                           age_s=0.2,
+                           flow=Flow("10.0.1.2", 1, "1.1.1.1", 5432, "tcp")))
         self.assertIsNone(c.cls)
         self.assertIn("immature", c.evidence)
 
+    def test_a_marked_or_signalled_flow_claims_provisionally(self):
+        for dscp, dport in ((DSCP_EF, 5432), (None, 3478)):
+            with self.subTest(dscp=dscp, dport=dport):
+                c = classify(feats(dscp=dscp, avg_packet_bytes=300,
+                                   packets=1, age_s=0.2,
+                                   flow=Flow("10.0.1.2", 1, "1.1.1.1",
+                                             dport, "udp")))
+                self.assertEqual(c.cls, TrafficClass.VIDEO_CALL)
+                self.assertEqual(c.tier, "P")
+
     def test_immature_is_a_documented_cost(self):
-        """Every unmarked flow spends its first ~2 s unclassified, which in
-        enforcement means sitting in the default class. Stated as a cost."""
-        c = classify(feats(packets=3, age_s=0.5, avg_packet_bytes=300))
+        """Every UNMARKED, UNPORTED flow spends its first ~2 s unclassified,
+        which in enforcement means sitting in the default class (per-flow
+        fair since the 2026-10-26 leaf guard). Stated as a cost."""
+        c = classify(feats(packets=3, age_s=0.5, avg_packet_bytes=300,
+                           flow=Flow("10.0.1.2", 1, "1.1.1.1", 5432, "tcp")))
         self.assertIsNone(c.cls)
+
+
+class TestProvisionalEarlyClaims(unittest.TestCase):
+    """docs/evidence/task2-params.md #8: an unambiguous mark or public
+    signalling port claims its class from the FIRST packet, before maturity,
+    as a provisional verdict the hedge and the maturity gate both see."""
+
+    def test_dscp_ef_claims_provisionally_before_maturity(self):
+        f = feats(dscp=DSCP_EF, avg_packet_bytes=200, packets=2, age_s=0.3,
+                  rx_bytes=100)
+        c = classify(f)
+        self.assertEqual(c.cls, TrafficClass.VIDEO_CALL)
+        self.assertEqual(c.tier, "P")
+        self.assertEqual(c.confidence, 0.50)
+        self.assertIn("provisional", c.evidence)
+
+    def test_public_signalling_port_claims_provisionally(self):
+        f = feats(dscp=None, avg_packet_bytes=200, packets=2, age_s=0.3,
+                  rx_bytes=100,
+                  flow=Flow("10.0.1.2", 1, "1.1.1.1", 5060, "udp"))
+        c = classify(f)
+        self.assertEqual(c.cls, TrafficClass.VIDEO_CALL)
+        self.assertEqual(c.tier, "P")
+        self.assertIn("provisional", c.evidence)
+
+    def test_unmarked_port_is_still_unclassified_before_maturity(self):
+        c = classify(feats(dscp=None, avg_packet_bytes=300, packets=1,
+                           age_s=0.2,
+                           flow=Flow("10.0.1.2", 1, "1.1.1.1", 5432, "tcp")))
+        self.assertIsNone(c.cls)
+        self.assertIn("immature", c.evidence)
+
+    def test_a_game_claim_beats_the_provisional_ef_claim(self):
+        # an EF-marked flow whose extended hints say gaming shape does not
+        # get provisionally labelled video_call
+        f = feats(dscp=DSCP_EF, avg_packet_bytes=200, packets=2, age_s=0.3,
+                  rx_bytes=100, pkt_size_median=80.0, iat_regularity=0.9,
+                  pps=64.0)
+        c = classify(f)
+        self.assertNotEqual(c.cls, TrafficClass.VIDEO_CALL)
+        self.assertEqual(c.cls, TrafficClass.GAMING)
+
+
+class TestHedgeBelowStrictConfidence(unittest.TestCase):
+    """docs/evidence/task2-params.md #9: shape-only sub-0.60 strict claims
+    get the fair best-effort leaf, never a per-flow priority. Corrections
+    and leases are never hedged."""
+
+    def test_small_media_video_call_is_hedged(self):
+        # the measured mislabel: a 4.69 Mbps UDP flow claimed video_call at
+        # 0.55 by packet size alone -- that flow rides the fair leaf now.
+        f = mature(flow=Flow("10.0.1.2", 1, "1.1.1.1", 5004, "udp"),
+                   avg_packet_bytes=800, mbps=2.0)
+        c = finalise(classify(f))
+        self.assertEqual(c.cls, TrafficClass.UNKNOWN)
+        self.assertTrue(c.hedged)
+        self.assertEqual(c.strict_class, "VIDEO_CALL")
+
+    def test_bulk_at_0_75_is_never_hedged(self):
+        c = Classification(flow=CALL, cls=TrafficClass.BULK_DOWNLOAD,
+                           confidence=0.75, tier="B", evidence="saturating")
+        self.assertIs(finalise(c), c)
+
+    def test_streaming_at_0_60_survives_the_hedge(self):
+        c = Classification(flow=CALL, cls=TrafficClass.STREAMING,
+                           confidence=0.60, tier="B", evidence="steady tcp")
+        self.assertIs(finalise(c), c)
+
+    def test_hedge_never_touches_a_correction(self):
+        c = Classification(flow=CALL, cls=TrafficClass.VIDEO_CALL,
+                           confidence=0.55, tier="X", evidence="user")
+        self.assertIs(finalise(c), c)
+
+    def test_hedge_never_touches_a_lease(self):
+        c = Classification(flow=CALL, cls=TrafficClass.LEASED,
+                           confidence=0.55, tier="L", evidence="lease")
+        self.assertIs(finalise(c), c)
+
+    def test_provisional_tier_is_not_hedged(self):
+        c = Classification(flow=CALL, cls=TrafficClass.VIDEO_CALL,
+                           confidence=0.50, tier="P", evidence="provisional")
+        f = finalise(c)
+        self.assertIs(f, c, "provisional risk policy is per-flow fair "
+                            "routing, not the confidence hedge")
 
 
 class TestHonestGaps(unittest.TestCase):
