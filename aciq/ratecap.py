@@ -129,6 +129,21 @@ DELAY_EMERGENCY_MS = 100.0
 #: proceeds at the normal dwell-bounded pace. ~= 4 dwell windows.
 DELAY_EMERGENCY_COOLDOWN_S = 20.0
 
+#: Capacity-collapse emergency threshold. The dev band (seeds 400-409, gate
+#: FAIL 2026-10-26) measured the gap the delay emergency alone leaves open:
+#: after s2's post-drop tick the ceiling is 0.21x the applied root while the
+#: delay EMA hovers at 37-72 ms -- below DELAY_EMERGENCY_MS -- so no declared
+#: bypass may fire, the law's DOWN envelope (0.25x per commit, one per 5 s
+#: dwell) needs ~25 s to walk a 91.8-root down to 19.4, and s2's post-drop
+#: window (~10-14 s) runs out with the kernel at 51.5 Mbps = 2.57x the link.
+#: A ceiling at or below COLLAPSE_FRAC x applied is therefore declared an
+#: emergency in its own right: it shares the emergency cooldown and bypasses
+#: dwell + step envelope for that one DOWN commit. HALF of the link is a
+#: collapse no controller reasoning can justify without explicit emergency
+#: powers; 0.5 keeps it far from ordinary estimation noise (per-seed
+#: residual error ~7.9%).
+CAPACITY_EMERGENCY_COLLAPSE_FRAC = 0.5
+
 #: EMA weight for the delay series. 0.5 keeps direction readable; anything
 #: closer to 1 follows the netem's burst artifacts tick by tick.
 DELAY_ALPHA = 0.5
@@ -360,18 +375,32 @@ class RateGovernor:
                 return ceiling, (f"delay inflated {delay_ema:.1f} ms > "
                                  f"{cfg.inflation_threshold_ms:.0f} ms: held "
                                  f"at ceiling"), False
-            # Delay emergency (declared in docs/evidence/task2-params.md #1-2):
-            # a capacity drop backs the queue up rather than dropping it, so
-            # the law's drop-rate emergency never fires; this is the delay-
-            # driven twin of that path. One full-descent clearance per
-            # cooldown; between clearances the dwell-bounded steps proceed.
-            if (delay_ema is not None
-                    and delay_ema >= cfg.delay_emergency_ms and emerg_free
+            # Declared DOWN emergencies (docs/evidence/task2-params.md):
+            # 1) delay-driven twin of the law's dead drop-rate emergency --
+            #    a capacity drop backs the queue up instead of dropping;
+            # 2) capacity collapse -- ceiling <= COLLAPSE_FRAC x applied
+            #    (dev-band measured: ceiling 0.21x applied with delay EMA
+            #    37-72 ms, and the law's walk-down ran out of window).
+            # Both share the emergency cooldown and bypass dwell + step
+            # envelope for that single DOWN commit.
+            delay_shock = (delay_ema is not None
+                           and delay_ema >= cfg.delay_emergency_ms)
+            collapse = (ceiling is not None
+                        and ceiling < applied
+                        * CAPACITY_EMERGENCY_COLLAPSE_FRAC)
+            if ((delay_shock or collapse) and emerg_free
                     and ceiling < applied
                     and (min_rate is None or min_rate <= ceiling)):
-                return ceiling, (f"delay emergency {delay_ema:.1f} ms >= "
-                                 f"{cfg.delay_emergency_ms:.0f} ms: descent "
-                                 f"to ceiling in one commit"), True
+                if delay_shock:
+                    why = (f"delay emergency {delay_ema:.1f} ms >= "
+                           f"{cfg.delay_emergency_ms:.0f} ms: descent "
+                           f"to ceiling in one commit")
+                else:
+                    why = (f"capacity emergency: ceiling {ceiling:.2f} < "
+                           f"{CAPACITY_EMERGENCY_COLLAPSE_FRAC:.2f}x "
+                           f"applied {applied:.2f}: descent to ceiling "
+                           f"in one commit")
+                return ceiling, why, True
             return rate, (f"delay inflated {delay_ema:.1f} ms > "
                           f"{cfg.inflation_threshold_ms:.0f} ms: "
                           f"ratchet down one step"), False

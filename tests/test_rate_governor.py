@@ -285,6 +285,30 @@ class TestChangeBudget(unittest.TestCase):
         self.assertTrue(d3.delay_emergency)
         self.assertAlmostEqual(d3.rate, 19.4322, places=3)
 
+    def test_capacity_collapse_emergency_descends_to_ceiling(self):
+        """ceiling <= 0.5x applied with delay EMA BELOW the delay emergency
+        line still clears one full-descent commitment (task2-params.md #6,
+        declared from the DEV gate FAIL 2026-10-26): the delay EMA at
+        37-72 ms post-drop cannot fire #1, the law's walk-down (0.25x per
+        commit, one per 5 s dwell) cannot finish in s2's ~10-14 s post-drop
+        window, and the kernel stayed at 2.57x the link on dev band."""
+        g = RateGovernor()
+        g.observe(belief=102.45, applied=None, delivered=100.0,
+                  backlog_bytes=0, offered=99.0, now=0.0, min_rate=16.0)
+        # collapse with a MILD delay: EMA ~60 ms, ceiling far under half
+        d = g.observe(belief=21.5914, applied=51.632, delivered=100.0,
+                      backlog_bytes=2_000_000, offered=99.0, now=10.0,
+                      min_rate=16.0)
+        self.assertTrue(d.delay_emergency)
+        self.assertIn("capacity emergency", d.reason)
+        self.assertAlmostEqual(d.rate, 19.4322, places=3)
+        # cooldown shared with the delay emergency: inside it, no clearance
+        d = g.observe(belief=21.5914, applied=48.0, delivered=100.0,
+                      backlog_bytes=2_000_000, offered=99.0, now=15.0,
+                      min_rate=16.0)
+        self.assertFalse(d.delay_emergency)
+        self.assertIn("ratchet down one step", d.reason)
+
     def test_emergency_never_claimed_without_a_real_descent(self):
         """No clearance when the ceiling is not below the applied rate, or
         when the floor pins the rate: the cooldown stays available."""
