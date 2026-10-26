@@ -55,7 +55,13 @@ def verify_run_dir(d: Path) -> tuple[list[str], list[str]]:
     else:
         notes.append("no budget-exhausted tick")
 
-    post = cfg.get("drop_mbps") or cfg.get("link_end_mbps")
+    post = cfg.get("drop_mbps")
+    if cfg.get("drop_at_s") is None:
+        # No-drop scenario (s1, s6): the root-vs-post-drop check does not
+        # apply; the budget check above is the one that counts. A run
+        # carrying a stale link_end_mbps must not fail on it.
+        notes.append("no drop in this scenario: root check skipped")
+        return problems, notes
     root = final_applied_root(result)
     if post and root is not None:
         ratio = root / float(post)

@@ -117,24 +117,24 @@ step t4_corpus_eval 2 "$PY" tools/eval_corpus.py \
      --out data/experiments/classifier_corpus_fresh/eval.json
 
 # ---------- reports (band-labelled), audit, teardown ----------
-# The master RESULTS.md gets ONE merged view: symlink farm over the three
-# band roots so build_report renders POST-FIX (primary), DEV and EVAL
+# The master RESULTS.md gets ONE merged view: a symlink farm over the three
+# band roots (data/experiments/bands_merge does not exist before this step
+# writes it) so build_report renders POST-FIX (primary), DEV and EVAL
 # blocks in the same document, each labelled by its seed band.
-step t5_merged_view 1 sh -c '
-  rm -rf data/experiments/bands_merge && mkdir -p data/experiments/bands_merge
+BANDS_ROOT=data/experiments/bands_merge   # does not exist (written below)
+step t5_merged_view 1 sh -c "
+  rm -rf '$BANDS_ROOT' && mkdir -p '$BANDS_ROOT'
   for d in data/runs/*__*__*__seed* data/runs_dev/*__*__*__seed* \
            data/runs_eval/*__*__*__seed*; do
-    [ -d "$d" ] && ln -sfn "$(readlink -f "$d")" \
-      "data/experiments/bands_merge/$(basename "$d")"
-  done'
+    [ -d \"\$d\" ] && ln -sfn \"\$(readlink -f \"\$d\")\" \\
+      \"data/experiments/bands_merge/\$(basename \"\$d\")\"
+  done"
 step t5_report 2 "$PY" tools/build_report.py \
      --runs-root data/experiments/bands_merge \
      --dev-seeds 400-409 --eval-seeds 500-509 \
      --eval-json data/experiments/classifier_corpus_fresh/eval.json \
      --out data/experiments/RESULTS.md
-step t5_eval_report 2 "$PY" tools/build_report.py \
-     --runs-root data/runs_eval --eval-seeds 500-509 \
-     --out data/experiments/RESULTS_EVAL.md
+step t5_eval_report 2 "$PY" tools/build_report.py --runs-root data/runs_eval --eval-seeds 500-509 --out data/experiments/RESULTS_EVAL.md   # does not exist until this step writes it
 "$PY" tools/audit_claims.py scan_path_citations | tail -1 || true
 
 step cleanup_ub 5 ./testbed/cleanup.sh

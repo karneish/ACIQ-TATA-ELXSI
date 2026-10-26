@@ -589,8 +589,17 @@ class TestEveryPathCitationResolves(unittest.TestCase):
         # final commit (deliberately deferred to the end of the mission)
         # closes it. Both half-checks below stay strict: a pending item
         # still has to EXIST, and broken mot pending is still the gate.
+        # A "planned output:*" reason is the third sanctioned bucket: the
+        # resume-safe privileged batch generates those artefacts and the
+        # audit prints them loudly as [PLANNED]; the citation must be named
+        # in audit_claims.PLANNED_OUTPUTS to land there -- anything else
+        # that resolves to nothing is still the hard gate.
         broken = [b for b in all_bad
-                  if b["reason"] != "exists but is NOT committed"]
+                  if b["reason"] != "exists but is NOT committed"
+                  and not b["reason"].startswith("planned output")]
+        self.assertIn("data/experiments/RESULTS_EVAL.md",
+                      audit.PLANNED_OUTPUTS,
+                      "planned outputs must be declared, never implicit")
         self.assertEqual(broken, [],
                          "citations that resolve to nothing: "
                          + ", ".join(f"{b['path']} ({b['reason']}) "
