@@ -301,6 +301,27 @@ live-kernel suite)**, `make lint` = 0 broken citations, secret-scan clean.
 | (TASK 6) classifier fresh held-out | **PASS with declared weakness — live 2026-10-25** | the live corpus step refreshed eval.json: held-out strict acc 0.5877 on n=114; the FULL-corpus figures remain context only; weak classes `interactive_gaming`, `software_update` (never predicted) stay DECLARED, not tuned around |
 | T7 entry points, T8 dashboard, T9 docs | **PASS** | `Makefile` targets intact; dashboard evidence re-captured by queued steps; docs updated |
 
+### Redesign round — live post-eval record (2026-10-26, one-shot EVAL band, parameters frozen)
+
+The privileged batch (`testbed/run_redesign_batch.sh`, 2026-10-26 14:45–18:41)
+ran the whole declared protocol in order: re-instrumented task-1 diagnosis
+runs (`data/runs_diag`), the DEV band (`data/runs_dev`, seeds 400–409 → gate
+FAIL → collapse-emergency declared in
+`docs/evidence/task2-params.md` #6 → gate **PASS 40/40 clean**), then the
+EVAL band ONCE (`data/runs_eval`, seeds 500–509, frozen parameters), the S6
+band (seeds 310–319 at the declared t=10 s / TTL 20 s protocol), and the
+fresh classifier corpus (`--port-offset 2000`). Verdicts below are read
+from the artefacts, never summarised files.
+
+| Work item | Verdict | Evidence (checked) |
+|---|---|---|
+| Task 2 — delay-primary controller on the EVAL band | **PASS (first eval, one-shot)** | s2 kernel binds at **2.93 s (n=10)** on the APPLIED tree (≤1.05x post-drop); **call p95 64.14 ± 2.15 ms vs CAKE-static 70.20 ± 2.07 — disjoint CIs**, the p95 win the legacy POST-FIX runs could not produce (they measured 73.60 vs 70.31); post-drop bulk (tree) 19.54 ± 0.22 vs CAKE-static 20.12 ± 0.01; no budget-exhausted tick anywhere; s4 binds 2.72 s (n=10); s1 estimate error 1.8% |
+| Task 3 — S6 intent protocol live | **PASS — verifier over both bands** | `verify_s6.py` over 300–309 + 310–319: `granted=PASS reverted=PASS floors=PASS recovered=PASS baselines=PASS (granted 20/20, revert 20/20, floors 20/20, recovery 17/17, base 40/40)`; recovery 17/17 with 3 runs N/A because no pre-drop median exists to normalise against — declared in `data/experiments/s6/s6_summary.json` |
+| Task 4 — fresh corpus on fresh dports | **PASS with declared weakness (unchanged character)** | fresh corpus 228 flows (`--port-offset 2000`, disjoint dports, split seed 7 unchanged); broad taxonomy as primary; weak classes `interactive_gaming`, `software_update` reach f1 < 0.5 again and stay DECLARED (measured, never tuned around) |
+| Task 1 — re-instrumented diagnosis runs | **PASS (instrument documented)** | `data/runs_diag` (s1/s2/s4, seeds 200/201, `--observe`) — per-second receiver series now recorded for the re-run; the diagnosis itself stands as delivered (kernel truth chain reproduced by the report's `policy_change_log` rebasing) |
+| Task 5 — band-labelled reporting | **PASS (regenerated post-batch)** | `RESULTS.md` quotes the merged view (POST-FIX primary, DEV/EVAL as labelled blocks); `RESULTS_EVAL.md` is the one-shot band's own report; "Where CAKE-static wins" recollected from the new runs; S5 time-to-safe-state unchanged (26.680 s, `arm->rollback`, from samples stamps) |
+| Dev-gate amendment | **DECLARED BEFORE EVAL** | `CAPACITY_EMERGENCY_COLLAPSE_FRAC = 0.5` (task2-params.md #6): dev gate FAIL showed ceiling 0.21x applied with delay EMA 37–72 ms — no declared bypass could fire and the law's walk-down ran out of s2's window; the amendment closed it, dev gate then 40/40, eval ran frozen |
+
 ### The one remaining privileged action (user)
 
 ```bash
