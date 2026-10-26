@@ -1,0 +1,55 @@
+{
+  "scenario": "s2_wan_drop",
+  "system": "b0_fifo",
+  "mode": "static",
+  "seed": 503,
+  "link_mbps": 100.0,
+  "drop_mbps": 20.0,
+  "drop_at_s": 30.0,
+  "recover_at_s": null,
+  "recover_to_mbps": null,
+  "cake_rate_at_apply": null,
+  "oracle_from_start": false,
+  "duration_s": 40.0,
+  "settle_s": 4.0,
+  "workloads": [
+    {
+      "kind": "call",
+      "label": "call",
+      "dscp": 46
+    },
+    {
+      "kind": "bulk",
+      "label": "bulk",
+      "dscp": null
+    }
+  ],
+  "ports": [
+    {
+      "label": "call",
+      "port": 5187,
+      "dscp": 46
+    },
+    {
+      "label": "bulk",
+      "port": 5177,
+      "dscp": null
+    }
+  ],
+  "floor_mbps": 5.0,
+  "enforce_requested": false,
+  "enforcement_note": "not requested",
+  "lease_ips": [],
+  "device_ips": {
+    "call": "203.0.113.3",
+    "bulk": "203.0.113.4"
+  },
+  "lease_weight": null,
+  "lease_ttl_s": null,
+  "inject_fail_apply": false,
+  "api_intent_requested": false,
+  "intent_at_s": null,
+  "intent_ttl_s": null,
+  "intent_weight": null,
+  "intent_label": null
+}
