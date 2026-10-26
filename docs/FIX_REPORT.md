@@ -324,3 +324,28 @@ refuses to exit green otherwise). Delete `t5_s5.done` / `t6_s6_intent.done`
    per the rerun's `verify_s5c.py` output.
 2. `make lint && python3 -m unittest discover -s tests` — gate.
 3. Only then the final commit(s), per the end-of-mission directive.
+
+---
+
+## Redesign round (2026-10-26, fix 28–30) — Task 3 brief: delay-primary controller
+
+Task 1 diagnosis (offline, per-tick traces over s1/s2/s4 seeds 200–201): the
+call-latency failure chain was the legacy controller's behaviour, not the
+kernel's: the delay-20% emergency never fired (drop_rate_per_s = 0.0 on every
+tick — a capacity drop backs up netem instead of dropping), the rate-change
+ledger filled its 3-rise budget with post-drop stamp-spam (71.69 → never a
+single further commit), and the tree was applied at the old rate — so the
+root sat at ~3.2x the post-drop link for the whole window. Verdict on the
+hypothesis "0.90x estimate exceeds deliverable": NOT SUPPORTED
+(0.90 x 21.59 = 19.43 < 20); the real mechanism was budget starvation plus a
+law step-envelope, both fixed below.
+
+| Work item | Verdict | Evidence (committed, checked) |
+|---|---|---|
+| Task 1 — offline diagnosis | **PASS** | per-tick traces, seeds 200/201, s1/s2/s4: the chain — 3 commits per run (rel ~0.95→90 at ~7.15 s, post-drop commit 86.22→64.67 (the law's 0.25x step-clamp = 21.56, against a want of 19.43), then silence); 7–8 (s2, 40 ticks) / 27–8 (s4, 60 ticks) `rate change budget exhausted` ticks and drop_rate_per_s = 0.0 on every tick (the law's >=500 drop/s emergency never fired); the ~3.2x mis-applied root persisted all window; `bind 1.72–1.85 s` was the governor's decision-rate, not the kernel's; per-second call latency for seeds 200/201 NOT RECOVERABLE (`observe=False`, no `--obs-out`) — declared; hypothesis "0.90x estimate exceeds deliverable" NOT SUPPORTED (0.90 x 21.59 = 19.43 < 20) |
+| Task 2 — delay-primary redesign | **PASS code-level (declared before work began)** | `docs/evidence/task2-params.md`: DELAY_EMERGENCY_MS=100.0, DELAY_EMERGENCY_COOLDOWN_S=20.0, rise-only budget, INITIAL_PARENT_FRACTION=cap_fraction=0.90, delivered_mbps per tick. `aciq/ratecap.py` (now, rose) ledger + emergency clearance; `aciq/verifier.py` delay_emergency bypass of dwell/step-clamp; ACIQ apply_system builds at 0.90x. Suite 1453 OK, lint clean (`696c89f`) |
+| Task 3 — S6 intent protocol | **PASS code-level (declared)** | `docs/evidence/task3-params.md`: 60 s run, intent t=10 s, TTL 20 s (must EXPIRE inside the run), seeds 310–319, bulk floor = policy floor, recovery = >=90% of pre-median within 5 s of lease-inactive (N/A when no pre-median), timings per-run. `harness.py` s6 40→60 s; `run_experiments.py` --intent-at/--intent-ttl; `verify_s5c.py` floor/Recovery/N/A handling; legacy 300–309 still verify PASS (`1f07a78`) |
+| Task 4 — classifier honest taxonomy | **PASS code-level (declared)** | `docs/evidence/task4-params.md`: broad taxonomy (interactive / streaming / data_transfer), calibration bins [0,.2,.4,.6,.8,1], confident-wrong cut >=0.70, corpus re-collected with --port-offset 2000 (fresh dports), split seed 7 unchanged. `eval_corpus.py` re-read legacy corpus: broad held-out 0.746 (85/114) vs narrow 0.588; calibration 0.4–0.6 → 0.419 (n=31), 0.6–0.8 → 0.651 (n=83); 0 confidently wrong >=0.7. Fails > =0.7 declared, not tuned around (`633a4fa`) |
+| Task 5 — report regeneration + PASS/FAIL | **PASS code-level, live numbers pending the batch** | `tools/build_report.py`: per-scenario PRE-FIX (0–9/42–51) and POST-FIX (200–209) blocks labeled at the table; "Where CAKE-static wins" isolated from the honest column; S5 time-to-safe-state measured as arm->rollback from samples.jsonl stamps (committed value: seed555 26.680 s); comparison sections declare "primary band only". This PASS/FAIL table updated |
+| Tasks 2–4 live dev/eval runs | **PENDING — needs the user** | dev seeds 400–409 (any changes), then eval ONCE on 500–509; no parameter touched after eval begins; the batched privileged step carries the full plan (incl. s6 seeds 310–319, corpus --port-offset 2000, re-instrumented diagnosis runs) |
+

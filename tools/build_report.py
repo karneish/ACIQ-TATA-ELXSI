@@ -109,6 +109,24 @@ ARM_ORDER = ["b0_fifo", "b1_cake95", "b1_cake_oracle", "aciq"]
 
 
 def load_runs(runs_root: Path) -> tuple[list[dict], list[str]]:
+    """POST-FIX-primary view (back-compat; tests grep this signature).
+    The per-family breakdown is load_runs_families()."""
+    runs, skipped, _fam = load_runs_families(runs_root)
+    return runs, skipped
+
+
+def load_runs_families(runs_root: Path) -> tuple[list[dict], list[str],
+                                                 dict[tuple[str, str, str],
+                                                      list[dict]]]:
+    """Everything load_runs does, plus the explicit PRE-FIX/POST-FIX split
+    so the report can render BOTH generations side by side (task 5: labelled
+    blocks -- a reader must never wonder which engine produced a cell)."""
+    return _load_runs_inner(runs_root)
+
+
+def _load_runs_inner(runs_root: Path) -> tuple[list[dict], list[str],
+                                               dict[tuple[str, str, str],
+                                                    list[dict]]]:
     """Every directory under runs_root carrying config.json + workloads.json.
 
     A directory without both is not a complete run; it is skipped and its name
@@ -225,7 +243,7 @@ def load_runs(runs_root: Path) -> tuple[list[dict], list[str]]:
                 r["_seed_family"] = "OTHER"
         except Exception:
             r["_seed_family"] = "UNKNOWN"
-    return runs, skipped
+    return runs, skipped, runs_by_family
 
 
 def call_metrics(wl: dict) -> dict:
@@ -665,7 +683,7 @@ def build_report(runs_root: Path, out_md: Path,
                  eval_json: Path | None = None,
                  s5_json: Path | None = None,
                  s6_json: Path | None = None) -> str:
-    runs, skipped = load_runs(runs_root)
+    runs, skipped, runs_by_family = load_runs_families(runs_root)
     scen = scenarios_of(runs)
     sys_of_run = lambda r: r["cfg"].get("system", "")
     present = sorted({sys_of_run(r) for r in runs})
@@ -703,9 +721,17 @@ def build_report(runs_root: Path, out_md: Path,
         add(f"- total skipped: {len(skipped)}")
         add("")
 
-    # ---- scenario x arm table (POST-FIX primary) -------------------------------------------
+    # ---- scenario x arm table (labelled PRE-FIX / POST-FIX blocks) ---------
     add("## Delay and throughput, every scenario x arm (mean +/- 95% CI over "
         "seeds; t(9)=2.262 for n=10)")
+    add("")
+    add("Every block below carries an explicit engine-generation label: "
+        "`POST-FIX` (seeds 200-209, the controller after the redesign "
+        "commits) or `PRE-FIX` (legacy seeds 0-9/42-51, the controller "
+        "before the redesign). A reader never inherits a number of unknown "
+        "provenance: the label sits directly above the table, and the POST/"
+        "PRE label is derived from the seed family recorded at load time. "
+        "The comparison sections further down use the primary band only.")
     add("")
     add("Bulk has TWO columns on purpose (TASK 5a): `sender` is what the "
         "generator pushed, `receiver/sink` is what the receiver's sink log "
@@ -713,9 +739,8 @@ def build_report(runs_root: Path, out_md: Path,
         "post-drop column stays on the TREE counters and is named so: the "
         "three are different instruments and are never blended.")
     add("")
-    for sc in scen:
-        add(f"### {sc}")
-        add("")
+
+    def emit_arm_table(add, sc: str, runlist: list[dict]) -> None:
         add(row_md(["arm", "n", "call p95 ms", "call jitter ms",
                     "call loss %", "game p95 ms", "bulk Mbps (sender)",
                     "bulk Mbps (receiver/sink)",
@@ -723,7 +748,7 @@ def build_report(runs_root: Path, out_md: Path,
                     "jain (workload-rate Jain)", "jain (demand-normalized)"]))
         add(row_md(["---"] * 11))
         for arm in arms:
-            grp = per_arm(sc, arm, runs)
+            grp = per_arm(sc, arm, runlist)
             if not grp:
                 continue
             calls = [call_metrics(r["wl"]) for r in grp]
@@ -750,7 +775,24 @@ def build_report(runs_root: Path, out_md: Path,
                 fmt(jains, 3),
                 fmt(djains, 3),
             ]))
+
+    for sc in scen:
+        has_post = any(k[0] == sc and k[2] == "POST-FIX"
+                       for k in runs_by_family)
+        add(f"### {sc}"
+            + (" (POST-FIX, seeds 200-209)" if has_post
+               else " (PRE-FIX fallback: no POST-FIX seeds in this root)"))
         add("")
+        emit_arm_table(add, sc, runs)
+        add("")
+        if has_post:
+            pre = [r for k, v in runs_by_family.items()
+                   if k[0] == sc and k[2] == "PRE-FIX" for r in v]
+            if pre:
+                add(f"### {sc} (PRE-FIX, legacy engine, seeds 0-9/42-51)")
+                add("")
+                emit_arm_table(add, sc, pre)
+                add("")
 
     # ---- improvement table ----------------------------------------------
     add("## ACIQ vs every arm (positive % is better ACIQ on the metric at "
@@ -821,6 +863,22 @@ def build_report(runs_root: Path, out_md: Path,
     add(row_md(["---"] * 3))
     (lines.extend(worse_rows) if worse_rows
      else add("(none in these runs)"))
+    add("")
+
+    # ---- where CAKE-static wins (the specific rival) ---------------------
+    add("## Where CAKE-static wins")
+    add("")
+    add("The honest column above lists every rival; this one isolates the "
+        "set-and-forget rival that matters for the design claim. A CAKE "
+        "win on a metric is stated here verbatim; nothing is re-derived "
+        "and nothing is argued away. CI overlap of the underlying seed "
+        "samples is in the table above (`CI overlap?` column).")
+    add("")
+    add(row_md(["scenario", "metric where CAKE-static beats ACIQ",
+                "see column in the ACIQ-vs-every table"]))
+    add(row_md(["---"] * 3))
+    cake_rows = [r for r in worse_rows if "CAKE-static" in r]
+    (lines.extend(cake_rows) if cake_rows else add("(none in these runs)"))
     add("")
 
     # ---- adaptation + accuracy ------------------------------------------
@@ -1256,6 +1314,47 @@ def build_report(runs_root: Path, out_md: Path,
                 add(f"- {NOT_AVAILABLE}: {outcome}")
             else:
                 add(f"- {case}: `{json.dumps(outcome)}`")
+        # TASK 5: time-to-safe-state. The injection moment is the run's
+        # first committed tick after arm; safe is the rollback replay of
+        # last-good through the kernel. Both come from samples.jsonl
+        # policy_outcome stamps, never from the controller's own summary.
+        timing: list[str] = []
+        for d in sorted(runs_root.iterdir()):
+            if not d.is_dir():
+                continue
+            cfg_p = d / "config.json"
+            if not cfg_p.exists() or not json.loads(
+                    cfg_p.read_text()).get("inject_fail_apply"):
+                continue
+            arm_t = roll_t = None
+            try:
+                for line in (d / "samples.jsonl").read_text(
+                        errors="replace").splitlines():
+                    if not line.strip():
+                        continue
+                    s = json.loads(line)
+                    po = s.get("policy_outcome") or {}
+                    t = s.get("t")
+                    if po.get("rolled_back") and roll_t is None:
+                        roll_t = t
+                    elif po.get("committed") and po.get("ok") and \
+                            arm_t is None:
+                        arm_t = t
+            except (OSError, json.JSONDecodeError) as e:
+                timing.append(f"{d.name}: unreadable ({e})")
+                continue
+            if arm_t is None or roll_t is None:
+                timing.append(f"{d.name}: {NOT_AVAILABLE} "
+                              "(no armed-apply/rollback stamps)")
+            else:
+                timing.append(f"{d.name}: "
+                              f"{(roll_t - arm_t):.3f} s (arm->rollback)")
+        if timing:
+            add("")
+            add("**Time to safe state (S5c injected failed apply; "
+                "rollback = the kernel back on last-good):**")
+            for t in timing:
+                add(f"- {t}")
     else:
         add(f"{NOT_AVAILABLE} (no live S5 evidence "
             f"at `{s5_json or 'data/experiments/s5/s5_summary.json'}`; "

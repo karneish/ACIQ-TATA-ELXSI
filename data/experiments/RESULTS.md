@@ -10,9 +10,11 @@ Skipped 1 incomplete-only directory names: `s2_wan_drop__aciq__adaptive__seed555
 
 ## Delay and throughput, every scenario x arm (mean +/- 95% CI over seeds; t(9)=2.262 for n=10)
 
+Every block below carries an explicit engine-generation label: `POST-FIX` (seeds 200-209, the controller after the redesign commits) or `PRE-FIX` (legacy seeds 0-9/42-51, the controller before the redesign). A reader never inherits a number of unknown provenance: the label sits directly above the table, and the POST/PRE label is derived from the seed family recorded at load time. The comparison sections further down use the primary band only.
+
 Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed, `receiver/sink` is what the receiver's sink log totalled -- the delivered number, used for any bulk claim. The post-drop column stays on the TREE counters and is named so: the three are different instruments and are never blended.
 
-### s1_iso_during_call
+### s1_iso_during_call (POST-FIX, seeds 200-209)
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -21,7 +23,16 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 1.45 +/- 0.01 | 0.44 +/- 0.01 | 0.000 +/- 0.000 | NOT AVAILABLE | 90.96 +/- 0.00 | 90.74 +/- 0.00 | (no drop scenario) | 0.922 +/- 0.000 | NOT AVAILABLE |
 | ACIQ (controller) | 10 | 82.49 +/- 0.49 | 0.61 +/- 0.05 | 0.180 +/- 0.060 | NOT AVAILABLE | 86.22 +/- 0.93 | 85.41 +/- 0.93 | (no drop scenario) | 0.934 +/- 0.002 | NOT AVAILABLE |
 
-### s2_wan_drop
+### s1_iso_during_call (PRE-FIX, legacy engine, seeds 0-9/42-51)
+
+| arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| B0 (default router, pfifo) | 10 | 250.71 +/- 0.03 | 3.16 +/- 0.00 | 0.740 +/- 0.015 | NOT AVAILABLE | 96.29 +/- 0.00 | 95.49 +/- 0.00 | (no drop scenario) | 0.909 +/- 0.000 | NOT AVAILABLE |
+| CAKE-static (95% of pre-drop link, set and forget) | 10 | 1.55 +/- 0.07 | 0.48 +/- 0.01 | 0.000 +/- 0.000 | NOT AVAILABLE | 90.96 +/- 0.00 | 90.74 +/- 0.00 | (no drop scenario) | 0.922 +/- 0.000 | NOT AVAILABLE |
+| CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 1.74 +/- 0.33 | 0.50 +/- 0.06 | 0.000 +/- 0.000 | NOT AVAILABLE | 90.97 +/- 0.01 | 90.74 +/- 0.00 | (no drop scenario) | 0.922 +/- 0.000 | NOT AVAILABLE |
+| ACIQ (controller) | 10 | 238.89 +/- 0.37 | 1.13 +/- 0.08 | 0.873 +/- 0.061 | NOT AVAILABLE | 96.30 +/- 0.00 | 95.50 +/- 0.01 | (no drop scenario) | 0.909 +/- 0.000 | NOT AVAILABLE |
+
+### s2_wan_drop (POST-FIX, seeds 200-209)
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -30,7 +41,16 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 2.33 +/- 0.03 | 0.31 +/- 0.01 | 0.000 +/- 0.000 | NOT AVAILABLE | 18.09 +/- 0.00 | 18.06 +/- 0.00 | 18.71 +/- 0.06 | 0.820 +/- 0.000 | NOT AVAILABLE |
 | ACIQ (controller) | 10 | 73.60 +/- 2.48 | 0.63 +/- 0.03 | 0.265 +/- 0.041 | NOT AVAILABLE | 71.69 +/- 0.58 | 69.54 +/- 0.56 | 20.15 +/- 0.01 | 0.969 +/- 0.001 | NOT AVAILABLE |
 
-### s3_tv_and_gaming
+### s2_wan_drop (PRE-FIX, legacy engine, seeds 0-9/42-51)
+
+| arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| B0 (default router, pfifo) | 10 | 248.96 +/- 0.73 | 2.89 +/- 0.25 | 9.095 +/- 0.197 | NOT AVAILABLE | 41.18 +/- 0.03 | 39.95 +/- 0.02 | 20.70 +/- 0.02 | 0.991 +/- 0.000 | NOT AVAILABLE |
+| CAKE-static (95% of pre-drop link, set and forget) | 10 | 89.55 +/- 0.96 | 0.69 +/- 0.02 | 0.380 +/- 0.081 | NOT AVAILABLE | 39.06 +/- 0.03 | 38.58 +/- 0.02 | 20.05 +/- 0.00 | 0.985 +/- 0.000 | NOT AVAILABLE |
+| CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 2.38 +/- 0.05 | 0.34 +/- 0.02 | 0.000 +/- 0.000 | NOT AVAILABLE | 18.09 +/- 0.00 | 18.06 +/- 0.00 | 18.55 +/- 0.07 | 0.820 +/- 0.000 | NOT AVAILABLE |
+| ACIQ (controller) | 11 | 111.60 +/- 30.10 | 1.10 +/- 0.49 | 0.945 +/- 1.264 | NOT AVAILABLE | 43.20 +/- 8.28 | 41.92 +/- 8.03 | 20.36 +/- 0.77 | 0.983 +/- 0.008 | NOT AVAILABLE |
+
+### s3_tv_and_gaming (POST-FIX, seeds 200-209)
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -39,7 +59,16 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | 2.41 +/- 0.17 | NOT AVAILABLE | NOT AVAILABLE | (no drop scenario) | 0.510 +/- 0.000 | 1.000 +/- 0.000 |
 | ACIQ (controller) | 10 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | 2.37 +/- 0.11 | NOT AVAILABLE | NOT AVAILABLE | (no drop scenario) | 0.510 +/- 0.000 | 1.000 +/- 0.000 |
 
-### s4_capacity_recovery
+### s3_tv_and_gaming (PRE-FIX, legacy engine, seeds 0-9/42-51)
+
+| arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| B0 (default router, pfifo) | 10 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | 3.30 +/- 0.29 | NOT AVAILABLE | NOT AVAILABLE | (no drop scenario) | 0.509 +/- 0.000 | 1.000 +/- 0.000 |
+| CAKE-static (95% of pre-drop link, set and forget) | 10 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | 2.47 +/- 0.13 | NOT AVAILABLE | NOT AVAILABLE | (no drop scenario) | 0.510 +/- 0.000 | 1.000 +/- 0.000 |
+| CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | 2.23 +/- 0.17 | NOT AVAILABLE | NOT AVAILABLE | (no drop scenario) | 0.510 +/- 0.000 | 1.000 +/- 0.000 |
+| ACIQ (controller) | 10 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | 2.13 +/- 0.25 | NOT AVAILABLE | NOT AVAILABLE | (no drop scenario) | 0.510 +/- 0.000 | 1.000 +/- 0.000 |
+
+### s4_capacity_recovery (POST-FIX, seeds 200-209)
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -48,7 +77,16 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 2.74 +/- 0.03 | 0.48 +/- 0.01 | 0.000 +/- 0.000 | NOT AVAILABLE | 18.08 +/- 0.00 | 18.06 +/- 0.00 | 18.78 +/- 0.01 | 0.820 +/- 0.000 | NOT AVAILABLE |
 | ACIQ (controller) | 10 | 95.74 +/- 0.90 | 0.73 +/- 0.01 | 0.280 +/- 0.023 | NOT AVAILABLE | 53.88 +/- 0.08 | 52.79 +/- 0.08 | 19.95 +/- 0.00 | 0.999 +/- 0.000 | NOT AVAILABLE |
 
-### s6_intent_expire
+### s4_capacity_recovery (PRE-FIX, legacy engine, seeds 0-9/42-51)
+
+| arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| B0 (default router, pfifo) | 10 | 245.07 +/- 0.18 | 2.06 +/- 0.01 | 6.127 +/- 0.088 | NOT AVAILABLE | 33.78 +/- 0.01 | 33.10 +/- 0.01 | 20.40 +/- 0.01 | 0.964 +/- 0.000 | NOT AVAILABLE |
+| CAKE-static (95% of pre-drop link, set and forget) | 10 | 89.95 +/- 0.46 | 0.84 +/- 0.29 | 0.407 +/- 0.367 | NOT AVAILABLE | 32.38 +/- 0.01 | 32.12 +/- 0.01 | 20.02 +/- 0.00 | 0.956 +/- 0.000 | NOT AVAILABLE |
+| CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 2.75 +/- 0.03 | 0.49 +/- 0.01 | 0.000 +/- 0.000 | NOT AVAILABLE | 18.08 +/- 0.00 | 18.06 +/- 0.00 | 18.79 +/- 0.01 | 0.820 +/- 0.000 | NOT AVAILABLE |
+| ACIQ (controller) | 10 | 96.87 +/- 1.09 | 0.88 +/- 0.02 | 0.363 +/- 0.054 | NOT AVAILABLE | 32.65 +/- 0.05 | 31.99 +/- 0.05 | 19.95 +/- 0.01 | 0.958 +/- 0.000 | NOT AVAILABLE |
+
+### s6_intent_expire (POST-FIX, seeds 200-209)
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -86,6 +124,15 @@ Every row above where ACIQ's signed delta is negative, collected so a CAKE win c
 | s2_wan_drop | B0 (default router, pfifo) | post-drop bulk Mbps |
 | s2_wan_drop | CAKE-static (95% of pre-drop link, set and forget) | call p95 |
 | s4_capacity_recovery | B0 (default router, pfifo) | post-drop bulk Mbps |
+| s4_capacity_recovery | CAKE-static (95% of pre-drop link, set and forget) | call p95 and post-drop bulk Mbps |
+
+## Where CAKE-static wins
+
+The honest column above lists every rival; this one isolates the set-and-forget rival that matters for the design claim. A CAKE win on a metric is stated here verbatim; nothing is re-derived and nothing is argued away. CI overlap of the underlying seed samples is in the table above (`CI overlap?` column).
+
+| scenario | metric where CAKE-static beats ACIQ | see column in the ACIQ-vs-every table |
+| --- | --- | --- |
+| s2_wan_drop | CAKE-static (95% of pre-drop link, set and forget) | call p95 |
 | s4_capacity_recovery | CAKE-static (95% of pre-drop link, set and forget) | call p95 and post-drop bulk Mbps |
 
 ## ACIQ adaptation and capacity accuracy (from the same runs above)
@@ -165,7 +212,7 @@ Further declared exclusions (TASK 5b): (1) ticks at or beyond the label generato
 
 ## S6 intent scenario (TASK 4: real API intent, TTL expiry inside the run, auto-revert)
 
-One intent is requested at t~1s on the operator's real surface (IntentService, the exact upstream-declared code path the HTTP handler calls: POST /intent, target device, weight 0.5, TTL 15s). The 40s scenario makes the TTL expire INSIDE the run, so both endpoints of the intent's life are measured: held while live, auto-reverted at expiry (LeaseBook's implicit sweep plus the per-tick sync_lease). Receiver evidence is the per-second sink sampler; the floors line is a FLOOR line, not a preference claim: on a healthy link a reserve must not starve the other classes, and the reserved device must actually receive bytes. The s6 summary file is quoted when present; the table never infers what the verifier measured.
+One intent is requested at the run's declared --intent-at (the 2026 protocol: t=10s, after the bulk stream has sat in steady state for a third of the 60s run) on the operator's real surface (IntentService, the exact upstream-declared code path the HTTP handler calls: POST /intent, target device, weight 0.5, TTL 20s, expiring at t~=30). Both endpoints of the intent's life are measured: held while live, auto-reverted at expiry (LeaseBook's implicit sweep plus the per-tick sync_lease), and the recovery window after expiry. Older artefacts in this report may carry the pre-2026 protocol (t~1s, TTL 15s, 40s run); each row states its own run's numbers. Receiver evidence is the per-second sink sampler; the floors line is a FLOOR line, not a preference claim: on a healthy link a reserve must not starve the other classes, and the reserved device must actually receive bytes. The s6 summary file is quoted when present; the table never infers what the verifier measured.
 
 | arm | intent (verdict from result.json) | auto-revert (lease_active evidence, ticks) | receiver inst in window: game min / bulk min (floors) | declared |
 | --- | --- | --- | --- | --- |
@@ -185,7 +232,7 @@ One intent is requested at t~1s on the operator's real surface (IntentService, t
 - accept_abstain: `{"n": 228, "correct": 139, "abstained": 0, "confident_or_wrong": 89, "accuracy_strict": 0.6096491228070176, "accuracy_excl_abstain": 0.6096491228070176}`
 - accept_abstain_heldout: `{"n": 114, "correct": 67, "abstained": 0, "confident_or_wrong": 47, "accuracy_strict": 0.5877192982456141, "accuracy_excl_abstain": 0.5877192982456141}`
 - confusion_heldout: `{"classes": ["adaptive_video_streaming", "bulk_download", "cloud_backup", "interactive_gaming", "software_update", "video_call_voice"], "matrix": {"adaptive_video_streaming": {"bulk_download": 0, "cloud_backup": 0, "interactive_gaming": 0, "software_update": 0, "video_call_voice": 0, "adaptive_video_streaming": 26, "?abstain": 0}, "bulk_download": {"adaptive_video_streaming": 4, "cloud_backup": 0, "interactive_gaming": 0, "software_update": 0, "video_call_voice": 0, "bulk_download": 13, "?abstain": 0}, "cloud_backup": {"adaptive_video_streaming": 0, "bulk_download": 0, "interactive_gaming": 0, "software_update": 0, "video_call_voice": 0, "cloud_backup": 15, "?abstain": 0}, "interactive_gaming": {"adaptive_video_streaming": 0, "bulk_download": 0, "cloud_backup": 0, "software_update": 0, "video_call_voice": 18, "interactive_gaming": 0, "?abstain": 0}, "software_update": {"adaptive_video_streaming": 25, "bulk_download": 0, "cloud_backup": 0, "interactive_gaming": 0, "video_call_voice": 0, "software_update": 0, "?abstain": 0}, "video_call_voice": {"adaptive_video_streaming": 0, "bulk_download": 0, "cloud_backup": 0, "interactive_gaming": 0, "software_update": 0, "video_call_voice": 13, "?abstain": 0}}, "per_class": {"adaptive_video_streaming": {"tp": 26, "fp": 29, "fn": 0, "support": 26, "precision": 0.4727272727272727, "recall": 1.0, "f1": 0.6419753086419753}, "bulk_download": {"tp": 13, "fp": 0, "fn": 4, "support": 17, "precision": 1.0, "recall": 0.7647058823529411, "f1": 0.8666666666666666}, "cloud_backup": {"tp": 15, "fp": 0, "fn": 0, "support": 15, "precision": 1.0, "recall": 1.0, "f1": 1.0}, "interactive_gaming": {"tp": 0, "fp": 0, "fn": 18, "support": 18, "precision": null, "recall": 0.0, "f1": null}, "software_update": {"tp": 0, "fp": 0, "fn": 25, "support": 25, "precision": null, "recall": 0.0, "f1": null}, "video_call_voice": {"tp": 13, "fp": 18, "fn": 0, "support": 13, "precision": 0.41935483870967744, "recall": 1.0, "f1": 0.5909090909090909}}}`
-- paths_fixed: `["aciq/classify.py", "aciq/features.py"]`
+- paths_fixed: `["aciq/classify.py", "aciq/features.py", "aciq/model.py:BROAD_TAXONOMY"]`
 - n_corpus: `228`
 - n_heldout: `114`
 - per-class floor 30: met (counts: `{"video_call_voice": 30, "interactive_gaming": 30, "adaptive_video_streaming": 49, "bulk_download": 40, "software_update": 49, "cloud_backup": 30}`)
@@ -200,6 +247,9 @@ Source: `/home/mekarz/Desktop/Full-projects/TATA-ELXSI/data/experiments/classifi
 - d_watchdog_starve_reaches_safe: `"PASS"`
 - host: `"/home/mekarz/aciq-venv/bin/python -V"`
 - notes: `"values PASS/FAIL only; the report quotes this file verbatim"`
+
+**Time to safe state (S5c injected failed apply; rollback = the kernel back on last-good):**
+- s2_wan_drop__aciq__adaptive__seed555: 26.680 s (arm->rollback)
 
 ## EMULATION statement (what is modelled, what is not)
 
