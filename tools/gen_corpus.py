@@ -206,9 +206,18 @@ def collect_window(label: str, plan: tuple, env: NSEnv,
                    workloads_dir: Path, capacity_mbps: float,
                    tracker: FlowTracker | None = None,
                    source: ConntrackSource | None = None,
-                   flows: int = 1, case: str = "canonical") -> list[dict]:
+                   flows: int = 1, case: str = "canonical",
+                   port_offset: int = 0) -> list[dict]:
     """Run the generator `flows` times, one flow at a time, each on its OWN
-    port (base dport + index).
+    port (base dport + index [+ port_offset]).
+
+    `port_offset` (task4-params.md) exists so a FRESH corpus can be
+    generated with disjoint flow tuples: without it, a second collection
+    over the same plan reproduces the same dports, and the tuple-parity
+    split would place every new row in exactly the same half as the old
+    corpus -- a "fresh held-out" that was not fresh. The offset shifts
+    listener and sender together, so the rows stay genuine transfers on
+    their own ports.
 
     Why one CONCURRENT sender was rejected: bulk.py's listener serves
     connections sequentially (accept -> recv until EOF), so a second
@@ -221,7 +230,7 @@ def collect_window(label: str, plan: tuple, env: NSEnv,
     shared port the next window's tracker would read the previous flow's
     stale entry and either duplicate it or mix two flows' byte counters.
     Distinct dports make every row self-contained; the plan's port-per-label
-    property is preserved per flow (dport = base + i).
+    property is preserved per flow (dport = base + i [+ port_offset]).
     """
     _listener, script, dport, extra_flags, reverse = plan
     wl = str(workloads_dir)
@@ -232,7 +241,7 @@ def collect_window(label: str, plan: tuple, env: NSEnv,
     sink_ip = "203.0.113.2" if reverse else env.client_ip
     ps: list[dict] = []
     for i in range(flows):
-        port = dport + i
+        port = dport + i + port_offset
         # One tracker per FLOW: a shared ring would let earlier flows'
         # increment history be evicted while later ones still poll, and the
         # last window's stale conntrack lines would be re-read as new.
@@ -284,22 +293,26 @@ def collect_all(out: Path, duration_s: float = 6.0, poll_s: float = 1.0,
                 env: NSEnv | None = None, capacity_mbps: float = 100.0,
                 workloads_dir: Path | None = None,
                 flows_per_class: int = 30,
-                min_per_class: int = 30) -> int:
+                min_per_class: int = 30,
+                port_offset: int = 0) -> int:
     env = env or NSEnv()
     wl = workloads_dir or ROOT / "testbed/workloads"
     out.parent.mkdir(parents=True, exist_ok=True)
     rows: list[dict] = []
     print(f"corpus: {len(CORPUS_PLAN)} canonical classes x {flows_per_class} "
           f"flows + {len(AMBIGUOUS_PLAN)} ambiguous windows "
-          f"x {AMBIGUOUS_FLOWS} flows, {duration_s:g} s each")
+          f"x {AMBIGUOUS_FLOWS} flows, {duration_s:g} s each"
+          + (f", port_offset {port_offset}" if port_offset else ""))
     for label, plan in CORPUS_PLAN.items():
         rows.extend(collect_window(label, plan, env, duration_s, poll_s,
                                    wl, capacity_mbps,
-                                   flows=flows_per_class))
+                                   flows=flows_per_class,
+                                   port_offset=port_offset))
     for label, (plan, n) in AMBIGUOUS_PLAN.items():
         rows.extend(collect_window(label, plan, env, duration_s, poll_s,
                                    wl, capacity_mbps, flows=n,
-                                   case="ambiguous"))
+                                   case="ambiguous",
+                                   port_offset=port_offset))
     with out.open("w") as fh:
         for r in rows:
             fh.write(json.dumps(r) + "\n")
@@ -327,6 +340,11 @@ def main() -> int:
     ap.add_argument("--poll-s", type=float, default=1.0)
     ap.add_argument("--flows-per-class", type=int, default=30)
     ap.add_argument("--min-per-class", type=int, default=30)
+    ap.add_argument("--port-offset", type=int, default=0,
+                    help="shift every plan's dport base by this (task4-params.md: "
+                         "a nonzero offset makes a fresh corpus's flow tuples "
+                         "disjoint from the previous one, so the tuple-parity "
+                         "split genuinely re-splits)")
     a = ap.parse_args()
     if subprocess.run(["id", "-u"],
                       stdout=subprocess.PIPE, text=True).stdout.strip() != "0":
@@ -334,7 +352,8 @@ def main() -> int:
         return 1
     return collect_all(a.out, a.duration, a.poll_s,
                        flows_per_class=a.flows_per_class,
-                       min_per_class=a.min_per_class)
+                       min_per_class=a.min_per_class,
+                       port_offset=a.port_offset)
 
 
 if __name__ == "__main__":

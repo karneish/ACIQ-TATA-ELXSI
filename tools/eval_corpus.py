@@ -33,14 +33,21 @@ sys.path.insert(0, str(ROOT))
 from aciq.classify import classify  # noqa: E402
 from aciq.features import Flow, FlowFeatures  # noqa: E402
 from aciq.classify import TrustStore  # noqa: E402
-from aciq.model import TrafficClass  # noqa: E402
+from aciq.model import TrafficClass, broad_class  # noqa: E402
 import tools.gen_corpus as g  # noqa: E402
 
 #: The rule base is defined by exactly this file and its constants. Written
 #: into eval.json so the report can name the frozen rule set, not 'rules'.
-FIXED_SOURCES = ["aciq/classify.py", "aciq/features.py"]
+FIXED_SOURCES = ["aciq/classify.py", "aciq/features.py",
+                 "aciq/model.py:BROAD_TAXONOMY"]
 
 ABSTAIN = "?abstain"
+
+#: Calibration binning (docs/evidence/task4-params.md, declared before the
+#: fresh corpus): predicted confidence is binned and each bin's empirical
+#: accuracy is reported with it. Bins are the same for every corpus; nothing
+#: here tunes on a result.
+BIN_EDGES = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0)
 
 
 def tuple_key(rec: dict) -> str:
@@ -119,6 +126,19 @@ def evaluate(corpus_path: Path, seed: int = 7) -> dict:
     out["accept_abstain"] = _score(fixed + heldout, abstention=True)
     out["accept_abstain_fixed"] = _score(fixed, abstention=True)
     out["accept_abstain_heldout"] = _score(heldout, abstention=True)
+    # PRIMARY claim (task4-params.md): the same splits under the declared BROAD
+    # taxonomy. The score() above stays narrow side-by-side.
+    out["broad"] = _score(fixed + heldout, abstention=False, broad=True)
+    out["broad_fixed"] = _score(fixed, abstention=False, broad=True)
+    out["broad_heldout"] = _score(heldout, abstention=False, broad=True)
+    out["broad_accept_abstain"] = _score(fixed + heldout, abstention=True,
+                                         broad=True)
+    out["broad_accept_abstain_heldout"] = _score(heldout, abstention=True,
+                                                 broad=True)
+    rows_heldout = _rows(heldout)
+    out["calibration_heldout"] = _calibration(rows_heldout)
+    out["calibration_fixed"] = _calibration(_rows(fixed))
+    out["confidently_wrong_heldout"] = _confidently_wrong(rows_heldout)
     conf = {}
     # the class universe is the committed collection plan: labels the plan
     # declares must appear in every per-class table even with support 0
@@ -141,6 +161,8 @@ def _rows(records: list[dict]) -> list[dict]:
                       trust)  # threshold set shipped; no tuning here
         got.append({
             "label": r["label"], "got": cl.cls.value if cl.cls else None,
+            "label_broad": broad_class(r["label"]),
+            "got_broad": broad_class(cl.cls.value) if cl.cls else None,
             "confidence": round(cl.confidence, 4),
             "tier": cl.tier, "evidence": cl.evidence,
             "flow": r["flow"], "capacity_mbps": r.get("capacity_mbps"),
@@ -148,15 +170,17 @@ def _rows(records: list[dict]) -> list[dict]:
     return got
 
 
-def _score(records: list[dict], abstention: bool) -> dict:
+def _score(records: list[dict], abstention: bool, broad: bool = False) -> dict:
     rows = _rows(records)
     n = len(rows)
     right = wrong = ab = 0
+    truth_key, got_key = (("label_broad", "got_broad") if broad
+                          else ("label", "got"))
     for r in rows:
-        truth = r["label"]
-        if r["got"] == truth:
+        truth, got = r[truth_key], r[got_key]
+        if got == truth:
             right += 1
-        elif r["got"] is None:
+        elif got is None:
             if abstention:
                 ab += 1
             else:
@@ -169,6 +193,45 @@ def _score(records: list[dict], abstention: bool) -> dict:
         "accuracy_excl_abstain":
             (right / (right + wrong)) if (right + wrong) else None,
     }
+
+
+def _calibration(rows: list[dict]) -> list[dict]:
+    """Predicted confidence vs realized accuracy, per declared bin."""
+    bins = []
+    for lo, hi in zip(BIN_EDGES, BIN_EDGES[1:]):
+        top_incl = hi == BIN_EDGES[-1]
+        sel = [r for r in rows if r["got"] is not None and
+               (lo <= r["confidence"] < hi if not top_incl
+                else lo <= r["confidence"] <= hi)]
+        n = len(sel)
+        correct = sum(1 for r in sel if r["got"] == r["label"])
+        bins.append({
+            "lo": lo, "hi": hi, "n": n, "correct": correct,
+            "empirical_accuracy": round(correct / n, 4) if n else None,
+            "mean_predicted": (round(sum(r["confidence"] for r in sel) / n, 4)
+                               if n else None),
+        })
+    return bins
+
+
+def _confidently_wrong(rows: list[dict]) -> list[dict]:
+    """Every held-out flow the classifier confidently (>= 0.70) and wrongly
+    put in a class, with the tuple it needs to be interrogable (declared cut:
+    task4-params.md). Abstention is absent by construction."""
+    wrong = []
+    for r in rows:
+        if r["got"] is not None and r["got"] != r["label"] \
+                and r["confidence"] >= 0.70:
+            fl = r["flow"]
+            wrong.append({
+                "label": r["label"], "got": r["got"], "confidence": r["confidence"],
+                "proto": fl.get("proto"), "sport": fl.get("sport"),
+                "dport": fl.get("dport"),
+                "capacity_mbps": r.get("capacity_mbps"),
+                "evidence": r.get("evidence"),
+            })
+    wrong.sort(key=lambda w: (-w["confidence"], w["label"]))
+    return wrong
 
 
 def _confusion(records: list[dict], all_classes: list[str] | None = None) -> dict:
@@ -227,11 +290,15 @@ def main() -> int:
         print(f"eval NOT ABLE to run: {result['fatal']}")
         print(f"(reason recorded in {a.out})")
         return 0
+    broad = result["broad_heldout"]
+    print(f"held-out BROAD strict acc: "
+          f"{broad['accuracy_strict']:.3f} over n={broad['n']} "
+          f"(primary, task4-params.md)")
     strict = result["strict_heldout"]
-    print(f"held-out strict acc: "
+    print(f"held-out narrow strict acc: "
           f"{strict['accuracy_strict']:.3f} over n={strict['n']}")
-    ab = result["accept_abstain_heldout"]
-    print(f"held-out accept-abstain acc: "
+    ab = result["broad_accept_abstain_heldout"]
+    print(f"held-out broad accept-abstain acc: "
           f"{ab['accuracy_excl_abstain']} "
           f"(abstained {ab['abstained']}/{ab['n']})")
     bad: list[str] = []

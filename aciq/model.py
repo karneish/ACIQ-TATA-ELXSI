@@ -36,6 +36,35 @@ CORRECTABLE_CLASSES = tuple(
 #: Classes whose flows a classifier can produce (not the overlay either).
 CLASSIFIER_CLASSES = CORRECTABLE_CLASSES
 
+#: The broad evaluation taxonomy (docs/evidence/task4-params.md, declared
+#: before the fresh corpus was generated). The narrow TrafficClass split
+#: scores distinctions a router's counters cannot honestly resolve
+#: (gaming<->call both burst to microsecond scales; software updates and
+#: video streams differ at byte scale) -- the broad buckets are what the
+#: plan's weights actually distinguish and are the primary accuracy claim.
+BROAD_TAXONOMY = {
+    "interactive": (TrafficClass.VIDEO_CALL, TrafficClass.GAMING,
+                    TrafficClass.LEASED),
+    "streaming": (TrafficClass.STREAMING,),
+    "data_transfer": (TrafficClass.BULK_DOWNLOAD, TrafficClass.SOFTWARE_UPDATE,
+                      TrafficClass.CLOUD_BACKUP),
+}
+
+_BROAD_BY_CLASS: dict[TrafficClass, str] = {
+    cls: broad for broad, classes in BROAD_TAXONOMY.items()
+    for cls in classes
+}
+
+
+def broad_class(label: str | None) -> str | None:
+    """Map a narrow TrafficClass value to its declared broad bucket."""
+    if label is None:
+        return None
+    try:
+        return _BROAD_BY_CLASS[TrafficClass(label)]
+    except (KeyError, ValueError):
+        return None
+
 #: Base weights from the plan. A lease borrows a bounded slice of these.
 BASE_WEIGHTS: dict[TrafficClass, float] = {
     TrafficClass.VIDEO_CALL: 9.0,

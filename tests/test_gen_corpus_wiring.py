@@ -169,8 +169,8 @@ class TestPerClassFloor(unittest.TestCase):
         calls: list[tuple[str, int, str]] = []
 
         def fake(label, plan, env, duration_s, poll_s, wl, cap, flows=0,
-                 case="canonical"):
-            calls.append((label, flows, case))
+                 case="canonical", port_offset=0):
+            calls.append((label, flows, case, port_offset))
             return [{"label": label, "case": case} for _ in range(flows)]
 
         orig = g.collect_window
@@ -185,9 +185,10 @@ class TestPerClassFloor(unittest.TestCase):
         counts = json.loads(
             (out.parent / "counts.json").read_text())
         self.assertEqual(counts["n_total"],
-                         sum(f for _, f, _ in calls))
+                         sum(flows for _lbl, flows, _case, _off in calls))
         # canonical windows ran with the class floor they were ASKED for
-        for label, flows, case in calls:
+        for label, flows, case, off in calls:
+            self.assertEqual(off, 0, "default collection uses no offset")
             if case == "canonical":
                 self.assertEqual(flows, 3)
             else:
@@ -195,7 +196,7 @@ class TestPerClassFloor(unittest.TestCase):
 
     def test_collect_all_passes_at_the_floor(self):
         def fake(label, plan, env, duration_s, poll_s, wl, cap, flows=0,
-                 case="canonical"):
+                 case="canonical", port_offset=0):
             return [{"label": label, "case": case} for _ in range(flows)]
 
         orig = g.collect_window
