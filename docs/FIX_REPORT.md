@@ -290,7 +290,7 @@ live-kernel suite)**, `make lint` = 0 broken citations, secret-scan clean.
 
 | Work item | Verdict | Evidence (checked, not asserted) |
 |---|---|---|
-| T1–T3 fixes (governor, metrics rework, fairness carrying basis) | **PASS** offline + live | `data/runs/` POST-FIX seeds 200–209; POST-FIX s2 trio pins hold: B0 251.28±0.09, CAKE-static 70.31±1.73, ACIQ 71.69±0.58 ms call p95; bind on the APPLIED tree 1.72–1.85 s |
+| T1–T3 fixes (governor, metrics rework, fairness carrying basis) | **PASS** offline + live; the bind claim below was RE-MEASURED (see redesign round) | `data/runs/` POST-FIX seeds 200–209; POST-FIX s2 trio pins hold: B0 251.28±0.09, CAKE-static 70.31±1.73, ACIQ 71.69±0.58 ms call p95; the "bind on the APPLIED tree 1.72–1.85 s" row here was the DECIDED-rate illusion (governor.rate), not the kernel: re-measured on `policy_change_log.applied_state` (tools/build_report.py fix), the kernel sat at 3.23x post-drop all window and never bound in these legacy runs |
 | (TASK 5a) bulk sender vs receiver separation | **PASS** live | sender and receiver (sink) columns never blended; e.g. s1 B0 96.29/95.49, s2 ACIQ 71.69/69.54 — agreement inside ~3% |
 | (TASK 5b) starvation & minima per LABEL | **PASS** regen | regime-aware threshold on the POST-DROP median; per-label carrying class named (`bulk via unknown`); teardown + rebuild + boundary exclusions declared in the generator; "no starving tick" is a computed negative at n series per cell |
 | (TASK 5b, post-drop bulk column) | **PASS** after final fix | carrying-class basis fixes the former 0.00 mis-basis: s2 post-drop bulk/tree now B0 22.16±0.05, CAKE-static 20.12±0.01, oracle 18.71±0.06, ACIQ 20.15±0.01 on a 20 Mbps link |

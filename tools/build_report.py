@@ -423,11 +423,41 @@ def run_sink_rates(run: dict) -> dict[str, tuple[float | None, str]]:
 
 
 def applied_capacity_series(run: dict) -> list[tuple[float, float]]:
-    """(t, capacity the tree was set to) from the run's own samples.
+    """(t, capacity the KERNEL was actually set to) on the run-relative axis.
 
-    The parent rate recorded per tick is what the mode actually installed;
-    for baselines it never budges, which is the point of showing it.
+    WHY THIS ORDER: the flag that was once preferred here (`governor.rate`
+    per tick) is the DECIDED rate, and for legacy POST-FIX runs it differs
+    from the kernel for the whole delay window (decided 19.43-ish, kernel
+    stuck at 64.67). The truth of a bind claim is what tc carried
+    (`result.json.policy_change_log[*].applied_state`), never what the
+    governor intended.
+
+    The log's timestamps are host-monotonic; they are rebased to the
+    run-relative axis by subtracting the first governor decision's stamp
+    (samples carry t=0 at the first tick; the two stamps agree to <0.01 s).
+    Baselines have no governor and an empty change log, so they fall back
+    to the per-tick samples (their tree never moves, which is the point).
     """
+    res = run.get("res") or {}
+    log = res.get("policy_change_log") or []
+    decs = (res.get("governor") or {}).get("decisions") or []
+    if log and decs:
+        base = min(float(d.get("t", 0.0)) for d in decs)
+        out = []
+        for c in log:
+            if not c.get("committed") or not c.get("ok"):
+                continue
+            cls = ((c.get("applied_state") or {}).get("classes") or {})
+            parent = cls.get("1:1") or {}
+            cap = parent.get("rate")
+            if cap is None:
+                continue
+            t_log = c.get("t")
+            if t_log is None:
+                continue
+            out.append((float(t_log) - base, float(cap)))
+        if out:
+            return out
     out = []
     for s in run["samples"]:
         t = s.get("t")
