@@ -88,7 +88,7 @@ echo "=== From this moment NO controller parameter may be changed. ==="
 # The full four-arm matrix on fresh seeds 500-509 into its own band dir.
 for sc in s1_iso_during_call s2_wan_drop s3_tv_and_gaming s4_capacity_recovery; do
   for arm in b0_fifo b1_cake95 b1_cake_oracle aciq; do
-    step "t2_eval_${sc}__${arm}" 20 env NICE_DONE=1 \
+    step "t2_eval_${sc}__${arm}" 20 \
          "$PY" run_experiments.py --scenario "$sc" --system "$arm" \
          --seed 500 --seeds 10 --no-setup --results-dir data/runs_eval
   done
@@ -101,19 +101,34 @@ step t3_s6 40 "$PY" run_experiments.py --scenario s6_intent_expire \
      --system aciq --system b0_fifo --system b1_cake95 \
      --seed 310 --seeds 10 --no-setup \
      --api-intent --intent-at 10.0 --intent-ttl 20.0 --intent-weight 0.5
-step t3_s6_verify 1 "$PY" tools/verify_s6.py data/runs || true
+# verdict is evidence for the report, NOT a gate: legacy 300-309 dirs live
+# beside the new 310 band and a failing dir must not kill the batch.
+step t3_s6_verify 1 sh -c "'$PY' tools/verify_s6.py data/runs; exit 0"
 
 # ---------- Task 4: fresh classifier corpus, port-offset 2000 ----------
 # The corpus flows are re-collected on FRESH dports (base + i + 2000);
-# split seed stays 7 so the held-out protocol is unchanged.
+# split seed stays 7 so the held-out protocol is unchanged. --out is the
+# jsonl FILE (the collector writes counts.json beside it).
 step t4_corpus 40 "$PY" -u tools/gen_corpus.py \
-     --out data/experiments/classifier_corpus_fresh --port-offset 2000
+     --out data/experiments/classifier_corpus_fresh/corpus.jsonl \
+     --port-offset 2000
 step t4_corpus_eval 2 "$PY" tools/eval_corpus.py \
      --corpus data/experiments/classifier_corpus_fresh/corpus.jsonl \
      --out data/experiments/classifier_corpus_fresh/eval.json
 
 # ---------- reports (band-labelled), audit, teardown ----------
+# The master RESULTS.md gets ONE merged view: symlink farm over the three
+# band roots so build_report renders POST-FIX (primary), DEV and EVAL
+# blocks in the same document, each labelled by its seed band.
+step t5_merged_view 1 sh -c '
+  rm -rf data/experiments/bands_merge && mkdir -p data/experiments/bands_merge
+  for d in data/runs/*__*__*__seed* data/runs_dev/*__*__*__seed* \
+           data/runs_eval/*__*__*__seed*; do
+    [ -d "$d" ] && ln -sfn "$(readlink -f "$d")" \
+      "data/experiments/bands_merge/$(basename "$d")"
+  done'
 step t5_report 2 "$PY" tools/build_report.py \
+     --runs-root data/experiments/bands_merge \
      --dev-seeds 400-409 --eval-seeds 500-509 \
      --eval-json data/experiments/classifier_corpus_fresh/eval.json \
      --out data/experiments/RESULTS.md
