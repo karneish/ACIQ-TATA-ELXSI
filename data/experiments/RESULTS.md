@@ -10,11 +10,11 @@ Skipped 1 incomplete-only directory names: `s2_wan_drop__aciq__adaptive__seed555
 
 ## Delay and throughput, every scenario x arm (mean +/- 95% CI over seeds; t(9)=2.262 for n=10)
 
-Every block below carries an explicit engine-generation label: `POST-FIX` (seeds 200-209, the controller after the redesign commits) or `PRE-FIX` (legacy seeds 0-9/42-51, the controller before the redesign). A reader never inherits a number of unknown provenance: the label sits directly above the table, and the POST/PRE label is derived from the seed family recorded at load time. The comparison sections further down use the primary band only.
+Every block below carries an explicit band label, derived from the seed family recorded at load time: `POST-FIX` (seeds 200-209, the controller after the redesign commits), `PRE-FIX` (legacy seeds 0-9/42-51), `DEV` and `EVAL` (the task-2 protocol: parameters were fixed on the DEV band seeds 400-409 BEFORE the EVAL band seeds 500-509 was run ONCE; nothing between them was tuned). A reader never inherits a number of unknown provenance: the label sits directly above the table. The comparison sections further down use the primary band only.
 
 Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed, `receiver/sink` is what the receiver's sink log totalled -- the delivered number, used for any bulk claim. The post-drop column stays on the TREE counters and is named so: the three are different instruments and are never blended.
 
-### s1_iso_during_call (POST-FIX, seeds 200-209)
+### s1_iso_during_call (primary band: POST-FIX (200-209))
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -23,7 +23,7 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 1.45 +/- 0.01 | 0.44 +/- 0.01 | 0.000 +/- 0.000 | NOT AVAILABLE | 90.96 +/- 0.00 | 90.74 +/- 0.00 | (no drop scenario) | 0.922 +/- 0.000 | NOT AVAILABLE |
 | ACIQ (controller) | 10 | 82.49 +/- 0.49 | 0.61 +/- 0.05 | 0.180 +/- 0.060 | NOT AVAILABLE | 86.22 +/- 0.93 | 85.41 +/- 0.93 | (no drop scenario) | 0.934 +/- 0.002 | NOT AVAILABLE |
 
-### s1_iso_during_call (PRE-FIX, legacy engine, seeds 0-9/42-51)
+### s1_iso_during_call (PRE-FIX, seeds 0-9,42-51)
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -32,7 +32,7 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 1.74 +/- 0.33 | 0.50 +/- 0.06 | 0.000 +/- 0.000 | NOT AVAILABLE | 90.97 +/- 0.01 | 90.74 +/- 0.00 | (no drop scenario) | 0.922 +/- 0.000 | NOT AVAILABLE |
 | ACIQ (controller) | 10 | 238.89 +/- 0.37 | 1.13 +/- 0.08 | 0.873 +/- 0.061 | NOT AVAILABLE | 96.30 +/- 0.00 | 95.50 +/- 0.01 | (no drop scenario) | 0.909 +/- 0.000 | NOT AVAILABLE |
 
-### s2_wan_drop (POST-FIX, seeds 200-209)
+### s2_wan_drop (primary band: POST-FIX (200-209))
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -41,7 +41,7 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 2.33 +/- 0.03 | 0.31 +/- 0.01 | 0.000 +/- 0.000 | NOT AVAILABLE | 18.09 +/- 0.00 | 18.06 +/- 0.00 | 18.71 +/- 0.06 | 0.820 +/- 0.000 | NOT AVAILABLE |
 | ACIQ (controller) | 10 | 73.60 +/- 2.48 | 0.63 +/- 0.03 | 0.265 +/- 0.041 | NOT AVAILABLE | 71.69 +/- 0.58 | 69.54 +/- 0.56 | 20.15 +/- 0.01 | 0.969 +/- 0.001 | NOT AVAILABLE |
 
-### s2_wan_drop (PRE-FIX, legacy engine, seeds 0-9/42-51)
+### s2_wan_drop (PRE-FIX, seeds 0-9,42-51)
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -50,7 +50,7 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 2.38 +/- 0.05 | 0.34 +/- 0.02 | 0.000 +/- 0.000 | NOT AVAILABLE | 18.09 +/- 0.00 | 18.06 +/- 0.00 | 18.55 +/- 0.07 | 0.820 +/- 0.000 | NOT AVAILABLE |
 | ACIQ (controller) | 11 | 111.60 +/- 30.10 | 1.10 +/- 0.49 | 0.945 +/- 1.264 | NOT AVAILABLE | 43.20 +/- 8.28 | 41.92 +/- 8.03 | 20.36 +/- 0.77 | 0.983 +/- 0.008 | NOT AVAILABLE |
 
-### s3_tv_and_gaming (POST-FIX, seeds 200-209)
+### s3_tv_and_gaming (primary band: POST-FIX (200-209))
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -59,7 +59,7 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | 2.41 +/- 0.17 | NOT AVAILABLE | NOT AVAILABLE | (no drop scenario) | 0.510 +/- 0.000 | 1.000 +/- 0.000 |
 | ACIQ (controller) | 10 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | 2.37 +/- 0.11 | NOT AVAILABLE | NOT AVAILABLE | (no drop scenario) | 0.510 +/- 0.000 | 1.000 +/- 0.000 |
 
-### s3_tv_and_gaming (PRE-FIX, legacy engine, seeds 0-9/42-51)
+### s3_tv_and_gaming (PRE-FIX, seeds 0-9,42-51)
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -68,7 +68,7 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | 2.23 +/- 0.17 | NOT AVAILABLE | NOT AVAILABLE | (no drop scenario) | 0.510 +/- 0.000 | 1.000 +/- 0.000 |
 | ACIQ (controller) | 10 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | 2.13 +/- 0.25 | NOT AVAILABLE | NOT AVAILABLE | (no drop scenario) | 0.510 +/- 0.000 | 1.000 +/- 0.000 |
 
-### s4_capacity_recovery (POST-FIX, seeds 200-209)
+### s4_capacity_recovery (primary band: POST-FIX (200-209))
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -77,7 +77,7 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 2.74 +/- 0.03 | 0.48 +/- 0.01 | 0.000 +/- 0.000 | NOT AVAILABLE | 18.08 +/- 0.00 | 18.06 +/- 0.00 | 18.78 +/- 0.01 | 0.820 +/- 0.000 | NOT AVAILABLE |
 | ACIQ (controller) | 10 | 95.74 +/- 0.90 | 0.73 +/- 0.01 | 0.280 +/- 0.023 | NOT AVAILABLE | 53.88 +/- 0.08 | 52.79 +/- 0.08 | 19.95 +/- 0.00 | 0.999 +/- 0.000 | NOT AVAILABLE |
 
-### s4_capacity_recovery (PRE-FIX, legacy engine, seeds 0-9/42-51)
+### s4_capacity_recovery (PRE-FIX, seeds 0-9,42-51)
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -86,7 +86,7 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 2.75 +/- 0.03 | 0.49 +/- 0.01 | 0.000 +/- 0.000 | NOT AVAILABLE | 18.08 +/- 0.00 | 18.06 +/- 0.00 | 18.79 +/- 0.01 | 0.820 +/- 0.000 | NOT AVAILABLE |
 | ACIQ (controller) | 10 | 96.87 +/- 1.09 | 0.88 +/- 0.02 | 0.363 +/- 0.054 | NOT AVAILABLE | 32.65 +/- 0.05 | 31.99 +/- 0.05 | 19.95 +/- 0.01 | 0.958 +/- 0.000 | NOT AVAILABLE |
 
-### s6_intent_expire (POST-FIX, seeds 200-209)
+### s6_intent_expire (primary band: POST-FIX (200-209))
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |

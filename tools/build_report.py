@@ -108,6 +108,35 @@ ARM_LABELS = {
 ARM_ORDER = ["b0_fifo", "b1_cake95", "b1_cake_oracle", "aciq"]
 
 
+def _parse_ranges(spec: str) -> list[tuple[int, int]]:
+    """'0-9,42-51' -> [(0, 9), (42, 51)]"""
+    out: list[tuple[int, int]] = []
+    for part in spec.split(","):
+        part = part.strip()
+        if "-" in part:
+            lo, hi = part.split("-", 1)
+            out.append((int(lo), int(hi)))
+        elif part:
+            v = int(part)
+            out.append((v, v))
+    return out
+
+
+#: Default tracked families, unchanged from the pre-parameterised loader:
+#: the matrix reports only the PRE-FIX and POST-FIX bands. The CLI can add
+#: DEV/EVAL bands ("task 2: tune on dev, then eval ONCE") without touching
+#: anything else: a band is just another named seed family and every table
+#: carries its label.
+DEFAULT_FAMILY_RANGES: dict[str, str] = {
+    "PRE-FIX": "0-9,42-51",
+    "POST-FIX": "200-209",
+}
+#: Preference order for choosing the report's primary band. POST-FIX stays
+#: first; extra families follow, so a runs root holding only the dev/eval
+#: bands still renders with the honest band labels.
+FAMILY_RANK = ("POST-FIX", "EVAL", "DEV", "PRE-FIX")
+
+
 def load_runs(runs_root: Path) -> tuple[list[dict], list[str]]:
     """POST-FIX-primary view (back-compat; tests grep this signature).
     The per-family breakdown is load_runs_families()."""
@@ -115,23 +144,32 @@ def load_runs(runs_root: Path) -> tuple[list[dict], list[str]]:
     return runs, skipped
 
 
-def load_runs_families(runs_root: Path) -> tuple[list[dict], list[str],
-                                                 dict[tuple[str, str, str],
-                                                      list[dict]]]:
+def load_runs_families(
+    runs_root: Path,
+    family_ranges: dict[str, str] | None = None,
+) -> tuple[list[dict], list[str],
+           dict[tuple[str, str, str], list[dict]]]:
     """Everything load_runs does, plus the explicit PRE-FIX/POST-FIX split
     so the report can render BOTH generations side by side (task 5: labelled
-    blocks -- a reader must never wonder which engine produced a cell)."""
-    return _load_runs_inner(runs_root)
+    blocks -- a reader must never wonder which engine produced a cell).
+    `family_ranges` maps FAMILY LABEL -> seed-range spec ('400-409'); it
+    REPLACES the default tracked set, never extends it silently."""
+    return _load_runs_inner(runs_root, family_ranges)
 
 
-def _load_runs_inner(runs_root: Path) -> tuple[list[dict], list[str],
-                                               dict[tuple[str, str, str],
-                                                    list[dict]]]:
+def _load_runs_inner(
+    runs_root: Path,
+    family_ranges: dict[str, str] | None = None,
+) -> tuple[list[dict], list[str],
+           dict[tuple[str, str, str], list[dict]]]:
     """Every directory under runs_root carrying config.json + workloads.json.
 
     A directory without both is not a complete run; it is skipped and its name
     listed in the report so the skip is visible, never silent.
     """
+    famspec = DEFAULT_FAMILY_RANGES if family_ranges is None else family_ranges
+    franges: dict[str, list[tuple[int, int]]] = {
+        k: _parse_ranges(v) for k, v in famspec.items()}
     runs, skipped = [], []
     for d in sorted(runs_root.iterdir()):
         if not d.is_dir():
@@ -200,9 +238,12 @@ def _load_runs_inner(runs_root: Path) -> tuple[list[dict], list[str],
             dropped.extend([])
             continue
         seeds_all = sorted(s for s, _ in members)
-        post_seeds = sorted([s for s in seeds_all if 200 <= s <= 209])
-        pre_seeds = sorted([s for s in seeds_all if (0 <= s <= 9) or (42 <= s <= 51)])
-        for famname, fseeds in [("POST-FIX", post_seeds), ("PRE-FIX", pre_seeds)]:
+        fam_seeds: dict[str, list[int]] = {}
+        for famname, ranges in franges.items():
+            fam_seeds[famname] = sorted(
+                s for s in seeds_all
+                if any(lo <= s <= hi for lo, hi in ranges))
+        for famname, fseeds in fam_seeds.items():
             if not fseeds:
                 continue
             fset = set(fseeds)
@@ -212,37 +253,43 @@ def _load_runs_inner(runs_root: Path) -> tuple[list[dict], list[str],
                     kept.append(r)
             if kept:
                 runs_by_family[(sc, sysname, famname)] = kept
-        keep_any = set(post_seeds) | set(pre_seeds)
+        tracked: dict[str, list[tuple[int, int]]] = franges
+        keep_any = set(seeds_all) & {
+            s for ranges in tracked.values() for lo, hi in ranges
+            for s in range(lo, hi + 1)}
         for s, r in members:
             if s not in keep_any:
-                dropped.append(f"{r['dir']} (outside tracked seed families: "
-                               f"not in POST-FIX 200-209 or PRE-FIX 0-9/42-51)")
+                dropped.append(
+                    f"{r['dir']} (outside tracked seed families: "
+                    + "; ".join(f"{k} {v}" for k, v in famspec.items())
+                    + ")")
     skipped.extend(sorted(dropped))
-    # Prefer POST-FIX as primary
+    # Primary band = the first ranked family present (POST-FIX normally)
     runs = []
-    for k in runs_by_family:
-        if k[2] == "POST-FIX":
-            runs.extend(runs_by_family[k])
-    if not runs:
-        for k in runs_by_family:
-            if k[2] == "PRE-FIX":
-                runs.extend(runs_by_family[k])
+    for rank in FAMILY_RANK:
+        blocks = [runs_by_family[k] for k in runs_by_family
+                  if k[2] == rank]
+        if blocks:
+            runs = [r for blk in blocks for r in blk]
+            break
     if not runs:
         runs = runs_all
-    # attach family info
+    # attach family info (same parse, one label per seed)
     for r in runs:
+        s = None
         try:
             s = int(r["cfg"].get("seed", 0))
-            if r["cfg"].get("scenario") == "s6_intent_expire":
-                r["_seed_family"] = "POST-FIX"
-            elif 200 <= s <= 209:
-                r["_seed_family"] = "POST-FIX"
-            elif 0 <= s <= 9 or 42 <= s <= 51:
-                r["_seed_family"] = "PRE-FIX"
-            else:
-                r["_seed_family"] = "OTHER"
-        except Exception:
+        except (TypeError, ValueError):
             r["_seed_family"] = "UNKNOWN"
+            continue
+        if r["cfg"].get("scenario") == "s6_intent_expire":
+            r["_seed_family"] = "POST-FIX"
+        else:
+            r["_seed_family"] = "OTHER"
+            for famname, ranges in franges.items():
+                if any(lo <= s <= hi for lo, hi in ranges):
+                    r["_seed_family"] = famname
+                    break
     return runs, skipped, runs_by_family
 
 
@@ -682,9 +729,12 @@ def row_md(cells: list[str]) -> str:
 def build_report(runs_root: Path, out_md: Path,
                  eval_json: Path | None = None,
                  s5_json: Path | None = None,
-                 s6_json: Path | None = None) -> str:
-    runs, skipped, runs_by_family = load_runs_families(runs_root)
-    scen = scenarios_of(runs)
+                 s6_json: Path | None = None,
+                 family_ranges: dict[str, str] | None = None) -> str:
+    famspec = DEFAULT_FAMILY_RANGES if family_ranges is None else family_ranges
+    runs, skipped, runs_by_family = load_runs_families(runs_root,
+                                                       family_ranges)
+    scen = scenarios_of(runs) or sorted({k[0] for k in runs_by_family})
     sys_of_run = lambda r: r["cfg"].get("system", "")
     present = sorted({sys_of_run(r) for r in runs})
     arms = [a for a in ARM_ORDER if a in present] + \
@@ -725,13 +775,15 @@ def build_report(runs_root: Path, out_md: Path,
     add("## Delay and throughput, every scenario x arm (mean +/- 95% CI over "
         "seeds; t(9)=2.262 for n=10)")
     add("")
-    add("Every block below carries an explicit engine-generation label: "
-        "`POST-FIX` (seeds 200-209, the controller after the redesign "
-        "commits) or `PRE-FIX` (legacy seeds 0-9/42-51, the controller "
-        "before the redesign). A reader never inherits a number of unknown "
-        "provenance: the label sits directly above the table, and the POST/"
-        "PRE label is derived from the seed family recorded at load time. "
-        "The comparison sections further down use the primary band only.")
+    add("Every block below carries an explicit band label, derived from the "
+        "seed family recorded at load time: `POST-FIX` (seeds 200-209, the "
+        "controller after the redesign commits), `PRE-FIX` (legacy seeds "
+        "0-9/42-51), `DEV` and `EVAL` (the task-2 protocol: parameters were "
+        "fixed on the DEV band seeds 400-409 BEFORE the EVAL band seeds "
+        "500-509 was run ONCE; nothing between them was tuned). A reader "
+        "never inherits a number of unknown provenance: the label sits "
+        "directly above the table. The comparison sections further down use "
+        "the primary band only.")
     add("")
     add("Bulk has TWO columns on purpose (TASK 5a): `sender` is what the "
         "generator pushed, `receiver/sink` is what the receiver's sink log "
@@ -739,6 +791,11 @@ def build_report(runs_root: Path, out_md: Path,
         "post-drop column stays on the TREE counters and is named so: the "
         "three are different instruments and are never blended.")
     add("")
+
+    def fam_seed_label(famname: str) -> str:
+        if famspec and famname in famspec:
+            return f"{famname}, seeds {famspec[famname]}"
+        return famname
 
     def emit_arm_table(add, sc: str, runlist: list[dict]) -> None:
         add(row_md(["arm", "n", "call p95 ms", "call jitter ms",
@@ -776,22 +833,25 @@ def build_report(runs_root: Path, out_md: Path,
                 fmt(djains, 3),
             ]))
 
+    famspec_out = famspec if famspec is not None else DEFAULT_FAMILY_RANGES
     for sc in scen:
-        has_post = any(k[0] == sc and k[2] == "POST-FIX"
-                       for k in runs_by_family)
-        add(f"### {sc}"
-            + (" (POST-FIX, seeds 200-209)" if has_post
-               else " (PRE-FIX fallback: no POST-FIX seeds in this root)"))
+        primary_fam = next((rank for rank in FAMILY_RANK
+                            if any(k[0] == sc and k[2] == rank
+                                   for k in runs_by_family)), None)
+        lab = famspec_out.get(primary_fam, primary_fam)
+        add(f"### {sc} (primary band: {primary_fam} ({lab}))")
         add("")
         emit_arm_table(add, sc, runs)
         add("")
-        if has_post:
-            pre = [r for k, v in runs_by_family.items()
-                   if k[0] == sc and k[2] == "PRE-FIX" for r in v]
-            if pre:
-                add(f"### {sc} (PRE-FIX, legacy engine, seeds 0-9/42-51)")
+        for rank in FAMILY_RANK:
+            if rank == primary_fam:
+                continue
+            sec = [r for k, v in runs_by_family.items()
+                   if k[0] == sc and k[2] == rank for r in v]
+            if sec:
+                add(f"### {sc} ({fam_seed_label(rank)})")
                 add("")
-                emit_arm_table(add, sc, pre)
+                emit_arm_table(add, sc, sec)
                 add("")
 
     # ---- improvement table ----------------------------------------------
@@ -1451,8 +1511,20 @@ def main(argv: list[str] | None = None) -> int:
                     help="Seed ranges considered PRE-FIX (informational)")
     ap.add_argument("--postfix-seeds", default="200-209",
                     help="Seed ranges considered POST-FIX (informational)")
+    ap.add_argument("--dev-seeds", default=None,
+                    help="Optional DEV band seed ranges (e.g. '400-409'); "
+                         "adds a DEV family so the report can show the band "
+                         "parameters were fixed on, visibly apart")
+    ap.add_argument("--eval-seeds", default=None,
+                    help="Optional EVAL band seed ranges (e.g. '500-509'); "
+                         "the band that is run ONCE, never tuned against")
     a = ap.parse_args(argv)
-    build_report(a.runs_root, a.out, a.eval_json, a.s5_json, a.s6_json)
+    famspec = dict(DEFAULT_FAMILY_RANGES)
+    for name, spec in (("DEV", a.dev_seeds), ("EVAL", a.eval_seeds)):
+        if spec:
+            famspec[name] = spec
+    build_report(a.runs_root, a.out, a.eval_json, a.s5_json, a.s6_json,
+                 famspec)
     print(f"report written: {a.out} (+html)")
     return 0
 
