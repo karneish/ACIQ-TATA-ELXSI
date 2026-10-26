@@ -1053,14 +1053,18 @@ def build_report(runs_root: Path, out_md: Path,
         add("## S6 intent scenario (TASK 4: real API intent, TTL expiry "
             "inside the run, auto-revert)")
         add("")
-        add("One intent is requested at t~1s on the operator's real surface "
+        add("One intent is requested at the run's declared --intent-at (the "
+            "2026 protocol: t=10s, after the bulk stream has sat in steady "
+            "state for a third of the 60s run) on the operator's real surface "
             "(IntentService, the exact upstream-declared code path the HTTP "
             "handler calls: POST /intent, target device, weight 0.5, TTL "
-            "15s). The 40s scenario makes the TTL expire INSIDE the run, so "
-            "both endpoints of the intent's life are measured: held while "
-            "live, auto-reverted at expiry (LeaseBook's implicit sweep plus "
-            "the per-tick sync_lease). Receiver evidence is the per-second "
-            "sink sampler; the floors line is a FLOOR line, not a preference "
+            "20s, expiring at t~=30). Both endpoints of the intent's life are "
+            "measured: held while live, auto-reverted at expiry (LeaseBook's "
+            "implicit sweep plus the per-tick sync_lease), and the recovery "
+            "window after expiry. Older artefacts in this report may carry "
+            "the pre-2026 protocol (t~1s, TTL 15s, 40s run); each row states "
+            "its own run's numbers. Receiver evidence is the per-second sink "
+            "sampler; the floors line is a FLOOR line, not a preference "
             "claim: on a healthy link a reserve must not starve the other "
             "classes, and the reserved device must actually receive bytes. "
             "The s6 summary file is quoted when present; the table never "
@@ -1109,7 +1113,7 @@ def build_report(runs_root: Path, out_md: Path,
                 s = r["samples"]
                 fired = intent.get("fired_at_run_t_s")
                 held = intent.get("in_effect_s")
-                ttl = r["cfg"].get("intent_ttl_s") or 15.0
+                ttl = r["cfg"].get("intent_ttl_s") or 20.0
                 if res.get("system") != "aciq":
                     gran = ("declared: no intent surface"
                             if intent.get("supported") is False

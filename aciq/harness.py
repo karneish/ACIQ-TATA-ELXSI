@@ -173,10 +173,12 @@ SCENARIOS: dict[str, Scenario] = {
     ),
     # The intent scenario (TASK 4). Background bulk + call + gaming on a
     # healthy link; a REAL API intent (the same IntentService.handle surface
-    # the HTTP layer wraps) reserves a share for one device at t~1s, and its
-    # TTL expires INSIDE the run, so the harness must show the reserve being
-    # HELD for its life and AUTO-REVERTED after expiry, with the receiver-side
-    # per-second series proving who actually got bytes. The baselines have no
+    # the HTTP layer wraps) reserves a share for one device at t=10s -- AFTER
+    # the bulk stream has sat in steady state for the whole first third, so
+    # the grant is measured against an established load, not a ramp (the
+    # pre-2026 protocol fired at t~1s into a 40s run and the verifier's
+    # "pre-intent median" had ~1 usable tick). TTL 20s expires INSIDE the
+    # run with a full third of post-expiry evidence. The baselines have no
     # intent surface at all -- their arms declare that incapability in
     # result.json rather than silently running without it.
     "s6_intent_expire": Scenario(
@@ -186,7 +188,7 @@ SCENARIOS: dict[str, Scenario] = {
             Workload("game", "game", 1, dscp=46),
             Workload("bulk", "bulk", 1),
         ),
-        duration_s=40.0,
+        duration_s=60.0,
         settle_s=4.0,
     ),
 }

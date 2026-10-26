@@ -133,13 +133,16 @@ def main() -> int:
                     help="S6: request one intent through the real API surface "
                          "(IntentService, POST /intent) at --intent-at for "
                          "ACIQ runs; baselines declare no intent support")
-    ap.add_argument("--intent-at", type=float, default=1.0,
+    ap.add_argument("--intent-at", type=float, default=10.0,
                     help="run time (s) when the API intent is requested "
-                         "(default 1.0)")
-    ap.add_argument("--intent-ttl", type=float, default=15.0,
-                    help="intent TTL (s). Default 15.0 on a 40 s scenario "
-                         "scope: the TTL expires INSIDE the run so the auto-"
-                         "revert is measured, not assumed")
+                         "(default 10.0: the s6 protocol declared in "
+                         "docs/evidence/task3-params.md -- the bulk stream "
+                         "is in steady state before the grant fires)")
+    ap.add_argument("--intent-ttl", type=float, default=20.0,
+                    help="intent TTL (s). Default 20.0 on the 60 s scenario: "
+                         "the TTL expires at t~=30 INSIDE the run, leaving a "
+                         "full third of post-expiry evidence for the "
+                         "auto-revert and the recovery window")
     ap.add_argument("--intent-weight", type=float, default=0.5)
     ap.add_argument("--intent-label", default="game",
                     help="which workload's device the intent reserves for "
