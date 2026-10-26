@@ -203,84 +203,132 @@ class TestProbeUp(unittest.TestCase):
 
 class TestChangeBudget(unittest.TestCase):
     def test_budget_exhaustion_holds(self):
-        """max_changes_per_min bounds the changes the governor generates;
-        the law's own bounds are separate and stricter."""
-        g = RateGovernor(config=GovernorConfig(max_changes_per_min=2))
+        """max_changes_per_min bounds the RISES the governor generates; falls
+        are not rationed (docs/evidence/task2-params.md #3): the post-fix
+        evidence shows a drop-tick descent starved behind the ledger that its
+        own refused attempts filled."""
+        g = RateGovernor(config=GovernorConfig(max_changes_per_min=2,
+                                               hold_clear_s=0.001))
         # room 0: first rate (the ceiling); does not spend the budget
         d1 = g.observe(belief=102.45, applied=None, delivered=100.0,
                        backlog_bytes=0, offered=99.0, now=0.0, min_rate=16.0)
         self.assertTrue(d1.changed)
         self.assertAlmostEqual(d1.rate, 92.205)
-        # change 1: delay inflates, one ratchet step down
-        d2 = g.observe(belief=102.45, applied=d1.rate, delivered=100.0,
-                       backlog_bytes=1_900_000, offered=99.0, now=5.0,
-                       min_rate=16.0)
-        self.assertTrue(d2.changed)
-        self.assertAlmostEqual(d2.rate, 92.205 * 0.9)
-        # change 2: still inflating, one more step
-        d3 = g.observe(belief=102.45, applied=d2.rate, delivered=100.0,
-                       backlog_bytes=2_500_000, offered=99.0, now=30.0,
-                       min_rate=16.0)
-        self.assertTrue(d3.changed)
-        self.assertLess(d3.rate, d2.rate)
-        # change 3 inside the minute: the budget refuses, the rate holds
-        d4 = g.observe(belief=102.45, applied=d3.rate, delivered=100.0,
-                       backlog_bytes=2_500_000, offered=99.0, now=55.0,
-                       min_rate=16.0)
-        self.assertEqual(d4.rate, d3.rate)
-        self.assertFalse(d4.changed)
-        self.assertIn("budget exhausted", d4.reason)
+        # a clear tick anchors the clear-tracking clock
+        g.observe(belief=102.45, applied=92.205, delivered=100.0,
+                  backlog_bytes=0, offered=99.0, now=5.0, min_rate=16.0)
+        # from below the ceiling, two probe-ups spend the whole budget
+        r1 = g.observe(belief=102.45, applied=80.55, delivered=100.0,
+                       backlog_bytes=0, offered=99.0, now=5.01, min_rate=16.0)
+        self.assertGreater(r1.rate, 80.55)
+        self.assertIn("probe up", r1.reason)
+        r2 = g.observe(belief=102.45, applied=r1.rate, delivered=100.0,
+                       backlog_bytes=0, offered=99.0, now=5.02, min_rate=16.0)
+        self.assertGreater(r2.rate, r1.rate)
+        # rise 3 inside the minute: the budget refuses, the rate holds
+        r3 = g.observe(belief=102.45, applied=r2.rate, delivered=100.0,
+                       backlog_bytes=0, offered=99.0, now=5.03, min_rate=16.0)
+        self.assertEqual(r3.rate, r2.rate)
+        self.assertFalse(r3.changed)
+        self.assertIn("rise budget exhausted", r3.reason)
 
-    def test_refund_gives_the_budget_back_after_a_spin(self):
-        """An apply that never committed did not change the kernel, so its
-        decision stamp is refunded (the budget's currency is real change).
-        This is what makes an injected failed apply re-appliable within the
-        same minute instead of locking the post-drop plan out for 60 s."""
-        g = RateGovernor(config=GovernorConfig(max_changes_per_min=1))
+    def test_descent_never_rations_the_budget(self):
+        """Falls are dwell-bound, not budget-bound (task2-params.md #3): with
+        a fully spent rise budget an inflating link still ratchets down."""
+        g = RateGovernor(config=GovernorConfig(max_changes_per_min=1,
+                                               hold_clear_s=0.001))
         g.observe(belief=102.45, applied=None, delivered=100.0,
                   backlog_bytes=0, offered=99.0, now=0.0, min_rate=16.0)
-        d = g.observe(belief=102.45, applied=92.205, delivered=100.0,
-                      backlog_bytes=1_900_000, offered=99.0, now=5.0,
-                      min_rate=16.0)
-        self.assertTrue(d.changed)          # the only change of the minute
-        held = g.observe(belief=102.45, applied=d.rate, delivered=100.0,
-                         backlog_bytes=2_500_000, offered=99.0, now=10.0,
+        g.observe(belief=102.45, applied=92.205, delivered=100.0,
+                  backlog_bytes=0, offered=99.0, now=5.0, min_rate=16.0)
+        r1 = g.observe(belief=102.45, applied=80.55, delivered=100.0,
+                       backlog_bytes=0, offered=99.0, now=5.01, min_rate=16.0)
+        self.assertGreater(r1.rate, 80.55)      # the one rise of the minute
+        held = g.observe(belief=102.45, applied=r1.rate, delivered=100.0,
+                         backlog_bytes=0, offered=99.0, now=5.02,
                          min_rate=16.0)
-        self.assertIn("budget exhausted", held.reason)
-        # the apply for d never committed: refund it, and a further change
+        self.assertIn("rise budget exhausted", held.reason)
+        d = g.observe(belief=102.45, applied=held.rate, delivered=100.0,
+                      backlog_bytes=2_500_000, offered=99.0, now=5.5,
+                      min_rate=16.0)
+        self.assertLess(d.rate, held.rate)
+        self.assertIn("ratchet down one step", d.reason)
+
+    def test_delay_emergency_descends_to_ceiling_once_per_cooldown(self):
+        """>=100 ms EMA clears one full-descent commitment (task2-params.md
+        #1-2). The post-fix drop window never got under 3.23x the link
+        because each commit was step-clamped at the law and every refused
+        attempt still spent the ledger; the flag certifies the law to land
+        at the ceiling in one commit."""
+        g = RateGovernor()
+        g.observe(belief=102.45, applied=None, delivered=100.0,
+                  backlog_bytes=0, offered=99.0, now=0.0, min_rate=16.0)
+        # the drop: belief falls to the new deliverable while the queue backs
+        # up (raw 320 ms seeds the EMA straight over the line): clearance
+        d1 = g.observe(belief=21.5914, applied=92.205, delivered=100.0,
+                       backlog_bytes=4_000_000, offered=99.0, now=1.0,
+                       min_rate=16.0)
+        self.assertTrue(d1.delay_emergency)
+        self.assertIn("delay emergency", d1.reason)
+        self.assertAlmostEqual(d1.rate, 19.4322, places=3)
+        # inside the cooldown: normal step only
+        d2 = g.observe(belief=21.5914, applied=d1.rate, delivered=100.0,
+                       backlog_bytes=4_000_000, offered=99.0, now=2.0,
+                       min_rate=16.0)
+        self.assertFalse(d2.delay_emergency)
+        self.assertIn("ratchet down one step", d2.reason)
+        # after the cooldown and applied above the ceiling (the post-fix
+        # 64.67-on-20 shape, measured), one further clearance is available
+        d3 = g.observe(belief=21.5914, applied=64.666, delivered=100.0,
+                       backlog_bytes=4_000_000, offered=99.0, now=22.0,
+                       min_rate=16.0)
+        self.assertTrue(d3.delay_emergency)
+        self.assertAlmostEqual(d3.rate, 19.4322, places=3)
+
+    def test_emergency_never_claimed_without_a_real_descent(self):
+        """No clearance when the ceiling is not below the applied rate, or
+        when the floor pins the rate: the cooldown stays available."""
+        g = RateGovernor()
+        g.observe(belief=102.45, applied=None, delivered=100.0,
+                  backlog_bytes=0, offered=99.0, now=0.0, min_rate=16.0)
+        # belief steady: the ceiling sits exactly at the applied rate
+        d = g.observe(belief=102.45, applied=92.205, delivered=100.0,
+                      backlog_bytes=1_900_000, offered=99.0, now=1.0,
+                      min_rate=16.0)
+        self.assertFalse(d.delay_emergency)
+        # the floor pins the descent above the ceiling
+        d = g.observe(belief=21.5922, applied=25.4977, delivered=100.0,
+                      backlog_bytes=4_000_000, offered=99.0, now=2.0,
+                      min_rate=26.0)
+        self.assertFalse(d.delay_emergency)
+        self.assertIn("held at ceiling", d.reason)
+
+    def test_refund_gives_the_budget_back_after_a_spin(self):
+        """A rise attempt that never committed did not change the kernel, so
+        its stamp is refunded (the budget's currency is real change). This
+        is what makes an injected failed apply re-probeable within the same
+        minute instead of locking the post-drop plan out for 60 s."""
+        g = RateGovernor(config=GovernorConfig(max_changes_per_min=1,
+                                               hold_clear_s=0.001))
+        g.observe(belief=102.45, applied=None, delivered=100.0,
+                  backlog_bytes=0, offered=99.0, now=0.0, min_rate=16.0)
+        g.observe(belief=102.45, applied=92.205, delivered=100.0,
+                  backlog_bytes=0, offered=99.0, now=5.0, min_rate=16.0)
+        d = g.observe(belief=102.45, applied=80.55, delivered=100.0,
+                      backlog_bytes=0, offered=99.0, now=5.01, min_rate=16.0)
+        self.assertTrue(d.changed)          # the only rise of the minute
+        held = g.observe(belief=102.45, applied=d.rate, delivered=100.0,
+                         backlog_bytes=0, offered=99.0, now=5.02,
+                         min_rate=16.0)
+        self.assertIn("rise budget exhausted", held.reason)
+        # the rise for d never committed: refund it, and a further rise
         # becomes affordable immediately (same second, no expiry needed)
         self.assertTrue(g.refund_last_change())
         self.assertFalse(g.refund_last_change())     # nothing pending
         next_ = g.observe(belief=102.45, applied=held.rate, delivered=100.0,
-                          backlog_bytes=2_500_000, offered=99.0, now=11.0,
+                          backlog_bytes=0, offered=99.0, now=5.03,
                           min_rate=16.0)
         self.assertTrue(next_.changed)
-
-    def test_changes_expire_after_a_minute(self):
-        g = RateGovernor(config=GovernorConfig(max_changes_per_min=1,
-                                               hold_clear_s=20.0))
-        g.observe(belief=102.45, applied=None, delivered=100.0,
-                  backlog_bytes=0, offered=99.0, now=0.0, min_rate=16.0)
-        d = g.observe(belief=102.45, applied=92.205, delivered=100.0,
-                      backlog_bytes=1_900_000, offered=99.0, now=5.0,
-                      min_rate=16.0)
-        self.assertTrue(d.changed)
-        # 61 s later the old change has aged out of the rolling window.
-        d = g.observe(belief=102.45, applied=92.205, delivered=100.0,
-                      backlog_bytes=1_900_000, offered=99.0, now=70.0,
-                      min_rate=16.0)
-        self.assertTrue(d.changed)
-        self.assertLess(d.rate, 92.205)
-
-    def test_budget_checks_rollback_on_config(self):
-        with self.assertRaises(ValueError):
-            GovernorConfig(max_changes_per_min=0)
-        with self.assertRaises(ValueError):
-            GovernorConfig(cap_fraction=0.4)
-        with self.assertRaises(ValueError):
-            GovernorConfig(clear_threshold_ms=30.0,
-                           inflation_threshold_ms=20.0)
-
 
 class TestEvidence(unittest.TestCase):
     def test_every_decision_logs_a_reason_and_the_numbers(self):

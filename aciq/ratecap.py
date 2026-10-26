@@ -70,6 +70,14 @@ from dataclasses import dataclass
 #: +9% after the hysteresis fix and 0.90 x 1.09 = 0.98 x link.
 CAP_FRACTION = 0.90
 
+#: The rate the ACIQ tree is BUILT at, before any measurement exists
+#: (docs/evidence/task2-params.md #4). The post-fix S1 artefacts show the
+#: launch ramp burst queueing in the netem's own buffer while the tree sat at
+#: 1.00 x link for the first tick, producing call p95 82-84 ms against
+#: CAKE-static's 1.45. Shaping from the first packet costs nothing when the
+#: number is exactly the ceiling the first governor commit reaches anyway.
+INITIAL_PARENT_FRACTION = CAP_FRACTION
+
 #: Bottleneck queueing delay above which the tree must shrink. The same
 #: netem at steady, sub-link traffic shows 0.9-1.7 ms (14.4 kB residue at
 #: 100 Mbps, measured in the fix 17 diagnosis); a burst fills 1.2-1.9 MB in
@@ -100,9 +108,26 @@ UP_STEP_FRAC = 0.02
 #: standing demand is how the ceiling is ever reached.
 PROBE_RATIO = 1.05
 
-#: Per rolling minute, how many rate changes the governor generates. The law
-#: counts its commits separately; this bounds wht the governor proposes.
+#: Per rolling minute, how many rate RISES the governor generates. Falls do
+#: not consume the budget at all: post-fix run evidence (docs/evidence/
+#: task2-params.md) shows a drop-tick descent starved by its own refused
+#: attempts - six stamps, three of them dwell-refused, filled the 6/min
+#: ledger and the kernel root then sat at 3.23x the deliverable for the rest
+#: of every S2/S4 run. Descent is bounded by the law's dwell instead; the
+#: flap risk this budget exists for is a risk only when the rate is rising.
 MAX_CHANGES_PER_MIN = 6
+
+#: Delay EMA at which the law is handed a delay emergency: a single DOWN move
+#: may land at the want in one commit, skipping the dwell, subject to a
+#: cooldown (next constant). Declared in docs/evidence/task2-params.md from
+#: the artefacts: capacity drops at rate do NOT produce packet drops, so the
+#: existing >=500 drop/s emergency never fired; and the measured transient
+#: delay reaches 99-149 ms while a healthy link subtracts 0.9-1.7 ms.
+DELAY_EMERGENCY_MS = 100.0
+
+#: One delay emergency per this many seconds; between clearances descent
+#: proceeds at the normal dwell-bounded pace. ~= 4 dwell windows.
+DELAY_EMERGENCY_COOLDOWN_S = 20.0
 
 #: EMA weight for the delay series. 0.5 keeps direction readable; anything
 #: closer to 1 follows the netem's burst artifacts tick by tick.
@@ -124,12 +149,18 @@ class GovernorConfig:
     probe_ratio: float = PROBE_RATIO
     max_changes_per_min: int = MAX_CHANGES_PER_MIN
     delay_alpha: float = DELAY_ALPHA
+    delay_emergency_ms: float = DELAY_EMERGENCY_MS
+    delay_emergency_cooldown_s: float = DELAY_EMERGENCY_COOLDOWN_S
 
     def __post_init__(self):
         if not (0.5 < self.cap_fraction < 0.999):
             raise ValueError(f"cap_fraction {self.cap_fraction} outside (0.5, 1)")
         if not (0.0 < self.clear_threshold_ms < self.inflation_threshold_ms):
             raise ValueError("clear_threshold must be below inflation threshold")
+        if not (self.inflation_threshold_ms < self.delay_emergency_ms):
+            raise ValueError(
+                f"delay_emergency_ms {self.delay_emergency_ms} must exceed "
+                f"inflation threshold {self.inflation_threshold_ms}")
         if not (0.0 < self.down_step_frac < 1.0
                 and 0.0 < self.up_step_frac < self.down_step_frac):
             raise ValueError(
@@ -154,6 +185,8 @@ class GovernorDecision:
     delay_ms: float | None       # backlog / delivered, this tick
     delay_ema_ms: float | None   # the smoothed value the ratchet reads
     changed: bool                # True when rate moved this tick
+    delivered_mbps: float | None = None   # post-queue goodput this tick
+    delay_emergency: bool = False         # clearance fired this tick
     t: float = 0.0               # monotonic stamp the caller handed us
 
 
@@ -172,7 +205,13 @@ class RateGovernor:
         self._clock = clock
         self._delay_ema: float | None = None
         self._clear_since: float | None = None
+        # (now, rose) pairs: the ledger of real changes, so refund can pop
+        # exactly the stamp it is refunding and the rise budget reads only
+        # the rises.
         self._change_ts: deque = deque(maxlen=64)
+        # Last tick a delay emergency clearance was spent; the cooldown keeps
+        # a shrinking episode from becoming a rapid-fire series of full jumps.
+        self._delay_emergency_last: float | None = None
         #: Full decision log for the run artefact. One small dict per tick.
         self.log: list[dict] = []
 
@@ -243,22 +282,40 @@ class RateGovernor:
                       and (now - self._clear_since) >= cfg.hold_clear_s)
 
         # ------------------------------------------------ budget
-        recent = [t for t in self._change_ts if now - t <= 60.0]
-        budget_left = cfg.max_changes_per_min - len(recent)
+        # The ledger's currency is now RISES only: descent is bounded by the
+        # law's dwell instead, so it can never starve behind the budget that
+        # the S2/S4 evidence measured, and the flap risk stays covered where
+        # it is real (upward probing).
+        recent = [t for t, _rose in self._change_ts if now - t <= 60.0]
+        ups_recent = [t for t, rose in self._change_ts
+                      if now - t <= 60.0 and rose]
+        budget_left = cfg.max_changes_per_min - len(ups_recent)
+
+        # delay-emergency availability: one full-descent clearance per cooldown
+        emerg_free = (self._delay_emergency_last is None
+                      or (now - self._delay_emergency_last)
+                      >= cfg.delay_emergency_cooldown_s)
 
         # ------------------------------------------------ decision
         # base = what we already have; the ceiling is a hard bound in every
         # branch, so "hold" can still fall when the belief dropped, but never
         # rises on a passive tick.
-        rate, reason = self._decide(
+        rate, reason, emerg = self._decide(
             cfg, applied=applied, ceiling=ceiling,
             inflating=inflating, held_clear=held_clear,
             offered=offered, min_rate=min_rate, budget_left=budget_left,
-            delay_ema=self._delay_ema)
+            delay_ema=self._delay_ema, emerg_free=emerg_free)
 
-        if applied is not None and rate is not None and rate != applied:
+        if emerg:
+            self._delay_emergency_last = now
+
+        if applied is not None and rate is not None and rate > applied:
             changed = True
-            self._change_ts.append(now)
+            self._change_ts.append((now, True))
+        elif applied is not None and rate is not None and rate < applied:
+            # A descent is real change for the log; it never spends the
+            # budget (see the ledger comment above).
+            changed = True
         elif applied is None and rate is not None:
             # Room states the first proposal as the ceiling it was; it does
             # not spend the budget, which guards sustained behaviour.
@@ -268,37 +325,31 @@ class RateGovernor:
             rate=rate, reason=reason,
             belief_mbps=belief, ceiling_mbps=ceiling,
             delay_ms=delay_ms, delay_ema_ms=self._delay_ema,
-            changed=changed, t=now)
+            changed=changed, delivered_mbps=delivered,
+            delay_emergency=bool(emerg), t=now)
         self.log.append(vars(dec).copy())
         return dec
 
     def _decide(self, cfg: GovernorConfig, *, applied, ceiling,
                 inflating, held_clear, offered, min_rate, budget_left,
-                delay_ema):
+                delay_ema, emerg_free: bool):
         """The rule table, in one place so the reasons stay readable."""
         if ceiling is None and applied is None:
-            return None, "no estimate and nothing applied yet"
+            return None, "no estimate and nothing applied yet", False
 
         if applied is None:
             # First tick the governor is consulted with a real applied rate
             # above never happened: start at the ceiling, not above it.
             if ceiling is None:
-                return None, "no estimate and no ceiling yet"
-            if budget_left <= 0:
-                return ceiling, (f"rate change budget exhausted "
-                                 f"({cfg.max_changes_per_min}/min)")
-            return ceiling, f"first rate: ceiling ({cfg.cap_fraction} x belief)"
-
-        if budget_left <= 0:
-            return applied, (f"rate change budget exhausted "
-                             f"({cfg.max_changes_per_min}/min)")
+                return None, "no estimate and no ceiling yet", False
+            return ceiling, f"first rate: ceiling ({cfg.cap_fraction} x belief)", False
 
         if inflating:
             if ceiling is None:
                 # No belief yet (estimate not established): no ceiling to
                 # obey, so nothing may ratchet either — hold.
                 return applied, (f"delay inflated {delay_ema:.1f} ms but no "
-                                 f"ceiling to obey without an estimate: hold")
+                                 f"ceiling to obey without an estimate: hold"), False
             # Ratchet DOWN, but never below the ceiling and never above the
             # ceiling either: the ceiling can have moved under the applied
             # rate because the belief fell, so clamp both ways.
@@ -308,30 +359,45 @@ class RateGovernor:
             if rate >= applied:
                 return ceiling, (f"delay inflated {delay_ema:.1f} ms > "
                                  f"{cfg.inflation_threshold_ms:.0f} ms: held "
-                                 f"at ceiling")
+                                 f"at ceiling"), False
+            # Delay emergency (declared in docs/evidence/task2-params.md #1-2):
+            # a capacity drop backs the queue up rather than dropping it, so
+            # the law's drop-rate emergency never fires; this is the delay-
+            # driven twin of that path. One full-descent clearance per
+            # cooldown; between clearances the dwell-bounded steps proceed.
+            if (delay_ema is not None
+                    and delay_ema >= cfg.delay_emergency_ms and emerg_free
+                    and ceiling < applied
+                    and (min_rate is None or min_rate <= ceiling)):
+                return ceiling, (f"delay emergency {delay_ema:.1f} ms >= "
+                                 f"{cfg.delay_emergency_ms:.0f} ms: descent "
+                                 f"to ceiling in one commit"), True
             return rate, (f"delay inflated {delay_ema:.1f} ms > "
                           f"{cfg.inflation_threshold_ms:.0f} ms: "
-                          f"ratchet down one step")
+                          f"ratchet down one step"), False
 
         if held_clear and offered is not None and offered > 0.0:
             if ceiling is None:
-                return applied, "clear but no ceiling to probe toward"
+                return applied, "clear but no ceiling to probe toward", False
             if offered <= applied * cfg.probe_ratio:
                 return applied, (f"clear for {cfg.hold_clear_s:.0f} s but "
-                                 f"offered {offered:.1f} does not demand it")
+                                 f"offered {offered:.1f} does not demand it"), False
             if applied >= ceiling * (1.0 - _EPS):
-                return applied, "clear and demanded, already at ceiling"
+                return applied, "clear and demanded, already at ceiling", False
             if min_rate is not None and min_rate >= ceiling:
-                return applied, "floor already at ceiling"
+                return applied, "floor already at ceiling", False
+            if budget_left <= 0:
+                return applied, (f"rise budget exhausted "
+                                 f"({cfg.max_changes_per_min}/min)"), False
             rate = min(ceiling, applied * (1.0 + cfg.up_step_frac))
             return rate, (f"clear for {cfg.hold_clear_s:.0f} s and demanded "
-                          f"{offered:.1f} Mbps: probe up, bounded by ceiling")
+                          f"{offered:.1f} Mbps: probe up, bounded by ceiling"), False
 
         hold = min(applied, ceiling) if ceiling is not None else applied
         if hold < applied:
             # The belief fell underneath the applied rate; the ceiling binds.
-            return ceiling, "belief fell below applied: ceiling binds"
+            return ceiling, "belief fell below applied: ceiling binds", False
         if delay_ema is not None:
             return hold, (f"delay {delay_ema:.1f} ms between clear and "
-                          f"inflation thresholds: hold")
-        return hold, "no delay telemetry: ceiling only"
+                          f"inflation thresholds: hold"), False
+        return hold, "no delay telemetry: ceiling only", False

@@ -611,12 +611,14 @@ class TestALeaseCannotUndoACapacityDrop(unittest.TestCase):
         self.assertGreater(h._current_plan.rates[TrafficClass.LEASED], 0.0)
 
     def test_a_fresh_harness_still_accepts_the_caller_capacity(self):
-        """_capacity_mbps is None until something is applied; falling back to
-        the argument keeps a fresh harness working."""
+        """_capacity_mbps is None until something is applied; apply_system
+        builds the ACIQ tree already shaped at INITIAL_PARENT_FRACTION x the
+        commanded capacity (docs/evidence/task2-params.md #4), and that is
+        the number it remembers -- the applied rate, not the command."""
         h = harness()
         self.assertIsNone(h._capacity_mbps)
         h.apply_system(SystemSpec.ACIQ, 50.0)
-        self.assertEqual(h._capacity_mbps, 50.0)
+        self.assertEqual(h._capacity_mbps, 45.0)
 
 
 class TestTheShieldRetryCannotReapplyAStalePlan(unittest.TestCase):

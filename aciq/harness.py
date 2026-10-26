@@ -57,7 +57,7 @@ from .classify import FlowFeatures
 from .corrections import CorrectionStore
 from .metrics import ClassCounters, MetricsCollector
 from .model import Lease, RatePlan, TrafficClass
-from .ratecap import GovernorDecision, RateGovernor
+from .ratecap import INITIAL_PARENT_FRACTION, GovernorDecision, RateGovernor
 from .policy import build_plan, floor_total_mbps
 from .shield import Shield
 from .verifier import bound_rate_change
@@ -806,14 +806,21 @@ class Harness:
         # run started at.
         self._capacity_mbps = capacity_mbps
         if system is SystemSpec.ACIQ:
-            plan = self._current_plan or build_plan(capacity_mbps, self._lease)
+            # The tree is built already shaped (INITIAL_PARENT_FRACTION x
+            # commanded link, docs/evidence/task2-params.md #4): the launch
+            # ramp otherwise queues in the netem's own buffer for the first
+            # tick before the governor's first commit lands at the same rate,
+            # and S1's call p95 paid 82-84 ms for that one unshaped second.
+            applied = INITIAL_PARENT_FRACTION * capacity_mbps
+            plan = self._current_plan or build_plan(applied, self._lease)
             # Record the plan that was applied. `apply_system` built it, handed it
             # to the transaction manager and then forgot it, so `_current_plan`
             # stayed None and anything asking which classes exist found nothing --
             # including set_capacity, which needs the class list to clamp their
             # ceil. The plan is the harness's own record of what it configured.
             self._current_plan = plan
-            self.txn.remember_capacity(capacity_mbps)
+            self.txn.remember_capacity(applied)
+            self._capacity_mbps = applied
             ok = self.txn.apply(plan).ok
             # Any apply that reaches the kernel rebuilds the qdisc and destroys
             # every per-flow filter; the bridge must be told whether or not the
@@ -1036,7 +1043,8 @@ class Harness:
 
         bound = bound_rate_change(prev_rate, want, now,
                                   self._last_policy_change_t,
-                                  drop_rate_per_s=measurement.drop_rate_per_s)
+                                  drop_rate_per_s=measurement.drop_rate_per_s,
+                                  delay_emergency=gov.delay_emergency)
         if not bound:
             # the budget's currency is real kernel change; the dwell refusal
             # means nothing reaches the tree, so the stamp goes back.

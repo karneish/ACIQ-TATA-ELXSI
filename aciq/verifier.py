@@ -41,6 +41,13 @@ MIN_RATE_MBPS = 1.0
 #: valued above the workload.
 EMERGENCY_DROP_RATE_PER_S = 500.0
 EMERGENCY_STEP_MULT = 2.0
+#: Delay-driven twin of the drop emergency (docs/evidence/task2-params.md):
+#: the governor's backed-up-queue failure mode produces delays, not drops, so
+#: the drop comparator never fires there. A delay emergency clears a single
+#: DOWN move to land at the want in one commit -- the governor has already
+#: bounded that want by its ceiling and floors; a full descent can never
+#: grow any queue. The governor paces this with its own cooldown.
+DELAY_EMERGENCY = True
 
 # ---- the verdict -----------------------------------------------------------
 #: Minimum before/after samples (ticks) for a verdict to even be rendered.
@@ -130,24 +137,35 @@ class BoundResult:
 
 def bound_rate_change(prev_rate: float | None, want_rate: float,
                       now: float, last_change_t: float | None,
-                      drop_rate_per_s: float = 0.0) -> BoundResult:
+                      drop_rate_per_s: float = 0.0,
+                      delay_emergency: bool = False) -> BoundResult:
     """Whether and how far the parent rate may move, before it is applied.
 
     Order of law: first the dwell (unless emergency), then the step
     (emergency doubles it), then the absolute floor. Returns the ORIGINAL
     want when nothing binds — the fast path is common and must be cheap.
+
+    `delay_emergency` (the governor's cleared, cooldown-paced descent flag)
+    applies only to DOWN moves: the dwell is skipped and the step bound is
+    bypassed entirely — landing below the current rate cannot overshoot or
+    grow a queue, which is what the step bound exists to prevent going up.
     """
     emergency = drop_rate_per_s >= EMERGENCY_DROP_RATE_PER_S
     if prev_rate is None:
         return BoundResult(want_rate, "first rate", emergency)
+    down_emergency = (delay_emergency and DELAY_EMERGENCY
+                      and want_rate < prev_rate)
     if last_change_t is not None:
         dwelled = (now - last_change_t) >= MIN_DWELL_S
-        if not dwelled and not emergency:
+        if not dwelled and not (emergency or down_emergency):
             return BoundResult(None, "dwell window not elapsed", False)
     step_frac = MAX_RATE_STEP_FRAC * (EMERGENCY_STEP_MULT if emergency else 1.0)
     max_step = max(prev_rate * step_frac, 0.0)
     delta = want_rate - prev_rate
-    if abs(delta) <= max_step:
+    if down_emergency:
+        rate = want_rate
+        reason = "delay emergency: descent lands at want in one commit"
+    elif abs(delta) <= max_step:
         rate = want_rate
         reason = "within step bound"
     else:
