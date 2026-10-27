@@ -336,6 +336,9 @@ class ExperimentRunner:
         drop_at_s: float | None = None,
         recover_at_s: float | None = None,
         recover_to_mbps: float | None = None,
+        ramp_at_s: float | None = None,
+        ramp_duration_s: float | None = None,
+        ramp_to_mbps: float | None = None,
         initial_link_mbps: float | None = None,
         settle_s: float | None = None,
         enforce: bool = False,
@@ -487,6 +490,13 @@ class ExperimentRunner:
             "seed": seed, "link_mbps": link_mbps, "drop_mbps": drop_mbps,
             "drop_at_s": drop_at_s,
             "recover_at_s": recover_at_s, "recover_to_mbps": recover_to_mbps,
+            # S2b ramp: the link's target moves continuously between ramp_at
+            # and ramp_at + ramp_duration. Written here (before any kernel
+            # call) so the artefact states the protocol rather than leaving a
+            # reader to reverse-engineer it from a wiggly capacity series.
+            "ramp_at_s": ramp_at_s,
+            "ramp_duration_s": ramp_duration_s,
+            "ramp_to_mbps": ramp_to_mbps,
             # CAKE-oracle bookkeeping, so the artefact states the arm's
             # semantics without requiring a reader to know the code: the rate
             # the tree was actually built with, and why.
@@ -725,6 +735,8 @@ class ExperimentRunner:
         ticks = int(sc.duration_s / self.tick_s) + 1
         dropped = False
         recovered = False
+        ramp_done = False
+        ramp_cap: float | None = None
         # Seed the recovery TARGET from this run's configured link rate.
         #
         # It lives here, in run(), rather than in __init__ because the link is
@@ -969,6 +981,28 @@ class ExperimentRunner:
                     # the oracle variant is handed the new capacity outright
                     self.harness.apply_system(system, drop_mbps)
 
+            # S2b ramp (declared docs/evidence/s2b-params.md): the link's
+            # target moves continuously from link_mbps toward ramp_to_mbps
+            # over [ramp_at, ramp_at + ramp_duration), linear in elapsed
+            # time. Only the link changes each tick -- the controller gets
+            # no announcement and must track it from counters, which is the
+            # whole generalization stress. Every value is written, not
+            # interpolated lazily, so the artefact's capacity series and the
+            # link's own state can never drift apart between ticks.
+            if (ramp_at_s is not None and ramp_to_mbps is not None
+                    and not ramp_done and elapsed >= ramp_at_s):
+                dur = ramp_duration_s if ramp_duration_s else sc.duration_s
+                frac = min(1.0, (elapsed - ramp_at_s) / dur) if dur > 0 \
+                    else 1.0
+                ramp_cap = link_mbps + (ramp_to_mbps - link_mbps) * frac
+                self._cap_t = elapsed
+                self.harness.set_capacity(ramp_cap)
+                if not self.harness._capacity_change_ok:
+                    self._capacity_change_failed = True
+                    self._capacity_change_error = \
+                        self.harness._capacity_change_error
+                ramp_done = frac >= 1.0
+
         # ---- 4. collect the generators' own measurements
         self.launcher.collect()
         workloads = {}
@@ -1044,10 +1078,19 @@ class ExperimentRunner:
         res = RunResult(
             scenario=sc.name, system=system.value, capacity_mode=mode.value,
             seed=seed, link_start_mbps=link_mbps,
-            link_end_mbps=drop_mbps if dropped else link_mbps,
+            # The rate the link was actually at AT THE END, ranked: a ramp's
+            # final value, else a completed walk-back to recover_to, else
+            # the drop, else the unchanged launch rate. An s4 up-step run
+            # whose field read 20 Mbps would describe a link that was no
+            # longer there.
+            link_end_mbps=(ramp_cap if ramp_cap is not None
+                           else (recover_to_mbps if recovered
+                                 else (drop_mbps if dropped else link_mbps))),
             capacity_recovered=recovered,
             policy_change_log=list(getattr(self.harness, "policy_change_log", [])),
             capacity_recover_to_mbps=recover_to_mbps if recovered else None,
+            capacity_ramp_to_mbps=ramp_cap if ramp_done else None,
+            capacity_ramp_duration_s=ramp_duration_s if ramp_done else None,
             capacity_change_applied=not self._capacity_change_failed,
             capacity_change_error=self.harness._capacity_change_error,
             estimator_mbps=round(est, 2) if est else None,

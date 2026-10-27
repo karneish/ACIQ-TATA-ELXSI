@@ -47,6 +47,130 @@ def _mk_run(root: Path, name: str, *, system: str, scenario: str,
         # NOT AVAILABLE, which is exactly what a bare run dir proves
 
 
+class TestS2bRows(unittest.TestCase):
+    """S2b (docs/evidence/s2b-params.md): bind/tracking/estimate/honesty rows
+    computed from synthetic run dirs whose ground truth is hand-computed
+    here. The generator must NOT AVAILABLE what it cannot compute."""
+
+    @staticmethod
+    def _mk_s2b(root: Path, scenario: str, system: str, seed: int,
+                caps: list[tuple[float, float]],
+                proto: dict | None = None) -> None:
+        """caps are (t, applied_mbps) ticks; proto carries any protocol
+        fields the row's truth needs. samples.jsonl holds one tick per
+        line, exactly as the engine writes them."""
+        d = root / f"{scenario}__{system}__adaptive__seed{seed}"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "workloads.json").write_text(json.dumps(
+            {"call": {"label": "call", "p50": 0.2, "p95": 12.0,
+                      "p99": 13.0, "jitter_ms": 0.4, "loss_ratio": 0.01},
+             "bulk": {"label": "bulk", "sender_mbps": 70.0}}))
+        cfg = {"scenario": scenario, "system": system, "seed": seed,
+               "mode": "adaptive", "link_mbps": 100.0, "drop_mbps": 30.0,
+               "drop_at_s": 10.0, "duration_s": 40.0, "settle_s": 4.0}
+        cfg.update(proto or {})
+        if scenario == "s2b_ramp_100to30":
+            cfg.update(ramp_at_s=10.0, ramp_duration_s=20.0,
+                       ramp_to_mbps=30.0, drop_at_s=None)
+        (d / "config.json").write_text(json.dumps(cfg))
+        (d / "samples.jsonl").write_text("\n".join(
+            json.dumps({"t": t, "capacity_mbps": cap})
+            for t, cap in caps))
+
+    def test_step_bind_and_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for seed, cap_after in ((0, 49.0), (1, 55.0)):
+                self._mk_s2b(
+                    root, "s2b_step_50", "aciq", seed,
+                    [(t * 2.0, 50.0 if t * 2.0 < 10.0 else cap_after)
+                     for t in range(19)],
+                    proto={"drop_at_s": 10.0, "drop_mbps": 50.0})
+            # truth after t=10 is 50, 10% tol = 5.0: 49 binds at 10.0,
+            # 55 does not; the mean applied-truth over [20, 38] is
+            # (|49-50| + |55-50|)/2 = 3.0.
+            self._mk_s2b(root, "s2b_step_50", "b0_fifo", 0,
+                         [(t * 2.0, 50.0) for t in range(19)],
+                         proto={"drop_at_s": 10.0, "drop_mbps": 50.0})
+            out = root / "r.md"
+            build_report(root, out)
+            md = out.read_text()
+        self.assertIn("### s2b_step_50", md)
+        self.assertIn("10.0 +/- 0.0", md)
+        self.assertNotIn("(0/1 binds met inside the run)", md)
+        self.assertIn("3.00", md)
+        self.assertIn("NOT AVAILABLE (no saturation signal in the artefact)",
+                      md)
+
+    def test_ramp_bind_and_honesty_row(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            # truth: 100 until t=10, then linear to 30 by t=30, holds to 40
+            def truth(t: float) -> float:
+                if t <= 10.0:
+                    return 100.0
+                if t >= 30.0:
+                    return 30.0
+                return 100.0 - 3.5 * (t - 10.0)
+            self._mk_s2b(root, "s2b_ramp_100to30", "aciq", 0,
+                         [(t * 2.0, round(truth(t * 2.0), 3))
+                          for t in range(21)])
+            out = root / "r.md"
+            build_report(root, out)
+            md = out.read_text()
+        self.assertIn("### s2b_ramp_100to30", md)
+        # the honesty row needs a final tick with estimator_saturated; its
+        # absence prints NOT AVAILABLE, never a fabricated verdict
+        self.assertIn("(no saturation signal in the artefact)", md)
+
+    def test_honesty_row_names_a_saturated_final_tick_verbatim(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            d = root / "s2b_step_up_20to100__aciq__adaptive__seed0"
+            d.mkdir(parents=True)
+            (d / "workloads.json").write_text(json.dumps(
+                {"call": {"label": "call", "p50": 0.2, "p95": 12.0,
+                          "p99": 13.0, "jitter_ms": 0.4,
+                          "loss_ratio": 0.01},
+                 "bulk": {"label": "bulk", "sender_mbps": 70.0}}))
+            (d / "config.json").write_text(json.dumps(
+                {"scenario": "s2b_step_up_20to100", "system": "aciq",
+                 "seed": 0, "mode": "adaptive", "link_mbps": 20.0,
+                 "drop_mbps": 20.0, "drop_at_s": 10.0, "recover_at_s": 10.0,
+                 "recover_to_mbps": 100.0, "duration_s": 40.0,
+                 "settle_s": 4.0}))
+            (d / "samples.jsonl").write_text("\n".join(json.dumps(s) for s in
+                [{"t": t * 2.0, "capacity_mbps": 19.0 if t < 5 else 90.0,
+                  "estimator_saturated": True} for t in range(10)]))
+            out = root / "r.md"
+            build_report(root, out)
+            md = out.read_text()
+        # the estimator says saturated, the tree sits 10% off the truth,
+        # and the artefact-level verdict is named, not softened
+        self.assertIn("final tick: saturated, applied 90.0 vs truth 100.0",
+                      md)
+
+    def test_no_bind_reported_when_tolerance_never_met(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._mk_s2b(root, "s2b_step_up_20to100", "b1_cake95", 0,
+                         [(t * 2.0, 19.0) for t in range(20)],
+                         proto={"link_mbps": 20.0, "drop_mbps": 20.0,
+                                "drop_at_s": 10.0, "recover_at_s": 10.0,
+                                "recover_to_mbps": 100.0})
+            br2 = None
+            runs, _sk, _fam = br.load_runs_families(root)
+            run = [r for r in runs
+                   if r["cfg"]["system"] == "b1_cake95"][0]
+            truth, at = br._s2b_truth_fn(run)
+            self.assertEqual(truth(5.0), 20.0)
+            self.assertEqual(truth(10.0), 100.0)
+            # CAKE marched on at its launch rate (19): never within 10% of
+            # the post-step truth (100), and the helper must say None,
+            # never guess a bind from the pre-step plateau.
+            self.assertIsNone(br._s2b_bind_s(run))
+
+
 class TestStatTools(unittest.TestCase):
     def test_t95(self):
         self.assertEqual(br.t95(10), 2.262)

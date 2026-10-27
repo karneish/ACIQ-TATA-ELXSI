@@ -320,10 +320,16 @@ class TestCitedCliValues(unittest.TestCase):
         # s6_intent_expire is the TASK 4 intent scenario: real API intent at
         # t~1s, TTL expiring INSIDE the run, auto-revert measured. Baselines
         # declare no intent surface in their own result.json.
+        # The four s2b_* names are the S2b generalization scenarios (declared
+        # docs/evidence/s2b-params.md, written before the S2b dataset): two
+        # down-steps at magnitudes the shipped suite never tuned on, one
+        # up-step, one continuous ramp (new engine fields ramp_at/duration/to).
         self.assertEqual(real, {"s1_iso_during_call", "s2_wan_drop",
                                 "s3_tv_and_gaming",
                                 "s4_capacity_recovery",
-                                "s6_intent_expire"})
+                                "s6_intent_expire",
+                                "s2b_step_50", "s2b_step_10",
+                                "s2b_step_up_20to100", "s2b_ramp_100to30"})
         # Still not a scenario. It was invented by an earlier report and cited
         # in the docs as if it existed; that report was wrong.
         self.assertNotIn("s4_voip_under_load", real)

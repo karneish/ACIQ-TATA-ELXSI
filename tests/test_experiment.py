@@ -293,6 +293,82 @@ class TestSettlePhase(unittest.TestCase):
             self.assertIn("injected failure", res.notes[0])
 
 
+class TestS2bRampLink(unittest.TestCase):
+    """S2b (docs/evidence/s2b-params.md): a ramp is a new engine capability.
+
+    Only the link moves; the controller gets no announcement and must track
+    the moving target from counters. These tests pin what the ARTEFACT must
+    state about it, not what the controller scored."""
+
+    def _runner(self, d):
+        class NullSource:
+            def snapshot(self):
+                import time as _t
+                from aciq.metrics import CounterSnapshot
+                return CounterSnapshot(t=_t.monotonic(), by_class={})
+
+        return ExperimentRunner(
+            launcher=DryLauncher(),
+            harness=Harness(runner=FakeRunner(auto_readback=True)),
+            results_dir=Path(d), real_time=False, source=NullSource())
+
+    def test_ramp_is_recorded_and_interpolated(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            seen: list[float] = []
+            orig = r.harness.set_capacity
+
+            def shim(cap):
+                seen.append(float(cap))
+                return orig(cap)
+
+            r.harness.set_capacity = shim
+            res = r.run("s2b_ramp_100to30", SystemSpec.ACIQ,
+                        CapacityMode.ADAPTIVE, 42,
+                        ramp_at_s=10.0, ramp_duration_s=20.0,
+                        ramp_to_mbps=30.0)
+            # 100 -> 30 linearly; in the dry-run frame the ramp window is
+            # entered at elapsed=10, so ticks thereafter are <= 30 Mbps and
+            # monotonically falling while the ramp is in progress.
+            in_ramp = [c for c in seen if 10.0 < c < 100.0]
+            self.assertTrue(in_ramp, "the ramp must write intermediate rates")
+            self.assertEqual(in_ramp, sorted(in_ramp, reverse=True))
+            self.assertAlmostEqual(min(seen), 30.0, places=3)
+            self.assertEqual(res.capacity_ramp_to_mbps, 30.0)
+            self.assertEqual(res.capacity_ramp_duration_s, 20.0)
+            self.assertEqual(res.link_end_mbps, 30.0)
+
+    def test_ramp_protocol_lands_in_config_json(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            p = r.run_paths("s2b_ramp_100to30", SystemSpec.ACIQ,
+                            CapacityMode.ADAPTIVE, 42)
+            r.run("s2b_ramp_100to30", SystemSpec.ACIQ,
+                  CapacityMode.ADAPTIVE, 42,
+                  ramp_at_s=10.0, ramp_duration_s=20.0, ramp_to_mbps=30.0)
+            cfg = json.loads((p.root / "config.json").read_text())
+            self.assertEqual(cfg["ramp_at_s"], 10.0)
+            self.assertEqual(cfg["ramp_duration_s"], 20.0)
+            self.assertEqual(cfg["ramp_to_mbps"], 30.0)
+
+    def test_without_ramp_args_the_recorded_fields_stay_none(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            res = r.run("s1_iso_during_call", SystemSpec.ACIQ,
+                        CapacityMode.ADAPTIVE, 42)
+            self.assertIsNone(res.capacity_ramp_to_mbps)
+            self.assertIsNone(res.capacity_ramp_duration_s)
+
+    def test_s2b_scenarios_exist_with_s2_workloads(self):
+        from aciq.harness import SCENARIOS
+        for name in ("s2b_step_50", "s2b_step_10", "s2b_step_up_20to100",
+                     "s2b_ramp_100to30"):
+            sc = SCENARIOS[name]
+            labels = [w.label for w in sc.workloads]
+            self.assertEqual(labels, ["call", "bulk"])
+            self.assertEqual(sc.workloads[0].dscp, 46)
+
+
 class TestMetricsHonesty(unittest.TestCase):
     def test_missing_reads_as_n_a_not_zero(self):
         m = Metric("call p50", {"a": None, "b": 12.0}, unit=" ms")

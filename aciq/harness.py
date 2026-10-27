@@ -191,6 +191,49 @@ SCENARIOS: dict[str, Scenario] = {
         duration_s=60.0,
         settle_s=4.0,
     ),
+    # S2b generalization scenarios (declared docs/evidence/s2b-params.md,
+    # written before the S2b dataset exists). Same workloads and settle as
+    # s2/s4 so the numbers read against those tables; the link protocols
+    # differ per run and live in run_experiments.SCENARIO_PROTOCOLS. These
+    # are EVALUATION-ONLY scenarios (fresh seeds 800-809, one run): no tuning
+    # band exists for them by design, so no parameter can be defended as
+    # tuned on their results.
+    "s2b_step_50": Scenario(
+        name="s2b_step_50",
+        workloads=(
+            Workload("call", "call", 1, dscp=46),
+            Workload("bulk", "bulk", 1),
+        ),
+        duration_s=40.0,
+        settle_s=4.0,
+    ),
+    "s2b_step_10": Scenario(
+        name="s2b_step_10",
+        workloads=(
+            Workload("call", "call", 1, dscp=46),
+            Workload("bulk", "bulk", 1),
+        ),
+        duration_s=40.0,
+        settle_s=4.0,
+    ),
+    "s2b_step_up_20to100": Scenario(
+        name="s2b_step_up_20to100",
+        workloads=(
+            Workload("call", "call", 1, dscp=46),
+            Workload("bulk", "bulk", 1),
+        ),
+        duration_s=40.0,
+        settle_s=4.0,
+    ),
+    "s2b_ramp_100to30": Scenario(
+        name="s2b_ramp_100to30",
+        workloads=(
+            Workload("call", "call", 1, dscp=46),
+            Workload("bulk", "bulk", 1),
+        ),
+        duration_s=60.0,
+        settle_s=4.0,
+    ),
 }
 
 
@@ -220,6 +263,12 @@ class RunResult:
     #: degraded rate, is a defect that a drop-only test can never see.
     capacity_recovered: bool = False
     capacity_recover_to_mbps: float | None = None
+    #: S2b ramp (declared docs/evidence/s2b-params.md): the link moved
+    #: continuously over a window. Recorded so a reader knows the run's
+    #: capacity was never a single step: link_end_mbps alone would read like
+    #: a drop with a strange shape.
+    capacity_ramp_to_mbps: float | None = None
+    capacity_ramp_duration_s: float | None = None
     #: Every policy application attempted: the rate the kernel was asked for,
     #: whether it committed, any shield violations or read-back mismatches, and
     #: the rates the kernel then reported as installed.

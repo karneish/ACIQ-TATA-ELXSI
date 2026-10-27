@@ -57,10 +57,25 @@ def teardown() -> None:
 # s4 is the rising edge: without --recover-at/--recover-to it behaves like s2.
 # s6 is the intent scenario: --api-intent requested at t~1, TTL inside the run.
 ALL_SCENARIOS = ["s1_iso_during_call", "s2_wan_drop", "s3_tv_and_gaming",
-                 "s4_capacity_recovery", "s6_intent_expire"]
+                 "s4_capacity_recovery", "s6_intent_expire",
+                 "s2b_step_50", "s2b_step_10", "s2b_step_up_20to100",
+                 "s2b_ramp_100to30"]
 #: Scenarios that only do something interesting with an explicit drop time.
 #: s4 needs it too -- there is no recovery without a drop first.
 NEEDS_DROP_AT = {"s2_wan_drop", "s4_capacity_recovery"}
+#: S2b (declared docs/evidence/s2b-params.md): the link protocol is part of
+#: the scenario, fixed before the S2b dataset exists. Overrides for these
+#: names are refused rather than half-honoured, so nothing can drift back
+#: into exactly the tuning the scenarios exist to avoid.
+S2B_PROTOCOLS: dict[str, dict[str, float]] = {
+    "s2b_step_50": {"link_mbps": 100.0, "drop_mbps": 50.0, "drop_at_s": 10.0},
+    "s2b_step_10": {"link_mbps": 100.0, "drop_mbps": 10.0, "drop_at_s": 10.0},
+    "s2b_step_up_20to100": {"link_mbps": 20.0, "drop_mbps": 20.0,
+                            "drop_at_s": 10.0, "recover_at_s": 10.0,
+                            "recover_to_mbps": 100.0},
+    "s2b_ramp_100to30": {"link_mbps": 100.0, "ramp_at_s": 10.0,
+                         "ramp_duration_s": 20.0, "ramp_to_mbps": 30.0},
+}
 ALL_SYSTEMS = [SystemSpec.B0, SystemSpec.B1, SystemSpec.B1_ORACLE,
                SystemSpec.ACIQ]
 
@@ -89,7 +104,7 @@ def main() -> int:
                          "invocation. The report needs >=6 paired runs before it "
                          "will emit a p-value, and one invocation means the "
                          "testbed is built and torn down once instead of per seed.")
-    ap.add_argument("--link", type=float, default=100.0)
+    ap.add_argument("--link", type=float, default=None)
     ap.add_argument("--drop", type=float, default=20.0)
     ap.add_argument("--drop-at", type=float, default=None,
                     help="seconds into the run at which capacity drops")
@@ -101,6 +116,13 @@ def main() -> int:
                          "degraded rate, is invisible to a drop-only test.")
     ap.add_argument("--recover-to", type=float, default=None,
                     help="capacity to restore at --recover-at, in Mbps")
+    ap.add_argument("--ramp-at", type=float, default=None,
+                    help="S2b ramp: run time (s) the link starts moving")
+    ap.add_argument("--ramp-duration", type=float, default=None,
+                    help="S2b ramp: seconds over which the link moves from "
+                         "--link to --ramp-to, linearly")
+    ap.add_argument("--ramp-to", type=float, default=None,
+                    help="S2b ramp: the link's final capacity, in Mbps")
     ap.add_argument("--duration-s", type=float, default=None,
                     help="override each scenario's duration. The shipped "
                          "scenarios are 30-40s, which cannot demonstrate "
@@ -286,6 +308,29 @@ def main() -> int:
     seeds = ([args.seed] if not args.seeds
              else [args.seed + i for i in range(args.seeds)])
 
+    # Resolve the defaults that were flags with implicit values, so an
+    # explicitly-passed --link/--drop can be told apart from the default
+    # when a scenario's declared protocol must win (S2b).
+    args.link = 100.0 if args.link is None else args.link
+    args.drop = 20.0 if args.drop is None else args.drop
+
+    # S2b scenarios run their DECLARED link protocol (docs/evidence/
+    # s2b-params.md), which the user's --link/--drop flags must not override:
+    # a quietly retuned protocol would be exactly the tuning S2b exists to
+    # avoid. Explicit refusals make the conflict visible instead of resolved.
+    for sc in scenarios:
+        proto = S2B_PROTOCOLS.get(sc)
+        if proto is None:
+            continue
+        conflicts = []
+        if args.link != proto.get("link_mbps"):
+            conflicts.append(f"--link {args.link}")
+        if "drop_mbps" in proto and args.drop != proto["drop_mbps"]:
+            conflicts.append(f"--drop {args.drop}")
+        if conflicts:
+            ap.error(f"{sc} runs its declared protocol "
+                     f"{proto}; refusing override: {', '.join(conflicts)}")
+
     # A failed run must not be reported as a finished step: the pipeline's
     # resume markers once let an aborted intent step march on silently
     # (the driver recorded the dead run and returned 0).
@@ -297,12 +342,26 @@ def main() -> int:
                 m = mode if sysspec is SystemSpec.ACIQ else CapacityMode.STATIC
                 for seed in seeds:
                     print(f"\n=== {sc} / {sysspec.value} / {m.value} / seed {seed} ===")
+                    proto = S2B_PROTOCOLS.get(sc) or {}
+                    run_link = proto.get("link_mbps", args.link)
+                    run_drop = proto.get("drop_mbps", args.drop)
+                    run_drop_at = proto.get("drop_at_s", args.drop_at)
+                    run_recover_at = proto.get("recover_at_s", args.recover_at)
+                    run_recover_to = proto.get("recover_to_mbps",
+                                               args.recover_to)
+                    run_ramp_at = proto.get("ramp_at_s", args.ramp_at)
+                    run_ramp_dur = proto.get("ramp_duration_s",
+                                             args.ramp_duration)
+                    run_ramp_to = proto.get("ramp_to_mbps", args.ramp_to)
                     res = runner.run(
-                        sc, sysspec, m, seed, args.link, args.drop, args.drop_at,
+                        sc, sysspec, m, seed, run_link, run_drop, run_drop_at,
                         settle_s=args.settle, enforce=args.enforce,
-                        initial_link_mbps=args.link,
-                        recover_at_s=args.recover_at,
-                        recover_to_mbps=args.recover_to,
+                        initial_link_mbps=run_link,
+                        recover_at_s=run_recover_at,
+                        recover_to_mbps=run_recover_to,
+                        ramp_at_s=run_ramp_at,
+                        ramp_duration_s=run_ramp_dur,
+                        ramp_to_mbps=run_ramp_to,
                         lease_ips=args.lease, lease_weight=args.lease_weight,
                         lease_ttl_s=args.lease_ttl_s,
                         inject_fail_apply=args.inject_fail_apply,

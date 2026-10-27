@@ -404,6 +404,15 @@ SINK_CLOCK_LEAD_S = 1.0
 S6_RECOVERY_FRAC = 0.90
 S6_RECOVERY_LIMIT_S = 5.0
 
+#: S2b (declared docs/evidence/s2b-params.md, before the S2b dataset): the
+#: bind criterion is "applied tree within 10% of the link's truth"; there
+#: is no per-scenario tuning of it.
+S2B_BIND_TOL = 0.10
+
+#: S2b scenario names, in declared order.
+S2B_SCENARIOS = ("s2b_step_50", "s2b_step_10", "s2b_step_up_20to100",
+                 "s2b_ramp_100to30")
+
 #: Sheets the window table reports, verbatim sheet keys as samples.jsonl
 #: carries them.
 S6_SHEETS = ("video_call_voice", "interactive_gaming", "bulk_download",
@@ -590,6 +599,185 @@ def _collect_window(runlist: list[dict], wname: str, sheet: str,
         if v is not None:
             out.append(v)
     return out
+
+
+def _s2b_change(run: dict) -> tuple[float, float, float] | None:
+    """(change_at, truth_before, truth_after) for a STEP s2b run, or None.
+
+    The step is the run's own declared event: a down-step is the drop; the
+    up-step is the recover (its drop is a no-op at the same rate). Read from
+    config.json, never from a module constant."""
+    cfg = run["cfg"]
+    link = cfg.get("link_mbps")
+    if cfg.get("ramp_to_mbps") is not None:
+        return None
+    rec = cfg.get("recover_at_s")
+    if rec is not None and cfg.get("recover_to_mbps") is not None:
+        return float(rec), float(link), float(cfg["recover_to_mbps"])
+    drop_at = cfg.get("drop_at_s")
+    if drop_at is not None and cfg.get("drop_mbps") is not None:
+        return float(drop_at), float(link), float(cfg["drop_mbps"])
+    return None
+
+
+def _s2b_truth_fn(run: dict) -> tuple[callable, float]:
+    """(truth(t), t_change) for any s2b run -- the ramp version interpolates
+    linearly inside the declared window; the steps return the protocol's
+    two plateaus."""
+    cfg = run["cfg"]
+    link = float(cfg.get("link_mbps") or 0.0)
+    ramp_to = cfg.get("ramp_to_mbps")
+    if ramp_to is not None:
+        ramp_at = float(cfg.get("ramp_at_s") or 0.0)
+        dur = float(cfg.get("ramp_duration_s") or 0.0)
+        to = float(ramp_to)
+
+        def truth(t: float) -> float:
+            if t <= ramp_at:
+                return link
+            frac = ((t - ramp_at) / dur) if dur > 0 else 1.0
+            return link + (to - link) * min(1.0, frac)
+
+        return truth, ramp_at
+    ch = _s2b_change(run)
+    if ch is None:
+        return (lambda t: link), 0.0
+    at, pre, post = ch
+
+    def truth(t: float) -> float:
+        return post if t >= at else pre
+
+    return truth, at
+
+
+def _s2b_series(run: dict) -> list[tuple[float, float]]:
+    """(t, applied_mbps) per sample; None capacities drop out (the report
+    does not invent a rate for a tick the harness did not measure)."""
+    out = []
+    for s in run["samples"]:
+        cap = s.get("capacity_mbps")
+        if isinstance(cap, (int, float)) and math.isfinite(float(cap)):
+            out.append((float(s["t"]), float(cap)))
+    return out
+
+
+def _s2b_bind_s(run: dict) -> float | None:
+    """First tick >= change_at satisfying S2B_BIND_TOL of truth, which then
+    holds to the END of the run (the declared 'stays there')."""
+    truth, at = _s2b_truth_fn(run)
+    ser = _s2b_series(run)
+    ok = None
+    for t, cap in ser:
+        tv = truth(t)
+        if abs(cap - tv) <= S2B_BIND_TOL * tv and t >= at:
+            if ok is None:
+                ok = t
+        else:
+            ok = None
+    return ok
+
+
+def _s2b_window_err(run: dict, lo: float, hi: float) -> float | None:
+    """Mean |applied - truth| over a window; needs ticks inside it."""
+    truth, _at = _s2b_truth_fn(run)
+    errs = [abs(cap - truth(t)) for t, cap in _s2b_series(run)
+            if lo <= t <= hi]
+    return statistics.fmean(errs) if errs else None
+
+
+def _s2b_final_third(run: dict) -> tuple[float, float]:
+    """(lo, hi) of the last third of the run's observed tick range."""
+    ser = _s2b_series(run)
+    if not ser:
+        return 0.0, 0.0
+    t0, t1 = ser[0][0], ser[-1][0]
+    return t0 + (t1 - t0) * (2.0 / 3.0), t1
+
+
+def _s2b_sink_last_third(run: dict, label: str = "bulk") -> float | None:
+    """Receiver-side delivered Mbps (inst mean) over the run's final third."""
+    series, _note = sink_inst_series(run, label)
+    if not series:
+        return None
+    lo, hi = _s2b_final_third(run)
+    vals = [v for t, v in series if lo <= t <= hi]
+    return statistics.fmean(vals) if vals else None
+
+
+def _s2b_honesty(run: dict) -> str:
+    """ACIQ's declared failure admission (docs/evidence/s2b-params.md):
+    machine-computed from the final tick; never a judgement in prose."""
+    if not run["samples"]:
+        return NOT_AVAILABLE
+    last = run["samples"][-1]
+    if "estimator_saturated" not in last:
+        return NOT_AVAILABLE + " (no saturation signal in the artefact)"
+    sat = last.get("estimator_saturated")
+    cap = last.get("capacity_mbps")
+    truth, _at = _s2b_truth_fn(run)
+    tv = truth(last["t"])
+    cap_s = (f"{cap:.1f}" if isinstance(cap, (int, float)) else NOT_AVAILABLE)
+    if sat:
+        return f"final tick: saturated, applied {cap_s} vs truth {tv:.1f}"
+    err = (abs(cap - tv) / tv * 100.0
+           if isinstance(cap, (int, float)) and tv > 0 else None)
+    why = (f", {err:.0f}% off truth" if err is not None else "")
+    return (f"final tick: UNSATURATED (estimator not saturated at the "
+            f"end regime), applied {cap_s} vs truth {tv:.1f}{why}")
+
+
+def emit_s2b(add, runs: list[dict]) -> None:
+    """One table per declared S2b scenario; arms are rows, t-CIs at n=10.
+
+    The honesty row is ACIQ-only and machine-computed (the declared rule:
+    at the final tick, tell the reader the estimator's own saturation
+    signal and how far the applied tree sits from the link's truth)."""
+    for sc in S2B_SCENARIOS:
+        sc_runs = [r for r in runs if r["cfg"].get("scenario") == sc]
+        if not sc_runs:
+            continue
+        add(f"### {sc}")
+        add("")
+        arms_seen = sorted({r["cfg"].get("system") for r in sc_runs})
+        add(row_md(["arm", "n", "bind_s", "mean |applied-truth| final "
+                    "third (Mbps)", "call p95 whole-run (ms)",
+                    "bulk receiver mean, final third (Mbps)",
+                    "ACIQ honesty (final tick)"]))
+        add(row_md(["---"] * 8))
+        for arm in [a for a in ARM_ORDER if a in arms_seen]:
+            grp = [r for r in sc_runs if r["cfg"].get("system") == arm
+                   and (_s2b_change(r) is not None
+                        or r["cfg"].get("ramp_to_mbps") is not None)]
+            if not grp:
+                continue
+            binds = [b for r in grp if (b := _s2b_bind_s(r)) is not None]
+            errs = [e for r in grp if (e := _s2b_window_err(
+                r, *_s2b_final_third(r))) is not None]
+            calls = [call_metrics(r["wl"]).get("p95") for r in grp]
+            calls = [c for c in calls if c is not None]
+            bulks = [b for r in grp if (b := _s2b_sink_last_third(r))
+                     is not None]
+            extra = ""
+            if arm == "aciq":
+                seen_rows: list[str] = []
+                counts: dict[str, int] = {}
+                for r in grp:
+                    h = _s2b_honesty(r)
+                    counts[h] = counts.get(h, 0) + 1
+                for h, k in counts.items():
+                    seen_rows.append(f"{h} (n={k})" if k > 1 else h)
+                extra = "; ".join(seen_rows)
+            add(row_md([
+                ARM_LABELS.get(arm, arm),
+                str(len(grp)),
+                fmt(binds, 1) if binds else f"{NOT_AVAILABLE} (0/{len(grp)}"
+                                            f" binds met inside the run)",
+                fmt(errs, 2) if errs else NOT_AVAILABLE,
+                fmt(calls),
+                fmt(bulks, 2) if bulks else NOT_AVAILABLE,
+                extra or "honesty row declared for ACIQ only",
+            ]))
+        add("")
 
 
 def sink_inst_series(run: dict, label: str) -> tuple[
@@ -1597,6 +1785,25 @@ def build_report(runs_root: Path, out_md: Path,
         add("- the two protocols are never pooled: every cell above is "
             f"computed inside one generation ({len(s6_groups)} generation(s) "
             "on disk).")
+        add("")
+
+    # ---- S2b generalization band ------------------------------------------
+    if any(r["cfg"].get("scenario", "").startswith("s2b_") for r in runs):
+        add("## S2b generalization band (evaluation-only; docs/evidence/"
+            "s2b-params.md, written before these runs)")
+        add("")
+        add("The shipped controller runs unchanged on capacity changes it "
+            "was never tuned on: two down-step magnitudes, a 5x up-step, "
+            "and a continuous 20 s ramp. Seeds 800-809, one run, four "
+            "arms. CAKE-static is applied once at launch and never "
+            "re-applied: that is its declared semantics, and S2b exists to "
+            "surface the consequences. Definitions: bind = first tick at "
+            "which the applied tree sits within 10% of the link's truth "
+            "and stays there; tracking error = mean |applied - truth| over "
+            "the ramp window; estimate error = same over the final third. "
+            "Where ACIQ fails, the row says so.")
+        add("")
+        emit_s2b(add, runs)
         add("")
 
     # ---- classification --------------------------------------------------
