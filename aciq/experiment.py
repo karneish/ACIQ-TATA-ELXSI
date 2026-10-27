@@ -42,6 +42,34 @@ from .policy import floor_mbps
 WORKLOAD_DIR = Path(__file__).resolve().parent.parent / "testbed" / "workloads"
 RESULTS_DIR = Path(__file__).resolve().parent.parent / "data" / "runs"
 
+
+def git_commit_hash() -> str | None:
+    """The short commit hash of the tree these runs come from.
+
+    Every run result carries it (config.json and result.json): a number
+    without the code version is not evidence, and fields gainsaying it were
+    measured on another controller version get marked SUPERSEDED, not
+    compared (docs/evidence/round3-params.md, task 5). Cached per process:
+    git may be missing (bare runner hosts); None then means "unknown", which
+    the report prints verbatim instead of inventing.
+    """
+    global _COMMIT_HASH
+    if _COMMIT_HASH is None:
+        try:
+            import subprocess
+            out = subprocess.run(
+                ["git", "rev-parse", "--short=12", "HEAD"],
+                capture_output=True, text=True, timeout=5,
+                cwd=str(Path(__file__).resolve().parent.parent))
+            if out.returncode == 0:
+                _COMMIT_HASH = out.stdout.strip() or None
+        except Exception:                            # noqa: BLE001
+            _COMMIT_HASH = None
+    return _COMMIT_HASH
+
+
+_COMMIT_HASH: str | None = None
+
 #: Workloads that measure round-trip time and therefore have partial reports.
 #: bulk and video deliberately are not: they generate data, and their latency is
 #: not the thing being measured.
@@ -516,9 +544,12 @@ class ExperimentRunner:
             # CAKE-oracle bookkeeping, so the artefact states the arm's
             # semantics without requiring a reader to know the code: the rate
             # the tree was actually built with, and why.
-            "cake_rate_at_apply": (0.95 * start_capacity
-                                   if system in (SystemSpec.B1, SystemSpec.B1_ORACLE)
-                                   else None),
+            "cake_rate_at_apply": (
+                0.95 * start_capacity
+                if system in (SystemSpec.B1, SystemSpec.B1_ORACLE,
+                              SystemSpec.B1_AUTO)
+                else (0.50 * start_capacity
+                      if system is SystemSpec.B1_CONS else None)),
             "oracle_from_start": oracle_from_start,
             "duration_s": sc.duration_s,
             "settle_s": settle,
@@ -556,6 +587,8 @@ class ExperimentRunner:
             "intent_ttl_s": self._intent_ttl_s if self._api_intent else None,
             "intent_weight": self._intent_weight if self._api_intent else None,
             "intent_label": self._intent_label if self._api_intent else None,
+            # Round 3, task 5: the code version behind every run result.
+            "commit_hash": git_commit_hash(),
         }
         paths.write_json("config.json", cfg)
 
@@ -569,7 +602,8 @@ class ExperimentRunner:
             # Surface *why*. A bare "failed" is useless in a log.
             res = RunResult(sc.name, system.value, mode.value, seed,
                             link_mbps, link_mbps,
-                            notes=[f"apply_system failed: {self.harness.txn.last_reason}"])
+                            notes=[f"apply_system failed: {self.harness.txn.last_reason}"],
+                            commit_hash=git_commit_hash())
             paths.write_json("result.json", json.loads(res.to_json()))
             self.launcher.stop()
             return res
@@ -637,7 +671,8 @@ class ExperimentRunner:
                                 capacity_change_error=self.harness._capacity_change_error,
                                 notes=[f"the emulated link could not be limited to "
                                        f"{link_mbps} Mbps: "
-                                       f"{self.harness._capacity_change_error}"])
+                                       f"{self.harness._capacity_change_error}"],
+                                commit_hash=git_commit_hash())
                 paths.write_json("result.json", json.loads(res.to_json()))
                 self.launcher.stop()
                 return res
@@ -1140,6 +1175,7 @@ class ExperimentRunner:
             # observed, not configured
             duration_s=(round((samples[-1]["t"] - samples[0]["t"]), 2)
                         if len(samples) >= 2 else 0.0),
+            commit_hash=git_commit_hash(),
         notes=(([] if dropped else ["no capacity drop in this run"])
                    + ([stale_note] if stale_note else [])
                    + [enforcement_note]

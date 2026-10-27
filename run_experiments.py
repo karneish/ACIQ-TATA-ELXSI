@@ -59,7 +59,9 @@ def teardown() -> None:
 ALL_SCENARIOS = ["s1_iso_during_call", "s2_wan_drop", "s3_tv_and_gaming",
                  "s4_capacity_recovery", "s6_intent_expire",
                  "s2b_step_50", "s2b_step_10", "s2b_step_up_20to100",
-                 "s2b_ramp_100to30"]
+                 "s2b_ramp_100to30",
+                 "s7_up_20to60", "s7_up_30to100", "s7_rampup_30to100",
+                 "s7_down_100to15", "s7_down_100to8", "s3_stress"]
 #: Scenarios that only do something interesting with an explicit drop time.
 #: s4 needs it too -- there is no recovery without a drop first.
 NEEDS_DROP_AT = {"s2_wan_drop", "s4_capacity_recovery"}
@@ -76,8 +78,24 @@ S2B_PROTOCOLS: dict[str, dict[str, float]] = {
     "s2b_ramp_100to30": {"link_mbps": 100.0, "ramp_at_s": 10.0,
                          "ramp_duration_s": 20.0, "ramp_to_mbps": 30.0},
 }
+#: Round 3 (declared docs/evidence/round3-params.md, task 5): the DEV-band
+#: shapes. Same refusal semantics as S2B: the protocol is part of the
+#: scenario and user flags may not override it.
+S7_PROTOCOLS: dict[str, dict[str, float]] = {
+    "s7_up_20to60": {"link_mbps": 20.0, "drop_mbps": 20.0, "drop_at_s": 10.0,
+                     "recover_at_s": 10.0, "recover_to_mbps": 60.0},
+    "s7_up_30to100": {"link_mbps": 30.0, "drop_mbps": 30.0, "drop_at_s": 10.0,
+                      "recover_at_s": 10.0, "recover_to_mbps": 100.0},
+    "s7_rampup_30to100": {"link_mbps": 30.0, "ramp_at_s": 10.0,
+                          "ramp_duration_s": 20.0, "ramp_to_mbps": 100.0},
+    "s7_down_100to15": {"link_mbps": 100.0, "drop_mbps": 15.0, "drop_at_s": 10.0},
+    "s7_down_100to8": {"link_mbps": 100.0, "drop_mbps": 8.0, "drop_at_s": 10.0},
+}
+#: Every scenario name whose link protocol is part of the scenario.
+SCENARIO_PROTOCOLS: dict[str, dict[str, float]] = {**S2B_PROTOCOLS,
+                                                   **S7_PROTOCOLS}
 ALL_SYSTEMS = [SystemSpec.B0, SystemSpec.B1, SystemSpec.B1_ORACLE,
-               SystemSpec.ACIQ]
+               SystemSpec.B1_CONS, SystemSpec.B1_AUTO, SystemSpec.ACIQ]
 
 
 def expected_s5_note(note: str) -> bool:
@@ -318,7 +336,7 @@ def main() -> int:
     # so an s2b step that passes neither flag cannot be accused of
     # overriding the protocol with the base scenarios' defaults.
     for sc in scenarios:
-        proto = S2B_PROTOCOLS.get(sc)
+        proto = SCENARIO_PROTOCOLS.get(sc)
         if proto is None:
             continue
         conflicts = []
@@ -341,10 +359,15 @@ def main() -> int:
     try:
         for sc in scenarios:
             for sysspec in systems:
-                m = mode if sysspec is SystemSpec.ACIQ else CapacityMode.STATIC
+                # The adaptive-CAKE baseline (round 3) runs the ADAPTIVE
+                # loop: it exists so the engine's decision chain meets a
+                # different queue discipline, so a static run of it would
+                # not be the declared arm.
+                m = (mode if sysspec in (SystemSpec.ACIQ, SystemSpec.B1_AUTO)
+                     else CapacityMode.STATIC)
                 for seed in seeds:
                     print(f"\n=== {sc} / {sysspec.value} / {m.value} / seed {seed} ===")
-                    proto = S2B_PROTOCOLS.get(sc) or {}
+                    proto = SCENARIO_PROTOCOLS.get(sc) or {}
                     run_link = proto.get("link_mbps", args.link)
                     run_drop = proto.get("drop_mbps", args.drop)
                     run_drop_at = proto.get("drop_at_s", args.drop_at)

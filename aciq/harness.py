@@ -79,6 +79,16 @@ class SystemSpec(str, Enum):
     #: has already fixed the rate", and every artefact/config carrying it must
     #: say so. Nothing else differs from B1 -- same qdisc kind, same tree.
     B1_ORACLE = "b1_cake_oracle"
+    #: Round 3 (docs/evidence/round3-params.md, task 4). CAKE-conservative:
+    #: single-class CAKE at 50% of the STARTING link, set and forget -- the
+    #: static arm that gives up half the link up front to never overshoot.
+    B1_CONS = "b1_cake_cons"
+    #: Round 3. Adaptive-CAKE baseline: single-class CAKE at 0.95 x the
+    #: current link, re-applied by the SAME estimator/governor/law machinery
+    #: the ACIQ arm runs (a declared queue-discipline baseline, NOT an
+    #: inference baseline -- every decision is identical, only the qdisc and
+    #: the tree differ). Must be run with --mode adaptive; static stays B1.
+    B1_AUTO = "b1_cake_auto"
 
 
 class CapacityMode(str, Enum):
@@ -234,6 +244,76 @@ SCENARIOS: dict[str, Scenario] = {
         duration_s=60.0,
         settle_s=4.0,
     ),
+    # Round 3, task 5 (docs/evidence/round3-params.md): DEV-band shapes for
+    # the demand-probe/severe-drop tuning, declared BEFORE any run and run
+    # ONLY on seeds 1000-1009; the final band (1100-1109) reuses them as
+    # unseen shapes. Same workloads and settle as s2/s4 so every number
+    # reads against those tables; the protocols live in
+    # run_experiments.S7_PROTOCOLS. Up-shapes get 60 s (s4's duration): a
+    # bounded multiplicative climb needs room that 40 s does not leave
+    # after the declared 12 s probe window.
+    "s7_up_20to60": Scenario(
+        name="s7_up_20to60",
+        workloads=(
+            Workload("call", "call", 1, dscp=46),
+            Workload("bulk", "bulk", 1),
+        ),
+        duration_s=60.0,
+        settle_s=4.0,
+    ),
+    "s7_up_30to100": Scenario(
+        name="s7_up_30to100",
+        workloads=(
+            Workload("call", "call", 1, dscp=46),
+            Workload("bulk", "bulk", 1),
+        ),
+        duration_s=60.0,
+        settle_s=4.0,
+    ),
+    "s7_rampup_30to100": Scenario(
+        name="s7_rampup_30to100",
+        workloads=(
+            Workload("call", "call", 1, dscp=46),
+            Workload("bulk", "bulk", 1),
+        ),
+        duration_s=60.0,
+        settle_s=4.0,
+    ),
+    "s7_down_100to15": Scenario(
+        name="s7_down_100to15",
+        workloads=(
+            Workload("call", "call", 1, dscp=46),
+            Workload("bulk", "bulk", 1),
+        ),
+        duration_s=40.0,
+        settle_s=4.0,
+    ),
+    "s7_down_100to8": Scenario(
+        name="s7_down_100to8",
+        workloads=(
+            Workload("call", "call", 1, dscp=46),
+            Workload("bulk", "bulk", 1),
+        ),
+        duration_s=40.0,
+        settle_s=4.0,
+    ),
+    # Round 3, task 5: S3 as-shipped does not stress the link (game at
+    # 30 pps + <=8 Mbps per TV against 100 Mbps; docs/gap-closure/
+    # qos-baseline-comparison.md says so verbatim). This stress variant
+    # adds a bulk background so demand exceeds capacity and B0's gaming
+    # delay becomes visible; final band runs the STRESSED variant.
+    "s3_stress": Scenario(
+        name="s3_stress",
+        workloads=(
+            Workload("game", "game", 1, dscp=46),
+            Workload("video", "tv1", 1),
+            Workload("video", "tv2", 1),
+            Workload("video", "tv3", 1),
+            Workload("bulk", "bulk", 1),
+        ),
+        duration_s=40.0,
+        settle_s=4.0,
+    ),
 }
 
 
@@ -288,6 +368,12 @@ class RunResult:
     #: observed is the evidence.
     duration_s: float = 0.0
     notes: list[str] = field(default_factory=list)
+    #: Round 3 (docs/evidence/round3-params.md, task 5): the git commit hash
+    #: these runs were produced from. Numbers are stamped with the code version
+    #: that produced them; report headers per band quote it and any band whose
+    #: hash differs from the shipped controller gets marked SUPERSEDED, not
+    #: compared silently against it.
+    commit_hash: str | None = None
     #: Resource overhead of the controller while it ran, T5 fix round:
     #: mean CPU fraction, peak RSS and the closed-loop decision latency
     #: distribution. Populated from the per-tick samples at end of run; None
@@ -303,18 +389,24 @@ class RunResult:
 
 
 def baseline_tree(system: SystemSpec, capacity_mbps: float):
-    """Single-class tree for B0 and B1. Both proven by gate checks 10a/10b.
+    """Single-class tree for B0/B1/B1_CONS/B1_AUTO/B1_ORACLE. Proven by gate
+    checks 10a/10b.
 
     The parent still caps the link, and the single leaf's ceil is clamped to
     capacity — the measured rule. B1 sits at 95% so it does not fight the
     parent for the same bytes (double shaping at equal rates is unpredictable).
+    B1_CONS (round 3) sits at 50% of the STARTING link: the static arm that
+    deliberately gives away headroom so it can never overshoot.
     """
     from .tc import TcClass, TcTree
     # Separate argv elements. A single "cake bandwidth 95mbit" token makes tc
     # fail with "Specified qdisc kind is unknown", which reads like a missing
     # module rather than a malformed argument.
-    leaf = (("pfifo", "limit", "1000") if system is SystemSpec.B0
-            else ("cake", "bandwidth", f"{0.95 * capacity_mbps:.4f}mbit"))
+    if system is SystemSpec.B0:
+        leaf = ("pfifo", "limit", "1000")
+    else:
+        frac = 0.50 if system is SystemSpec.B1_CONS else 0.95
+        leaf = ("cake", "bandwidth", f"{frac * capacity_mbps:.4f}mbit")
     return TcTree(
         capacity_mbps=capacity_mbps,
         default_class=SINGLE_CLASS_ID.split(":")[1],
@@ -865,6 +957,10 @@ class Harness:
         # safe for a later lease rebuild to trust this rather than the value the
         # run started at.
         self._capacity_mbps = capacity_mbps
+        # Which system this tree belongs to. The ADAPTIVE loop needs to know:
+        # the B1_AUTO arm reuses the estimator/governor/law machinery but
+        # re-applies a single-class CAKE tree instead of a RatePlan.
+        self._system = system
         if system is SystemSpec.ACIQ:
             # The tree is built already shaped (INITIAL_PARENT_FRACTION x
             # commanded link, docs/evidence/task2-params.md #4): the launch
@@ -924,6 +1020,9 @@ class Harness:
     _capacity_mbps: float | None = None
     _lease: Lease | None = None
     _tree = None
+    #: The system this tree was last built for. None until the first
+    #: apply_system; set per call (the adaptive-CAKE branch reads it).
+    _system: SystemSpec | None = None
 
     def set_lease(self, lease: Lease | None, capacity_mbps: float) -> None:
         self._lease = lease
@@ -1088,7 +1187,8 @@ class Harness:
         # as a change, the estimator's evidence pool is simply held until
         # dwell/step permit an application.
         prev_rate = (self._current_plan.capacity_mbps
-                     if self._current_plan is not None else None)
+                     if self._current_plan is not None
+                     else self._capacity_mbps)
 
         # M2.5 -- the rate governor. The estimator's belief is a ceiling, not
         # an application: the applied rate may not exceed cap_fraction x
@@ -1129,6 +1229,48 @@ class Harness:
         # entry below records BOTH, so an evidence file can show a clamped
         # step as clamped, never as the estimator's own figure.
         applied = bound.rate
+        # Round 3 (docs/evidence/round3-params.md, arm B1_AUTO): the
+        # adaptive-CAKE baseline runs the IDENTICAL estimator/governor/law
+        # chain; only what carries the rate differs. Instead of a four-class
+        # RatePlan the rate is applied by a full single-class CAKE rebuild
+        # through apply_system. The transaction history still records the
+        # change (decided/allowed/reason fields verbatim), an S5-style failed
+        # rebuild leaves the tree as it was and is recorded as not-committed.
+        if self._system is SystemSpec.B1_AUTO:
+            ok = self.apply_system(SystemSpec.B1_AUTO, applied)
+            self._bound_reason = bound.reason
+            if bound.emergency:
+                self.law_events.append({
+                    "t": round(now, 2), "wanted": round(cap.mbps, 3),
+                    "allowed": round(applied, 3),
+                    "note": "emergency dwell skip"})
+            if ok:
+                self._last_policy_change_t = now
+                if self._controller is not None:
+                    self._controller.notify_change(now)
+            self.policy_change_log.append({
+                "t": round(now, 2),
+                "intended_capacity_mbps": round(cap.mbps, 3),
+                "intended_parent_rate_mbps": round(applied, 3),
+                "governor": {"rate": round(want, 3), "reason": gov.reason,
+                             "ceiling_mbps": (round(gov.ceiling_mbps, 3)
+                                              if gov.ceiling_mbps is not None
+                                              else None),
+                             "delay_ema_ms": (round(gov.delay_ema_ms, 2)
+                                              if gov.delay_ema_ms is not None
+                                              else None)},
+                "law_bound_reason": bound.reason,
+                "committed": bool(ok),
+                "ok": bool(ok),
+                "rolled_back": False,
+                "kernel_touched": bool(ok),
+                "reason": ("" if ok
+                           else f"apply_system rebuild failed: "
+                                f"{self.txn.last_reason}"),
+                "violations": [], "mismatches": [],
+                "applied_state": self._read_applied_rates(),
+            })
+            return (applied if ok else None), bool(ok)
         plan = build_plan(applied, self._lease)
         self._current_plan = plan
         # The dwell window measures REAL changes: the stamp moves here --
