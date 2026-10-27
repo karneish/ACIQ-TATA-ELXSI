@@ -1104,7 +1104,9 @@ class Harness:
             backlog_bytes=measurement.bottleneck_backlog_bytes,
             offered=offered,
             now=now,
-            min_rate=self._governor_floor(cap.mbps))
+            min_rate=self._governor_floor(cap.mbps),
+            belief_conf=cap.confidence,
+            belief_saturated=cap.saturated)
         self.last_governor = gov
         want = gov.rate
         if want is None:

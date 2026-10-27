@@ -51,12 +51,35 @@ WHAT IS NOT HERE, DELIBERATELY
 * The law stays untouched (dwell, step, floor, emergency, rollback/stand-
   down). The governor proposes; `bound_rate_change` disposes. Everything
   the verifier rejects still means "no rate moves".
-* The bottleneck's delay probe being unreadable (netem absent, e.g. offline
-  tests) means NO ratchet, not a guess: the ceiling alone still applies, and
-  no delay is ever invented.
 * No rate floor of its own: the plan's floors (aciq.policy.floor_total_mbps)
   decide what the tree can legally carry. The governor receives the floor
   from the harness and never proposes below it.
+
+ROUND-3 ADDITIONS (docs/evidence/round3-params.md, declared before any
+run; per-tick diagnosis in docs/evidence/round3-diagnosis.md). Two failures
+were measured on the S2b band's committed artefacts:
+
+* up-steps NEVER climb. The probe gate `offered > probe_ratio x applied`
+  is unsatisfiable when the bulk source is window-limited by the tree
+  itself: offered rides exactly at the applied rate. And the ceiling can
+  never rise, because a saturated observation cannot exist while the tree
+  is the limiting pipe. Result: the tree pins at `0.9 x last saturate`
+  forever (measured seed 800: applied 16.52 for the remaining 37 s of the
+  run against a true 100 Mbps link).
+  The DEMAND PROBE replaces the demand gate with the pipe-limited
+  signature -- delay clear, offered >= DEMAND_FRAC x applied, sustained
+  -- and then resolves the ambiguity (real demand vs a finished source)
+  by a bounded probe-and-see: step up, watch the delay response, land at
+  the last known-good rate on any inflation (probe-and-see overshoot is
+  one ratchet-width of latency by construction).
+* severe drops WALK instead of landing. When the ceiling is saturated and
+  confident far below the applied rate, the descent was an emergency --
+  but the emergency was VETOED whenever the plan floor exceeded the
+  ceiling (`min_rate <= ceiling` gate): on seed 800 (100 -> 10) the
+  ceiling 9.95 lost to the 14.0 floor, so the law's 25%/5 s envelope
+  walked 7 commits over ~31 s and bind failed 8/10 seeds. The veto is
+  replaced by an honest landing at `max(ceiling, min_rate)`: the floor is
+  still respected, and one law-emergency commit replaces the walk.
 """
 
 from __future__ import annotations
@@ -148,6 +171,51 @@ CAPACITY_EMERGENCY_COLLAPSE_FRAC = 0.5
 #: closer to 1 follows the netem's burst artifacts tick by tick.
 DELAY_ALPHA = 0.5
 
+#: Round 3 (docs/evidence/round3-params.md). Sustained seconds of the
+#: pipe-limited demand signature -- delay EMA clear AND
+#: offered >= PROBE_DEMAND_FRAC x applied -- before a ceiling-piercing
+#: probe may fire. A step in the dark needs a sustained window; this is
+#: seeded from HOLD_CLEAR_S and tuned ONLY on the s7_* DEV band.
+PROBE_HOLD_S = 12.0
+
+#: Round 3. Multiplicative probe step above the (stale) ceiling.
+#: 0.25 matches the law's up envelope exactly, so a probe commit need
+#: never be step-clamped by the verifier; tuned ONLY on the DEV band.
+PROBE_UP_FRAC = 0.25
+
+#: Round 3. The pipe-limited signature: offered >= DEMAND_FRAC x applied.
+#: The old gate demanded offered > 1.05 x applied, which can never hold
+#: for a source window-limited by the tree (measured: offered 15.1-16.1
+#: against applied 16.52 for the rest of an s2b_step_up run).
+PROBE_DEMAND_FRAC = 0.85
+
+#: Round 3. Grace for the demand window: the signature may flicker for
+#: this many seconds (TCP senders catch up to an opened tree within a
+#: couple of ticks) before the window resets and a fresh full hold is
+#: required. Without the grace, one light tick restarts a 12 s hold.
+PROBE_DEMAND_GAP_S = 3.0
+
+#: Round 3. After a probe overshoot lands its backoff, new probes are
+#: blocked this long: back-offs are prioritized, rises are cheap.
+PROBE_BACKOFF_S = 30.0
+
+#: Round 3. Overshoot signature: the wire still carries at least this
+#: fraction of the applied rate while delay inflates. That is what the
+#: tree sitting above the TRUE link looks like (delivered ~= link). A
+#: genuine capacity collapse leaves delivered far below -- delivered
+#: 10.9-13.2 Mbps against applied 45-72 on seed 800 -- so a real drop
+#: still goes through the ordinary ratchet and its law bounds.
+PROBE_RUNNING_FRAC = 0.6
+
+#: Round 3. Severe-drop trigger: ceiling < SEVERE_DROP_FRAC x applied
+#: with estimator confidence >= SEVERE_DROP_CONF. The seeded values read
+#: straight off the seed-800 step_10 ledger (ceiling 9.95 against
+#: applied 60.03 at conf 1.00) and are tuned ONLY on the DEV band.
+#: Below CAPACITY_EMERGENCY_COLLAPSE_FRAC the old conf-less emergency
+#: still rules; between the two fractions the confidence gate decides.
+SEVERE_DROP_FRAC = 0.6
+SEVERE_DROP_CONF = 0.6
+
 _EPS = 1e-9
 
 
@@ -166,6 +234,14 @@ class GovernorConfig:
     delay_alpha: float = DELAY_ALPHA
     delay_emergency_ms: float = DELAY_EMERGENCY_MS
     delay_emergency_cooldown_s: float = DELAY_EMERGENCY_COOLDOWN_S
+    probe_hold_s: float = PROBE_HOLD_S
+    probe_up_frac: float = PROBE_UP_FRAC
+    probe_demand_frac: float = PROBE_DEMAND_FRAC
+    probe_demand_gap_s: float = PROBE_DEMAND_GAP_S
+    probe_backoff_s: float = PROBE_BACKOFF_S
+    probe_running_frac: float = PROBE_RUNNING_FRAC
+    severe_drop_frac: float = SEVERE_DROP_FRAC
+    severe_drop_conf: float = SEVERE_DROP_CONF
 
     def __post_init__(self):
         if not (0.5 < self.cap_fraction < 0.999):
@@ -184,9 +260,34 @@ class GovernorConfig:
         if self.max_changes_per_min < 1:
             raise ValueError("max_changes_per_min must be >= 1")
         for _n, _v in (("hold_clear_s", self.hold_clear_s),
-                       ("delay_alpha", self.delay_alpha)):
+                       ("delay_alpha", self.delay_alpha),
+                       ("probe_hold_s", self.probe_hold_s),
+                       ("probe_demand_gap_s", self.probe_demand_gap_s),
+                       ("probe_backoff_s", self.probe_backoff_s)):
             if _v <= 0.0:
                 raise ValueError(f"{_n} must be positive")
+        if not (0.0 < self.probe_up_frac <= 1.0):
+            # Unlike up_step_frac (bounded by down_step_frac so a wrong
+            # ceiling-clip climb costs at most one ratchet width), the
+            # ROUND-3 piercing step is tuned independent of the descent:
+            # the verifier's up envelope (MAX_RATE_STEP_FRAC 0.25) is the
+            # hard bound on what reaches the tree regardless.
+            raise ValueError(
+                f"probe_up_frac {self.probe_up_frac} must be in (0, 1]")
+        if not (0.0 < self.probe_demand_frac <= 1.0):
+            raise ValueError(
+                f"probe_demand_frac {self.probe_demand_frac} outside (0, 1]")
+        if not (0.0 < self.probe_running_frac < 1.0):
+            raise ValueError(
+                f"probe_running_frac {self.probe_running_frac} outside (0, 1)")
+        if not (0.0 < self.severe_drop_conf <= 1.0):
+            raise ValueError(
+                f"severe_drop_conf {self.severe_drop_conf} outside (0, 1]")
+        if self.severe_drop_frac <= CAPACITY_EMERGENCY_COLLAPSE_FRAC:
+            raise ValueError(
+                f"severe_drop_frac {self.severe_drop_frac} must exceed "
+                f"CAPACITY_EMERGENCY_COLLAPSE_FRAC "
+                f"{CAPACITY_EMERGENCY_COLLAPSE_FRAC}")
 
 
 @dataclass(frozen=True)
@@ -203,6 +304,9 @@ class GovernorDecision:
     delivered_mbps: float | None = None   # post-queue goodput this tick
     delay_emergency: bool = False         # clearance fired this tick
     t: float = 0.0               # monotonic stamp the caller handed us
+    probe_known_good: float | None = None  # highest rate that survived its window
+    probe_block_remaining_s: float = 0.0   # >0 while new probes are blocked
+    demand_window_s: float = 0.0           # seconds the demand signature has held
 
 
 class RateGovernor:
@@ -227,6 +331,22 @@ class RateGovernor:
         # Last tick a delay emergency clearance was spent; the cooldown keeps
         # a shrinking episode from becoming a rapid-fire series of full jumps.
         self._delay_emergency_last: float | None = None
+        # Round 3 demand-probe state. The demand window is the pipe-limited
+        # signature (delay clear, offered >= DEMAND_FRAC x applied); the gap
+        # tracker lets one light tick through without restarting the hold.
+        self._demand_since: float | None = None
+        self._demand_gap_since: float | None = None
+        # Probe overshoot state: the highest rate known to have survived a
+        # full window without inflation, the cap probes may not exceed after
+        # a backoff, and the block deadline itself.
+        self._known_good: float | None = None
+        self._rise_cap: float | None = None
+        self._last_rise: tuple[float, float] | None = None
+        self._probe_block_until: float | None = None
+        # Freshness of the ceiling: saturated observations keep refreshing
+        # it even while the tree pins at the ceiling. Piercing is only for
+        # ceilings no saturated sample has refreshed inside the window.
+        self._last_saturated_t: float | None = None
         #: Full decision log for the run artefact. One small dict per tick.
         self.log: list[dict] = []
 
@@ -253,7 +373,9 @@ class RateGovernor:
     def observe(self, belief: float | None, applied: float | None,
                 delivered: float | None, backlog_bytes: int | None,
                 offered: float | None, now: float,
-                min_rate: float | None = None) -> GovernorDecision:
+                min_rate: float | None = None,
+                belief_conf: float | None = None,
+                belief_saturated: bool | None = None) -> GovernorDecision:
         """One decision. Pure with respect to the tree; see the class doc.
 
         `belief`  -- the estimator's current number (None possible offline).
@@ -262,6 +384,10 @@ class RateGovernor:
         None disables the delay ratchet for this tick (no invention).
         `offered` -- pre-queue demand; feeds the probe-up gate only.
         `min_rate` -- the plan's total floor; never proposed below it.
+        `belief_conf` / `belief_saturated` -- the estimator's confidence and
+        saturation flag this tick; the severe-drop trigger gates on
+        confidence, and the probe's pierce permission goes STALE whenever a
+        saturated observation has refreshed the ceiling inside the window.
         """
         cfg = self.cfg
         changed = False
@@ -269,6 +395,8 @@ class RateGovernor:
         ceiling = None
         if belief is not None and belief > 0.0:
             ceiling = cfg.cap_fraction * belief
+        if belief_saturated:
+            self._last_saturated_t = now
 
         # ------------------------------------------------ delay probe
         delay_ms = None
@@ -296,6 +424,48 @@ class RateGovernor:
         held_clear = (self._clear_since is not None
                       and (now - self._clear_since) >= cfg.hold_clear_s)
 
+        # The tree's launch state is the first thing that has survived
+        # anything: it seeds known-good, so a launch-time probe overshoot
+        # has a real rate to land back at instead of a bare ratchet step.
+        if applied is not None and self._known_good is None:
+            self._known_good = applied
+
+        # ------------------------------------------------ demand window
+        # Round 3: the pipe-limited signature. offered riding at or above
+        # DEMAND_FRAC x applied while the delay is CLEAR is what a source
+        # window-limited by our own tree looks like; a finished source
+        # decays below it. The gap grace keeps a single light tick from
+        # restarting the hold.
+        demand_ok = (clear and applied is not None and applied > 0.0
+                     and offered is not None and offered > 0.0
+                     and offered >= cfg.probe_demand_frac * applied)
+        if demand_ok:
+            if self._demand_since is None:
+                self._demand_since = now
+            self._demand_gap_since = None
+        elif self._demand_since is not None:
+            if self._demand_gap_since is None:
+                self._demand_gap_since = now
+            if inflating or not clear or (
+                    (now - self._demand_gap_since)
+                    > cfg.probe_demand_gap_s):
+                self._demand_since = None
+                self._demand_gap_since = None
+        held_demand = (self._demand_since is not None
+                       and (now - self._demand_since) >= cfg.probe_hold_s)
+
+        # ------------------------------------------------ probe survivors
+        # A probe rise that has lived clear for a full window promotes itself
+        # to known-good and lifts the overshoot cap: the climb may continue.
+        if (self._last_rise is not None and clear
+                and applied is not None
+                and (now - self._last_rise[0]) >= cfg.probe_hold_s
+                and applied >= self._last_rise[1] - 0.5):
+            self._known_good = max(self._known_good or 0.0,
+                                   self._last_rise[1])
+            self._rise_cap = None
+            self._last_rise = None
+
         # ------------------------------------------------ budget
         # The ledger's currency is now RISES only: descent is bounded by the
         # law's dwell instead, so it can never starve behind the budget that
@@ -318,8 +488,11 @@ class RateGovernor:
         rate, reason, emerg = self._decide(
             cfg, applied=applied, ceiling=ceiling,
             inflating=inflating, held_clear=held_clear,
+            held_demand=held_demand, demand_ok=demand_ok,
+            delivered=delivered,
             offered=offered, min_rate=min_rate, budget_left=budget_left,
-            delay_ema=self._delay_ema, emerg_free=emerg_free)
+            delay_ema=self._delay_ema, emerg_free=emerg_free, now=now,
+            belief_conf=belief_conf)
 
         if emerg:
             self._delay_emergency_last = now
@@ -327,6 +500,10 @@ class RateGovernor:
         if applied is not None and rate is not None and rate > applied:
             changed = True
             self._change_ts.append((now, True))
+            if reason.startswith("demand-probe up"):
+                # A piercing probe went out. Hold onto its stamp: the rise
+                # survives a full clear window and it becomes known-good.
+                self._last_rise = (now, rate)
         elif applied is not None and rate is not None and rate < applied:
             # A descent is real change for the log; it never spends the
             # budget (see the ledger comment above).
@@ -341,13 +518,21 @@ class RateGovernor:
             belief_mbps=belief, ceiling_mbps=ceiling,
             delay_ms=delay_ms, delay_ema_ms=self._delay_ema,
             changed=changed, delivered_mbps=delivered,
-            delay_emergency=bool(emerg), t=now)
+            delay_emergency=bool(emerg), t=now,
+            probe_known_good=self._known_good,
+            probe_block_remaining_s=(max(0.0, self._probe_block_until - now)
+                                     if self._probe_block_until is not None
+                                     else 0.0),
+            demand_window_s=((now - self._demand_since)
+                             if self._demand_since is not None else 0.0))
         self.log.append(vars(dec).copy())
         return dec
 
     def _decide(self, cfg: GovernorConfig, *, applied, ceiling,
-                inflating, held_clear, offered, min_rate, budget_left,
-                delay_ema, emerg_free: bool):
+                inflating, held_clear, held_demand, demand_ok, delivered,
+                offered, min_rate, budget_left, delay_ema,
+                emerg_free: bool, now: float = 0.0,
+                belief_conf: float | None = None):
         """The rule table, in one place so the reasons stay readable."""
         if ceiling is None and applied is None:
             return None, "no estimate and nothing applied yet", False
@@ -360,6 +545,36 @@ class RateGovernor:
             return ceiling, f"first rate: ceiling ({cfg.cap_fraction} x belief)", False
 
         if inflating:
+            # Round 3 probe overshoot: the tree climbed above the TRUE link
+            # through a piercing probe. The signature is a pierce in play
+            # (a rise stamp or a live cap) with the wire still carrying
+            # most of the applied rate (delivered ~= link, far from the
+            # collapse regime). A genuine capacity drop has delivered far
+            # below this fraction and falls through to the ordinary
+            # ratchet and its law bounds.
+            overshoot = ((self._rise_cap is not None
+                          or self._last_rise is not None)
+                         and delivered is not None
+                         and delivered >= cfg.probe_running_frac * applied)
+            if overshoot:
+                land = (self._known_good
+                        if self._known_good is not None
+                        else applied * (1.0 - cfg.down_step_frac))
+                if delivered is not None:
+                    # never land above what the wire is actually carrying
+                    land = min(land, delivered)
+                if min_rate is not None:
+                    land = max(land, min_rate)
+                if land < applied:
+                    self._last_rise = None
+                    self._rise_cap = self._known_good
+                    self._probe_block_until = now + cfg.probe_backoff_s
+                    why = (f"probe overshoot: delay inflated {delay_ema:.1f} "
+                           f"ms, wire carries {delivered:.1f} of applied "
+                           f"{applied:.1f}: land at known-good "
+                           f"{land:.1f} Mbps")
+                    return land, why, False
+
             if ceiling is None:
                 # No belief yet (estimate not established): no ceiling to
                 # obey, so nothing may ratchet either — hold.
@@ -375,42 +590,110 @@ class RateGovernor:
                 return ceiling, (f"delay inflated {delay_ema:.1f} ms > "
                                  f"{cfg.inflation_threshold_ms:.0f} ms: held "
                                  f"at ceiling"), False
-            # Declared DOWN emergencies (docs/evidence/task2-params.md):
+            # Declared DOWN emergencies (docs/evidence/task2-params.md, and
+            # round 3 in docs/evidence/round3-params.md):
             # 1) delay-driven twin of the law's dead drop-rate emergency --
             #    a capacity drop backs the queue up instead of dropping;
             # 2) capacity collapse -- ceiling <= COLLAPSE_FRAC x applied
             #    (dev-band measured: ceiling 0.21x applied with delay EMA
-            #    37-72 ms, and the law's walk-down ran out of window).
-            # Both share the emergency cooldown and bypass dwell + step
-            # envelope for that single DOWN commit.
+            #    37-72 ms, and the law's walk-down ran out of window);
+            # 3) severe drop -- ceiling < SEVERE_DROP_FRAC x applied while
+            #    the estimator is confident (>= SEVERE_DROP_CONF). This one
+            #    exists because the seed-800 ledger measured the collapse
+            #    veto dying on the plan floor: the old `min_rate <=
+            #    ceiling` gate refused every landing whose ceiling was
+            #    below the 14.0 floor, so the law's 25%/5 s envelope walked
+            #    7 commits and bind failed 8/10 seeds. All three share the
+            #    emergency cooldown and bypass dwell + step envelope for
+            #    that single DOWN commit, landing at max(ceiling, floor):
+            #    the floor stays respected, the walk does not happen.
             delay_shock = (delay_ema is not None
                            and delay_ema >= cfg.delay_emergency_ms)
             collapse = (ceiling is not None
                         and ceiling < applied
                         * CAPACITY_EMERGENCY_COLLAPSE_FRAC)
-            if ((delay_shock or collapse) and emerg_free
-                    and ceiling < applied
-                    and (min_rate is None or min_rate <= ceiling)):
+            severe = (ceiling is not None
+                      and belief_conf is not None
+                      and belief_conf >= cfg.severe_drop_conf
+                      and ceiling < applied * cfg.severe_drop_frac)
+            if ((delay_shock or collapse or severe) and emerg_free
+                    and ceiling < applied):
+                land = (max(ceiling, min_rate)
+                        if min_rate is not None else ceiling)
                 if delay_shock:
                     why = (f"delay emergency {delay_ema:.1f} ms >= "
                            f"{cfg.delay_emergency_ms:.0f} ms: descent "
-                           f"to ceiling in one commit")
+                           f"as max(ceiling, floor) in one commit")
+                elif severe:
+                    why = (f"severe drop: ceiling {ceiling:.2f} < "
+                           f"{cfg.severe_drop_frac:.2f}x applied "
+                           f"{applied:.2f} at confidence {belief_conf:.2f}: "
+                           f"land at max(ceiling {ceiling:.2f}, floor "
+                           f"{min_rate:.1f}) in one commit")
                 else:
                     why = (f"capacity emergency: ceiling {ceiling:.2f} < "
                            f"{CAPACITY_EMERGENCY_COLLAPSE_FRAC:.2f}x "
-                           f"applied {applied:.2f}: descent to ceiling "
-                           f"in one commit")
-                return ceiling, why, True
+                           f"applied {applied:.2f}: land at "
+                           f"max(ceiling, floor) in one commit")
+                return land, why, True
             return rate, (f"delay inflated {delay_ema:.1f} ms > "
                           f"{cfg.inflation_threshold_ms:.0f} ms: "
                           f"ratchet down one step"), False
 
+        # Round 3: the DEMAND PROBE. Pipe-limited demand evidence held for
+        # a full window (delay clear, offered >= DEMAND_FRAC x applied),
+        # no probe block, budget left, and the ceiling either absent or
+        # already pierced (a ceiling no saturated sample refreshed -- see
+        # _last_saturated_t) — then the ambiguity between "bulk wants
+        # more" and "bulk has finished" is resolved by seeing: one
+        # bounded multiplicative step, the delay response is the verdict,
+        # and any inflation lands the tree back at known-good.
+        block_expired = (self._probe_block_until is None
+                         or now >= self._probe_block_until)
+        # Ceiling freshness: a saturated observation refreshes the ceiling
+        # even while the tree pins at it; a ceiling untouched for a full
+        # window is stale and may be pierced. The 0.5% floor on the gap
+        # keeps ordinary numerical drift from registering headroom: with
+        # real headroom the old 2%-toward-ceiling climb below rules.
+        ceiling_stale = (ceiling is None
+                         or (self._last_saturated_t is None
+                             or now - self._last_saturated_t
+                             >= cfg.probe_hold_s)
+                             and applied >= ceiling * (1.0 - 0.005))
+        # The window must be held AND this tick must still carry the
+        # signature: the probe's own reason quotes THIS tick's offered
+        # figure, so the action cannot rest on evidence that just lapsed.
+        pierce_ok = (held_demand and demand_ok and block_expired
+                     and budget_left > 0 and ceiling_stale)
+        if pierce_ok:
+            if self._probe_block_until is not None:
+                # the block expired: a new full demand window has held, so
+                # the overshoot cap yields (docs/evidence/round3-params.md)
+                self._rise_cap = None
+                self._probe_block_until = None
+            target = applied * (1.0 + cfg.probe_up_frac)
+            if self._rise_cap is not None:
+                target = min(target, self._rise_cap)
+            if min_rate is not None:
+                target = max(target, min_rate)
+            if target <= applied * (1.0 + _EPS):
+                return applied, (f"demand window held but the probe cap "
+                                 f"{self._rise_cap:.1f} leaves no step"), False
+            note = (f", capped at known-good {self._rise_cap:.1f}"
+                    if self._rise_cap is not None else "")
+            return (target,
+                    f"demand-probe up: pipe-limited demand evidence "
+                    f"(offered {offered:.1f} >= "
+                    f"{cfg.probe_demand_frac:.2f}x applied {applied:.1f} "
+                    f"for {cfg.probe_hold_s:.0f} s; step "
+                    f"{cfg.probe_up_frac:.2f}){note}", False)
+
         if held_clear and offered is not None and offered > 0.0:
-            if ceiling is None:
-                return applied, "clear but no ceiling to probe toward", False
             if offered <= applied * cfg.probe_ratio:
                 return applied, (f"clear for {cfg.hold_clear_s:.0f} s but "
                                  f"offered {offered:.1f} does not demand it"), False
+            if ceiling is None:
+                return applied, "clear but no ceiling to probe toward", False
             if applied >= ceiling * (1.0 - _EPS):
                 return applied, "clear and demanded, already at ceiling", False
             if min_rate is not None and min_rate >= ceiling:

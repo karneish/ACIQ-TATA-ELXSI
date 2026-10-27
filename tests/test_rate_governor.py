@@ -18,8 +18,19 @@ The contracts proven here:
   rises; without demand or clarity, it never does;
 - the budget: the governor cannot generate more changes per minute than
   its configuration allows;
-- honesty: every decision carries a reason, and an unreadable delay probe
+- the honesty: every decision carries a reason, and an unreadable delay probe
   produces no ratchet, never an invented rate.
+
+Round-3 tests (docs/evidence/round3-params.md; the two S2b failures were
+diagnosed per-tick in docs/evidence/round3-diagnosis.md):
+- the demand probe: pipe-limited demand (offered riding at the applied
+  rate on a clear delay) pierces a stale ceiling in bounded steps;
+- the overshoot backoff: a probe that inflates delay lands at known-good
+  and blocks fresh probes for the backoff window;
+- the severe drop: a confident saturated ceiling far below the applied
+  rate lands in ONE commit at max(ceiling, floor) -- the seed-800
+  step_10 ledger where the plan floor 14.0 vetoed the old emergency and
+  the law walked 25% per 5 s commit, 8/10 seeds failing to bind.
 """
 
 from __future__ import annotations
@@ -381,6 +392,160 @@ class TestEvidence(unittest.TestCase):
         self.assertEqual(d.delay_ema_ms,
                          0.5 * (1_900_000 / (100.0 * 125.0))
                          + 0.5 * 0.0)
+
+
+class TestDemandProbe(unittest.TestCase):
+    """Round 3: upward probing into a black box past the stale ceiling.
+
+    The measured failure (round3-diagnosis.md section 1, seed 800): applied
+    pins at ceiling == 0.9 x last-saturated belief because no saturated
+    observation can exist while the tree is the limiting pipe, and the old
+    demand gate `offered > 1.05 x applied` is unsatisfiable for exactly the
+    same reason: offered rides at the applied rate.
+    """
+
+    def _pipecase(self, now: float, applied: float = 16.52,
+                  offered: float | None = None) -> object:
+        """One tick of the seed-800 post-recovery regime: delay clear,
+        bulk saturating the pipe (offered ~= applied), belief frozen at
+        its last saturated value."""
+        g = getattr(self, "_gov", None)
+        if g is None:
+            g = self._gov = gov()
+        offered = 15.7 if offered is None else offered
+        return g.observe(belief=18.36, belief_conf=0.0,
+                         belief_saturated=False,
+                         applied=applied, delivered=16.0,
+                         backlog_bytes=0, offered=offered, now=now,
+                         min_rate=14.0)
+
+    def test_inside_the_window_no_probe(self):
+        self._pipecase(0.0)
+        d = self._pipecase(6.0)
+        self.assertEqual(d.rate, 16.52)
+        self.assertIn("hold", d.reason)
+
+    def test_pipe_limited_demand_probes_past_a_stale_ceiling(self):
+        self._pipecase(0.0)
+        self._pipecase(6.0)
+        d = self._pipecase(13.0)   # window of 13 s has held
+        self.assertAlmostEqual(d.rate, 16.52 * (1.0 + GovernorConfig.probe_up_frac))
+        self.assertIn("demand-probe up", d.reason)
+        self.assertGreater(d.probe_known_good, 0.0)
+
+    def test_the_window_skips_a_few_light_ticks(self):
+        """One light tick must not restart the 12 s hold."""
+        self._pipecase(0.0)
+        self._pipecase(6.0, offered=5.0)     # light tick, inside the grace
+        self._pipecase(7.0)
+        d = self._pipecase(13.0)
+        self.assertAlmostEqual(d.rate, 16.52 * (1.0 + GovernorConfig.probe_up_frac))
+
+    def test_a_finished_source_never_probes(self):
+        """Offered decaying below DEMAND_FRAC x applied (past the gap
+        grace) is a source that is done, not demand."""
+        self._pipecase(0.0)
+        self._pipecase(6.0)
+        self._pipecase(12.0)
+        d = self._pipecase(20.0, offered=5.0)    # decayed: no signature
+        self.assertEqual(d.rate, 16.52)
+        self.assertIn("does not demand", d.reason)
+
+    def test_probe_overshoot_lands_at_known_good(self):
+        """A piercing probe that inflates the bottleneck lands at the last
+        known-good rate, capped by what the wire actually carries, and
+        blocks fresh probes for the backoff window."""
+        from aciq.ratecap import PROBE_BACKOFF_S
+        g = gov()
+        # Launch state seeds known-good at the applied rate.
+        d0 = g.observe(belief=None, applied=16.52, delivered=16.0,
+                       backlog_bytes=0, offered=15.7, now=0.0, min_rate=14.0)
+        self.assertEqual(d0.rate, 16.52)    # clearance-hold, no belief yet
+        self.assertFalse(d0.changed)
+        # demand window holds; the probe pierces (ceiling absent offline).
+        d = None
+        for t in (2.0, 6.0, 10.0, 13.0):
+            d = g.observe(belief=None, applied=16.52, delivered=16.0,
+                          backlog_bytes=0, offered=15.7, now=t,
+                          min_rate=14.0)
+        self.assertTrue(d.reason.startswith("demand-probe up"))
+        probe_want = d.rate
+        # the probe committed: the tree rises to the want; queue grows past
+        # the inflation threshold with the wire still carrying most of the
+        # applied rate (the overshoot signature).
+        delivered = 0.9 * probe_want
+        d1 = g.observe(belief=None,
+                       applied=probe_want, delivered=delivered,
+                       backlog_bytes=int(60.0 * delivered * 125.0),
+                       offered=probe_want, now=13.5, min_rate=14.0)
+        self.assertIn("probe overshoot", d1.reason)
+        self.assertLessEqual(d1.rate, delivered)
+        # fresh probes are blocked for the backoff window even though the
+        # demand signature re-establishes: back-offs are prioritized.
+        db = None
+        for t in range(15, 29):
+            db = g.observe(belief=None, applied=d1.rate, delivered=d1.rate,
+                           backlog_bytes=0, offered=d1.rate, now=float(t),
+                           min_rate=14.0)
+        self.assertIn("does not demand", db.reason)
+        self.assertGreater(db.probe_block_remaining_s, 0.0)
+        self.assertLess(db.probe_block_remaining_s, PROBE_BACKOFF_S)
+
+
+class TestSevereDrop(unittest.TestCase):
+    """Round 3: the emergency that the plan floor vetoed.
+
+    The measured ledger (round3-diagnosis.md section 2, seed 800 100->10):
+    the recovery at t=13.6 saturates the belief at 11.056 (ceiling 9.95)
+    while the applied rate is 60.03 and the plan floor is 14.0. The old
+    veto `min_rate <= ceiling` refused the collapse emergency forever, and
+    the law's 25%/5s envelope walked 7 commits over ~31 s.
+    """
+
+    def _post_drop_tick(self, g: RateGovernor, now: float, applied: float,
+                        delivered: float = 11.0):
+        return g.observe(belief=11.056144, belief_conf=1.0,
+                         belief_saturated=True,
+                         applied=applied, delivered=delivered,
+                         backlog_bytes=int(60.0 * delivered * 125.0),
+                         # 60 ms of queueing delay: inflated but below the
+                         # delay emergency's 100 ms band
+                         offered=11.0, now=now, min_rate=14.0)
+
+    def test_severe_drop_lands_in_one_commit_despite_the_floor(self):
+        """ceiling 9.95 < 0.6 x 60.03 at confidence 1.0 with the floor 14.0
+        above the ceiling: ONE commit lands at max(ceiling, floor) = 14.0."""
+        g = gov()
+        # priming tick at the pre-drop regime (clear delay, live belief)
+        g.observe(belief=97.63, belief_conf=0.3, belief_saturated=True,
+                  applied=87.87, delivered=95.0, backlog_bytes=10_000,
+                  offered=90.0, now=0.0, min_rate=35.0)
+        d = self._post_drop_tick(g, now=5.0, applied=60.03)
+        self.assertAlmostEqual(d.rate, 14.0)
+        self.assertTrue(d.delay_emergency)
+        self.assertIn("severe drop", d.reason)
+
+    def test_severe_drop_needs_confidence(self):
+        """In the (0.5x, 0.6x) band below the confidence threshold the
+        trigger has no say: the ordinary ratchet (and its law bounds)
+        decides, and no delay emergency fires."""
+        g = gov()
+        g.observe(belief=97.63, belief_conf=0.3, belief_saturated=True,
+                  applied=87.87, delivered=95.0, backlog_bytes=10_000,
+                  offered=90.0, now=0.0, min_rate=35.0)
+        d = g.observe(belief=11.056144, belief_conf=0.2,
+                      belief_saturated=True,
+                      applied=18.0, delivered=11.0,
+                      backlog_bytes=int(60.0 * 11.0 * 125.0),
+                      offered=11.0, now=5.0, min_rate=14.0)
+        # ceiling 9.95 < 0.6x18 = 10.8, but above the 0.5x collapse line;
+        # confidence 0.2 blocks the severe trigger. The plain ratchet is
+        # the decision (whose floor clamp still yields 14.0), but NO
+        # emergency: the law then step-clamps this move instead of
+        # landing it in one commit.
+        self.assertAlmostEqual(d.rate, 14.0)
+        self.assertFalse(d.delay_emergency)
+        self.assertIn("ratchet down one step", d.reason)
 
 
 if __name__ == "__main__":
