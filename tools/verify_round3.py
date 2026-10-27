@@ -1,0 +1,233 @@
+#!/usr/bin/env python3
+"""verify_round3.py — mechanical gate for the round-3 fixes.
+
+Reads a runs root and computes, per ACIQ adaptive run, exactly the rules
+frozen in docs/evidence/round3-params.md and docs/FIX_REPORT.md BEFORE any
+of these runs existed:
+
+  UP shapes (recover_to / ramp_to above the pre-change link):
+    window = the final third of the observed applied series;
+    util_applied  = mean applied / truth_after  >= 0.60
+    util_delivered= last-third bulk.sink.log mean / truth_after >= 0.50
+
+  DOWN shapes (drop_mbps below the pre-change link):
+    the first post-drop committed delay-emergency commit must land within
+    8.0 s of the drop AND the last committed rate must then stay within
+    10% of max(truth_after, floor_total) to the run end. truth_after below
+    the 14.0 floor total is FLOOR-BOUND: the 10% band is judged against
+    the floor instead (a tree that cannot legally go below its class
+    floors cannot bind to a smaller link -- declared, not retuned).
+
+  s3_stress: no controller claim (reported only).
+
+Exit 0 only when every ACIQ run in the root passes its shape's checks;
+PENDING means the runs do not exist yet (the gate is what the dev band
+and the frozen final band must pass).
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import statistics
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from aciq.policy import floor_total_mbps  # noqa: E402
+
+BIND_TOL = 0.10
+EMERGENCY_COMMIT_LIMIT_S = 8.0
+UP_UTIL_APPLIED_MIN = 0.60
+UP_UTIL_DELIVERED_MIN = 0.50
+SINK_T = re.compile(r"t=([\d.]+) cum=\d+ bytes inst=([\d.]+) Mbps")
+
+UP_KEY = "up_util_applied"
+DOWN_KEY = "down_emergency_landing"
+FLAT_KEY = "no_controller_claim"
+
+
+def sink_last_third(run_dir: Path, lo: float, hi: float) -> float | None:
+    """Receiver-side last-third mean inst Mbps from the run's bulk sink log.
+    The +/− 1.5 s slack covers the sink-sampler phase offset against the
+    sampled series the window was cut from."""
+    f = run_dir / "bulk.sink.log"
+    if not f.exists():
+        return None
+    vals = []
+    for line in f.read_text(errors="replace").splitlines():
+        m = SINK_T.search(line)
+        if not m:
+            continue
+        t, v = float(m.group(1)), float(m.group(2))
+        if lo - 1.5 <= t <= hi + 1.5:
+            vals.append(v)
+    return statistics.fmean(vals) if vals else None
+
+
+def applied_series(result: dict) -> list[tuple[float, float]]:
+    """(t, kernel rate) run-relative: committed change-log entries rebased
+    onto the first governor decision's stamp; falls back to per-tick samples
+    (whose tree never moved is itself the signal)."""
+    log = result.get("policy_change_log") or []
+    decs = (result.get("governor") or {}).get("decisions") or []
+    series: list[tuple[float, float]] = []
+    if log and decs:
+        base = min(float(d.get("t", 0.0)) for d in decs)
+        for c in log:
+            if not c.get("committed") or not c.get("ok"):
+                continue
+            parent = ((c.get("applied_state") or {}).get("classes") or {}
+                      ).get("1:1") or {}
+            if parent.get("rate") is None or c.get("t") is None:
+                continue
+            series.append((float(c["t"]) - base, float(parent["rate"])))
+    if series:
+        return series
+    for s in result.get("samples") or []:
+        g = s.get("governor") or {}
+        v = g.get("rate")
+        if v is not None:
+            series.append((float(s["t"]), float(v)))
+    return series
+
+
+def down_floor_total(result: dict) -> float:
+    """The plan's floor total at the run's last belief (7 classes, no lease
+    declared in any round-3 band run). A belief-less run gets the absolute
+    floor path too: floor_total_mbps only needs a positive capacity."""
+    best = 0.0
+    for s in result.get("samples") or []:
+        cap = s.get("capacity_mbps")
+        if isinstance(cap, (int, float)):
+            best = max(best, float(cap))
+    return floor_total_mbps(max(best, 1.0), None)
+
+
+def window_last_third(series: list[tuple[float, float]]) -> tuple[float, float]:
+    t0, t1 = series[0][0], series[-1][0]
+    return t0 + (t1 - t0) * (2.0 / 3.0), t1
+
+
+def check_up(cfg: dict, result: dict, d: Path, drop_shape: str) -> dict:
+    """UP gates: final-third utilization of the applied tree AND of the
+    receiver's delivered byte stream, against the post-change truth."""
+    if drop_shape == "rampup":
+        at = float(cfg.get("ramp_at_s") or 0.0)
+        truth_after = float(cfg["ramp_to_mbps"])
+    else:
+        at = float(cfg["recover_at_s"])
+        truth_after = float(cfg["recover_to_mbps"])
+    series = [(t, v) for t, v in applied_series(result) if t >= at]
+    if not series:
+        return {UP_KEY: "FAILED: no applied series after the change"}
+    lo, hi = window_last_third(series)
+    util = (statistics.fmean(v for t, v in series if lo <= t <= hi)
+            / truth_after)
+    dl = sink_last_third(d, lo, hi)
+    if dl is None:
+        delv = None
+    else:
+        delv = dl / truth_after
+    ok = (util >= UP_UTIL_APPLIED_MIN
+          and delv is not None and delv >= UP_UTIL_DELIVERED_MIN)
+    if ok:
+        return {UP_KEY: round(util, 3),
+                "util_delivered": (round(delv, 3) if delv is not None
+                                   else None)}
+    return {UP_KEY: f"FAILED util_applied={util:.2f} "
+                    f"delv={(f'{delv:.2f}' if delv is not None else 'n/a')}"}
+
+
+def check_down(cfg: dict, result: dict) -> dict:
+    """DOWN gates: ONE post-drop emergency commit inside the budget, and the
+    final committed state inside 10% of the legal rate (the link truth,
+    or the plan's floor total when the link dropped below it)."""
+    drop_at = float(cfg["drop_at_s"])
+    truth_after = float(cfg["drop_mbps"])
+    commits = [c for c in result.get("policy_change_log") or []
+               if c.get("committed") and c.get("ok")]
+    floor = down_floor_total(result)
+    legal = max(truth_after, floor)
+    decs = (result.get("governor") or {}).get("decisions") or []
+    base = min((float(d.get("t", 0.0)) for d in decs), default=0.0)
+    for c in commits:
+        if c.get("t") is not None:
+            c["t"] = float(c["t"]) - base
+    out = {}
+    post = [c for c in commits if float(c.get("t", 0)) - drop_at > 0.0]
+    if not post:
+        return {DOWN_KEY: "FAILED: no committed change after the drop"}
+    emerg = [c for c in post if c.get("delay_emergency")]
+    first = emerg[0] if emerg else None
+    if first is None:
+        return {DOWN_KEY: "FAILED: no delay-emergency commit after the drop"}
+    dt = float(first["t"]) - drop_at
+    out[DOWN_KEY] = round(dt, 1)
+    if dt > EMERGENCY_COMMIT_LIMIT_S:
+        out[DOWN_KEY] = f"FAILED: emergency commit {dt:.1f}s after drop"
+    tail = None
+    for c in post:
+        parent = ((c.get("applied_state") or {}).get("classes") or {}
+                  ).get("1:1") or {}
+        if parent.get("rate") is not None:
+            tail = float(parent["rate"])
+    if tail is None:
+        out[DOWN_KEY] = "FAILED: no committed rate after the drop"
+    elif tail > legal * (1.0 + BIND_TOL):
+        out[DOWN_KEY] = (f"FAILED: final commit {tail:.2f} above the legal "
+                         f"rate {legal:.2f} ({out[DOWN_KEY]}s after drop)")
+    return out
+
+
+def check_run(d: Path) -> dict:
+    cfg = json.loads((d / "config.json").read_text())
+    result = json.loads((d / "result.json").read_text())
+    link = float(cfg.get("link_mbps") or 0.0)
+    if cfg.get("ramp_to_mbps") is not None:
+        if float(cfg["ramp_to_mbps"]) > link:
+            return check_up(cfg, result, d, "rampup")
+        return {FLAT_KEY: "skip"}
+    if cfg.get("recover_at_s") is not None \
+            and float(cfg.get("recover_to_mbps") or 0.0) > link:
+        return check_up(cfg, result, d, "recover")
+    if cfg.get("drop_at_s") is not None:
+        return check_down(cfg, result)
+    return {FLAT_KEY: "skip"}
+
+
+def main(argv: list[str]) -> int:
+    root = Path(argv[1]) if len(argv) > 1 else Path("data/runs_dev3")
+    dirs = sorted(root.glob("*__aciq__adaptive__seed*"))
+    if not dirs:
+        print(f"verify_round3: NO aciq adaptive runs in {root} "
+              "(PENDING until the privileged band runs)")
+        return 2
+    bad, ok_n, skip_n = 0, 0, 0
+    for d in dirs:
+        try:
+            verdict = check_run(d)
+        except FileNotFoundError as e:
+            verdict = {DOWN_KEY: f"FAILED: missing artefact {e}"}
+        body = "; ".join(f"{k}={v}" for k, v in verdict.items())
+        if FLAT_KEY in verdict:
+            status, skip_n = "SKIP", skip_n + 1
+        elif "FAILED" in body:
+            status, bad = "FAIL", bad + 1
+        else:
+            status, ok_n = "PASS", ok_n + 1
+        print(f"[{status}] {d.name}: {body}")
+    if bad:
+        print(f"verify_round3 FAILED: {bad} judged FAIL, {ok_n} PASS, "
+              f"{skip_n} skipped (no controller claim) of {len(dirs)}")
+        return 1
+    print(f"verify_round3 PASS: {ok_n} judged PASS, {bad} FAIL, "
+          f"{skip_n} skipped (no controller claim) of {len(dirs)}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

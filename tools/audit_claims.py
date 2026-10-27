@@ -224,6 +224,21 @@ PLANNED_OUTPUTS: dict[str, str] = {
     "data/experiments/RESULTS_S2B.md": (
         "batch step t6_s2b_report (build_report over data/runs_s2b, the "
         "S2b generalization band, seeds 800-809)"),
+    "data/runs_dev3": (
+        "batch steps cell_* (round-3 DEV band, seeds 1000-1009; "
+        "testbed/run_round3_batch.sh dev)"),
+    "data/runs_final3": (
+        "batch steps cell_* (round-3 FROZEN band, seeds 1100-1109; "
+        "testbed/run_round3_batch.sh final)"),
+    "data/live_status_round3": (
+        "testbed/run_round3_batch.sh resume markers and step logs"),
+    "data/experiments/RESULTS_DEV3.md": (
+        "batch step report_band (round 3, build_report over data/runs_dev3)"),
+    "data/experiments/RESULTS_FINAL3.md": (
+        "batch step report_band (round 3, build_report over "
+        "data/runs_final3)"),
+    "data/experiments/RESULTS.md": (
+        "batch step merged_report (rounds regen the merged report too)"),
 }
 
 
