@@ -27,6 +27,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from aciq.experiment import git_commit_hash  # noqa: E402
 from aciq.fairness import (assigned_classes, class_of_label, flow_rates,  # noqa: E402
                            jain, label_carrying, mean_over_time,
                            minimum_over_time, per_class_series,
@@ -101,12 +102,18 @@ def fmt(values: list[float] | list[None], nd: int = 2) -> str:
 ARM_LABELS = {
     "b0_fifo": "B0 (default router, pfifo)",
     "b1_cake95": "CAKE-static (95% of pre-drop link, set and forget)",
-    "b1_cake_oracle": ("CAKE-oracle (0.95x the protocol's declared final "
-                       "rate, from t=0; an oracle an operator cannot "
-                       "have)"),
+    "b1_cake_oracle": ("CAKE-decl-final (0.95x the protocol's declared FINAL "
+                       "rate, from t=0; NOT an oracle for the pre-change "
+                       "plateau or for a climbing controller)"),
+    "b1_cake_cons": ("CAKE-conservative (0.50x pre-change link, static; the "
+                     "declared undershoot probe arm - round-3 params)"),
+    "b1_cake_auto": ("CAKE-adaptive (same estimator/governor chain, "
+                     "single-class CAKE rebuild per decision; queue "
+                     "discipline is the only difference)"),
     "aciq": "ACIQ (controller)",
 }
-ARM_ORDER = ["b0_fifo", "b1_cake95", "b1_cake_oracle", "aciq"]
+ARM_ORDER = ["b0_fifo", "b1_cake95", "b1_cake_oracle", "b1_cake_cons",
+             "b1_cake_auto", "aciq"]
 
 
 def _parse_ranges(spec: str) -> list[tuple[int, int]]:
@@ -410,9 +417,20 @@ S6_RECOVERY_LIMIT_S = 5.0
 #: is no per-scenario tuning of it.
 S2B_BIND_TOL = 0.10
 
-#: S2b scenario names, in declared order.
+#: S2b band scenario names, in declared order: the four S2b shapes plus the
+#: round-3 DEV shapes (docs/evidence/round3-params.md) and s3_stress (S3
+#: with demand above capacity, doced unsatisfied in
+#: docs/gap-closure/qos-baseline-comparison.md). Missing scenarios simply
+#: do not render (`if not sc_runs: continue`).
 S2B_SCENARIOS = ("s2b_step_50", "s2b_step_10", "s2b_step_up_20to100",
-                 "s2b_ramp_100to30")
+                 "s2b_ramp_100to30",
+                 "s7_up_20to60", "s7_up_30to100", "s7_rampup_30to100",
+                 "s7_down_100to15", "s7_down_100to8", "s3_stress")
+
+#: Flat-link band scenarios: no change event at all, so the step table's
+#: bind/tracking columns have no truth change to bind to -- the flat table
+#: reports delay and delivered goodput instead (declared, round3-params).
+FLAT_SCENARIOS = ("s3_stress",)
 
 #: Sheets the window table reports, verbatim sheet keys as samples.jsonl
 #: carries them.
@@ -756,12 +774,56 @@ def _s2b_honesty(run: dict) -> str:
             f"{conf_s}")
 
 
-def emit_s2b(add, runs: list[dict]) -> None:
-    """One table per declared S2b scenario; arms are rows, t-CIs at n=10.
+def _s2b_is_up(run: dict) -> bool | None:
+    """True when the run's change event RAISES the link truth (up-step /
+    up-ramp), False for a drop, None for flat or ramp_to=None oddities."""
+    ch = _s2b_change(run)
+    if ch is None:
+        return None
+    return ch[2] > ch[1]
 
-    The honesty row is ACIQ-only and machine-computed (the declared rule:
-    at the final tick, tell the reader the estimator's own saturation
-    signal and how far the applied tree sits from the link's truth)."""
+
+def _s2b_utilization(run: dict, lo: float, hi: float
+                     ) -> tuple[float, float | None] | None:
+    """Declared round-3 up-step metric: (applied/truth, delivered/truth)
+    over the post-change window [lo, hi].
+
+    applied/truth is the kernel-side series (`_s2b_series`, change-log
+    grounded); delivered/truth is receiver-side: the SUM of every label's
+    sink inst means over the same window. A run that is not an up-step
+    returns None, so callers can print '-' and never imply a utilization
+    number for a drop."""
+    ch = _s2b_change(run)
+    if ch is None or ch[2] <= ch[1]:
+        return None
+    truth, _at = _s2b_truth_fn(run)
+    tv = truth((lo + hi) / 2.0)
+    ser = [(t, c) for t, c in _s2b_series(run) if lo <= t <= hi]
+    if not ser or tv <= 0:
+        return None
+    applied_util = statistics.fmean(c for _t, c in ser) / tv
+    delivered = 0.0
+    have_receiver = False
+    for label in sorted((run["wl"] or {}).keys()):
+        series, _note = sink_inst_series(run, label)
+        vals = [v for t, v in series if lo <= t <= hi]
+        if vals:
+            have_receiver = True
+            delivered += statistics.fmean(vals)
+    return (applied_util, delivered / tv if have_receiver else None)
+
+
+def emit_s2b(add, runs: list[dict]) -> None:
+    """One table per declared band scenario; arms are rows, t-CIs at n=10.
+
+    Round-3 rework (docs/evidence/round3-params.md, declared before the
+    band): bind prefixed `n/a (up-step)` for up-runs -- "bind" named how
+    fast a controller CAME DOWN, not how fast it climbed; climbing is the
+    separate utilization column (measures what fraction of the truth was
+    actually pulled through, kernel applied AND receiver delivered).
+    s3_stress has no change event at all, so it gets a dedicated flat
+    table (delay + delivered goodput) instead of step columns that have
+    no meaning there."""
     for sc in S2B_SCENARIOS:
         sc_runs = [r for r in runs if r["cfg"].get("scenario") == sc]
         if not sc_runs:
@@ -769,9 +831,55 @@ def emit_s2b(add, runs: list[dict]) -> None:
         add(f"### {sc}")
         add("")
         arms_seen = sorted({r["cfg"].get("system") for r in sc_runs})
+        if sc in FLAT_SCENARIOS:
+            add(row_md(["arm", "n", "call p95 whole-run (ms)",
+                        "game p95 whole-run (ms)",
+                        "bulk receiver mean inst (Mbps)",
+                        "tv1 / tv2 / tv3 receiver mean inst (Mbps)",
+                        "overload note (loaded vs capacity)"]))
+            add(row_md(["---"] * 7))
+            for arm in [a for a in ARM_ORDER if a in arms_seen]:
+                grp = [r for r in sc_runs
+                       if r["cfg"].get("system") == arm]
+                if not grp:
+                    continue
+                calls = [call_metrics(r["wl"]).get("p95") for r in grp]
+                games = [game_p95(r["wl"]) for r in grp]
+                bulks = []
+                for r in grp:
+                    series, _note = sink_inst_series(r, "bulk")
+                    if series:
+                        bulks.append(statistics.fmean(
+                            v for _t, v in series))
+                tvbours = []
+                for r in grp:
+                    tvs = []
+                    for tv in ("tv1", "tv2", "tv3"):
+                        series, _note = sink_inst_series(r, tv)
+                        if series:
+                            tvs.append(statistics.fmean(
+                                v for _t, v in series))
+                    tvbours.append(" / ".join(
+                        f"{v:.2f}" for v in tvs) if tvs else NOT_AVAILABLE)
+                link = float(next(iter(r["cfg"].get("link_mbps")
+                                       for r in grp if
+                                       r["cfg"].get("link_mbps")), 0.0))
+                note = (f"flat link truth {link:.0f} Mbps; demand spans "
+                        "game + 3 tvs + bulk (see round3-params)")
+                add(row_md([ARM_LABELS.get(arm, arm), str(len(grp)),
+                            fmt(calls), fmt(games),
+                            fmt(bulks, 2) if bulks else NOT_AVAILABLE,
+                            "; ".join(tvbours) if any(
+                                t != NOT_AVAILABLE for t in tvbours)
+                            else NOT_AVAILABLE,
+                            note]))
+            add("")
+            continue
         add(row_md(["arm", "n", "bind_s", "mean |applied-truth| final "
                     "third (Mbps)", "call p95 whole-run (ms)",
                     "bulk receiver mean, final third (Mbps)",
+                    "up-step utilization final third "
+                    "(applied/truth, delivered/truth)",
                     "ACIQ honesty (final tick)"]))
         add(row_md(["---"] * 8))
         for arm in [a for a in ARM_ORDER if a in arms_seen]:
@@ -780,13 +888,45 @@ def emit_s2b(add, runs: list[dict]) -> None:
                         or r["cfg"].get("ramp_to_mbps") is not None)]
             if not grp:
                 continue
-            binds = [b for r in grp if (b := _s2b_bind_s(r)) is not None]
+            is_up = all(_s2b_is_up(r) is True for r in grp if
+                        r["cfg"].get("ramp_to_mbps") is None) \
+                and any(_s2b_is_up(r) is True for r in grp)
+            binds = None
+            if is_up:
+                # Declared (round3-params.md): bind is not a claim the
+                # engine makes on an up-move, so the cell says so instead
+                # of quietly reporting the recover-gate as if it were a
+                # failure to come down.
+                bind_str = "n/a (up-step)"
+            else:
+                binds = [b for r in grp if (b := _s2b_bind_s(r)) is not None]
+                bind_str = (fmt(binds, 1) if binds
+                            else f"{NOT_AVAILABLE} (0/{len(grp)}"
+                                 f" binds met inside the run)")
             errs = [e for r in grp if (e := _s2b_window_err(
                 r, *_s2b_final_third(r))) is not None]
             calls = [call_metrics(r["wl"]).get("p95") for r in grp]
             calls = [c for c in calls if c is not None]
             bulks = [b for r in grp if (b := _s2b_sink_last_third(r))
                      is not None]
+            utils: list[tuple[float, float | None]] = []
+            for r in grp:
+                lo, hi = _s2b_final_third(r)
+                u = _s2b_utilization(r, lo, hi)
+                if u is not None:
+                    utils.append(u)
+            if utils:
+                d_cells = [d for _a, d in utils if d is not None]
+                util_str = (f"appl {fmt([a for a, _d in utils], 2)}"
+                            + (f" / delv {fmt(d_cells, 2)}"
+                               if d_cells else
+                               " / delv NOT AVAILABLE (no receiver"
+                               " sampler)"))
+            elif is_up:
+                util_str = (NOT_AVAILABLE
+                            + " (no applied series in this window)")
+            else:
+                util_str = "-"
             extra = ""
             if arm == "aciq":
                 seen_rows: list[str] = []
@@ -800,14 +940,79 @@ def emit_s2b(add, runs: list[dict]) -> None:
             add(row_md([
                 ARM_LABELS.get(arm, arm),
                 str(len(grp)),
-                fmt(binds, 1) if binds else f"{NOT_AVAILABLE} (0/{len(grp)}"
-                                            f" binds met inside the run)",
+                bind_str,
                 fmt(errs, 2) if errs else NOT_AVAILABLE,
                 fmt(calls),
                 fmt(bulks, 2) if bulks else NOT_AVAILABLE,
+                util_str,
                 extra or "honesty row declared for ACIQ only",
             ]))
         add("")
+
+
+def emit_sink_starvation(add, runs: list[dict], arms: list[str]) -> None:
+    """Receiver-side starvation (round 3, docs/evidence/round3-params.md):
+    per-second `*.sink.log` inst rates, EVERY arm including the static
+    baselines -- the controller-side series in the fairness section exist
+    only on arms that shape a tree, so baseline starvation had nowhere to
+    be counted from. Declared basis: series = the label's receiver
+    sampler; threshold = 0.2x the SAME-regime median (starvation_threshold
+    drop-aware); ticks before the declared warm-up excluded so a launch
+    transient cannot count as starvation."""
+    add("## Starvation, receiver side (every arm, per-second sink logs)")
+    add("")
+    add(row_md(["scenario", "arm", "label; starved inst ticks over seeds "
+                "(longest streak)"]))
+    add(row_md(["---"] * 3))
+    any_row = False
+    for sc in sorted({r["cfg"].get("scenario", "?") for r in runs}):
+        for arm in arms:
+            grp = per_arm(sc, arm, runs)
+            if not grp:
+                continue
+            counted: dict[str, list[int]] = {}
+            streaks: dict[str, list[int]] = {}
+            for r in grp:
+                for label in sorted((r["wl"] or {}).keys()):
+                    if not isinstance((r["wl"] or {}).get(label), dict):
+                        continue
+                    series, _note = sink_inst_series(r, label)
+                    if not series:
+                        continue
+                    series = [(t, v) for t, v in series if t >= WARMUP_S]
+                    if not series:
+                        continue
+                    thr = starvation_threshold(
+                        series, r["cfg"].get("drop_at_s"))
+                    ts = [t for t, v in series if v < thr]
+                    # longest run of consecutive one-second samples
+                    longest = cur = 0
+                    prev = None
+                    for t in ts:
+                        cur = cur + 1 if (prev is not None
+                                          and t - prev <= 1.5) else 1
+                        longest = max(longest, cur)
+                        prev = t
+                    key = label
+                    counted.setdefault(key, []).append(len(ts))
+                    streaks.setdefault(key, []).append(longest)
+            cells = []
+            for key in sorted(counted):
+                n = sum(counted[key])
+                cells.append(f"{key}: {n} tick(s) over "
+                             f"{len(counted[key])} seed(s), longest "
+                             f"streak {max(streaks[key])} s")
+            if not cells:
+                cells = [NOT_AVAILABLE + " (no per-second receiver "
+                         "sampler in this arm's runs)"]
+            else:
+                any_row = True
+            add(row_md([sc, ARM_LABELS.get(arm, arm), "; ".join(cells[:6])]))
+    if not any_row:
+        add("- no receiver-side starvation anywhere the sinks printed "
+            "per-second series; cells without a sampler print "
+            "NOT AVAILABLE above, never an assumed clean bill.")
+    add("")
 
 
 def emit_s3_per_tv(add, runlist: list[dict]) -> None:
@@ -1363,11 +1568,28 @@ def build_report(runs_root: Path, out_md: Path,
 
     lines: list[str] = []
     add = lines.append
+
+    def run_hash(r: dict) -> str:
+        """A run's engine commit, result.json first (the stamped
+        RunResult field), config.json as fallback; runs generated before
+        round-3 stamping say so by their null hash, never silently."""
+        res = r.get("res") if isinstance(r.get("res"), dict) else {}
+        h = res.get("commit_hash") or r["cfg"].get("commit_hash")
+        return h if h else "no-hash (pre-round-3 artefact)"
+
+    h_top = git_commit_hash()
     add("# Results (generated, no summarised files consulted)")
     add("")
     add(f"Runs root: `{runs_root}` | runs used: {len(runs)} | "
         f"scenarios: {', '.join(scen) or 'none'}")
     add("")
+    if h_top:
+        add(f"Generated from engine commit `{h_top}`. Every section header "
+            "below stamps the commit(s) of the runs it renders; a frozen "
+            "final band may ONLY claim PASS/FAIL if every run in it "
+            "carries this same hash — any mismatch is flagged per band "
+            "and per scenario, never pooled silently.")
+        add("")
     if skipped:
         add(f"Skipped {len(skipped)} incomplete-only directory names: "
             + ", ".join(f"`{s}`" for s in skipped))
@@ -1462,6 +1684,18 @@ def build_report(runs_root: Path, out_md: Path,
         lab = famspec_out.get(primary_fam, primary_fam)
         add(f"### {sc} (primary band: {primary_fam} ({lab}))")
         add("")
+        hset_sc = sorted({run_hash(r) for r in runs
+                          if r["cfg"].get("scenario") == sc})
+        stamps = ", ".join(f"`{h}`" for h in hset_sc)
+        suffix = (" — MIXED COMMITS: not one frozen run; do not mix these "
+                  "numbers into a single claim."
+                  if len(hset_sc) > 1 else
+                  (" — matches this report's engine commit."
+                   if hset_sc == [h_top] and h_top else
+                   " — provenance only (pre-round-3 artefact or an older "
+                   "engine): shows nothing about the current engine."))
+        add(f"- commit provenance: {stamps}{suffix}")
+        add("")
         emit_arm_table(add, sc, runs)
         add("")
         if sc == "s3_tv_and_gaming":
@@ -1481,6 +1715,13 @@ def build_report(runs_root: Path, out_md: Path,
                    for r in v]
             if sec:
                 add(f"### {sc} ({fam_seed_label(rank)})")
+                add("")
+                hset_sec = sorted({run_hash(r) for r in sec})
+                stamps_sec = ", ".join(f"`{h}`" for h in hset_sec)
+                suffix_sec = (" — MIXED COMMITS: not one frozen run."
+                              if len(hset_sec) > 1 else "")
+                add(f"- commit provenance: {stamps_sec}{suffix_sec}"
+                    + ("" if h_top else " (engine hash unknown)"))
                 add("")
                 emit_arm_table(add, sc, sec)
                 add("")
@@ -1672,6 +1913,36 @@ def build_report(runs_root: Path, out_md: Path,
         add("")
         add(f"{NOT_AVAILABLE} (no run in this root carries a resources "
             "block; resources appear with the live four-arm matrix)")
+    else:
+        # CPU context (declared, round3-params.md): compare the two
+        # ADAPTIVE engines directly, per shared scenario. The round-2 live
+        # band showed a ~3x CPU fraction step; the report records the
+        # measured ratio and the direction, but the EXPLANATION must come
+        # from the artifacts (profiles, decision/policy logs), never be
+        # asserted in prose here.
+        cpu_by: dict[str, dict[str, float]] = {}
+        for a_ in ("aciq", "b1_cake_auto"):
+            for sc_ in scen:
+                grp_ = per_arm(sc_, a_, runs)
+                cf_ = [r["res"]["resources"].get("cpu_mean_frac")
+                       for r in grp_ if (r["res"] or {}).get("resources")]
+                cf_ = [c for c in cf_ if c is not None]
+                if cf_:
+                    cpu_by.setdefault(a_, {})[sc_] = statistics.fmean(cf_)
+        if "aciq" in cpu_by and "b1_cake_auto" in cpu_by:
+            common = [sc_ for sc_ in cpu_by["aciq"]
+                      if sc_ in cpu_by["b1_cake_auto"]]
+            ratios = [cpu_by["b1_cake_auto"][sc_] / cpu_by["aciq"][sc_]
+                      for sc_ in common if cpu_by["aciq"][sc_] > 0]
+            if ratios:
+                per_sc = ", ".join(
+                    f"{sc_} {ratio:.2f}x" for sc_, ratio
+                    in zip(common, ratios))
+                add(f"- CPU context (adaptive vs adaptive): CAKE-adaptive "
+                    f"runs at {statistics.fmean(ratios):.2f}x the ACIQ CPU "
+                    f"fraction on the shared scenario(s): {per_sc}. The "
+                    "cause must be read from the artifacts (CPU profile, "
+                    "decision cadence), not assumed.")
     add("")
 
     # ---- fairness detail -------------------------------------------------
@@ -1972,24 +2243,69 @@ def build_report(runs_root: Path, out_md: Path,
             "on disk).")
         add("")
 
-    # ---- S2b generalization band ------------------------------------------
-    if any(r["cfg"].get("scenario", "").startswith("s2b_") for r in runs):
-        add("## S2b generalization band (evaluation-only; docs/evidence/"
-            "s2b-params.md, written before these runs)")
+    # ---- S2b / round-3 generalization band --------------------------------
+    if any(r["cfg"].get("scenario", "").startswith(("s2b_", "s7_"))
+           or r["cfg"].get("scenario") in FLAT_SCENARIOS for r in runs):
+        add("## Step/demand generalization band (evaluation-only; "
+            "docs/evidence/s2b-params.md + docs/evidence/round3-params.md, "
+            "declared BEFORE these runs)")
         add("")
         add("The shipped controller runs unchanged on capacity changes it "
             "was never tuned on: two down-step magnitudes, a 5x up-step, "
-            "and a continuous 20 s ramp. Seeds 800-809, one run, four "
-            "arms. CAKE-static is applied once at launch and never "
-            "re-applied: that is its declared semantics, and S2b exists to "
-            "surface the consequences. Definitions: bind = first tick at "
-            "which the applied tree sits within 10% of the link's truth "
-            "and stays there; tracking error = mean |applied - truth| over "
-            "the ramp window; estimate error = same over the final third. "
-            "Where ACIQ fails, the row says so.")
+            "and a continuous 20 s ramp -- plus the round-3 DEV shapes "
+            "(s7_* up/down steps and ramps, s3_stress) and the two "
+            "queue-discipline-only arms (CAKE-conservative / "
+            "CAKE-adaptive). Seeds 800-809 configured per scenario (the "
+            "DEV band, seed names in each run dir). CAKE-static is "
+            "applied once at launch and never re-applied: that is its "
+            "declared semantics, and this band exists to surface the "
+            "consequences. Definitions: bind = first tick at which the "
+            "applied tree sits within 10% of the link's truth and stays "
+            "there (down-moves only; up-moves print `n/a (up-step)` and "
+            "are judged by the utilization column: applied/truth and "
+            "receiver delivered/truth over the final third); tracking "
+            "error = mean |applied - truth| over the ramp window; "
+            "estimate error = same over the final third. Where ACIQ "
+            "fails, the row says so.")
+        add("")
+        h_band = git_commit_hash()
+        if h_band:
+            add(f"Engine commit at generation time: `{h_band}` — a run "
+                "whose result carries a different commit_hash is "
+                "SUPERSEDED, listed under 'commit provenance' below and "
+                "never pooled into a numeric cell with a newer commit.")
         add("")
         emit_s2b(add, runs)
+        emit_sink_starvation(add, runs, arms)
         add("")
+
+    # ---- commit provenance --------------------------------------------------
+    add("## Commit provenance (declared; every run's engine hash)")
+    add("")
+    add(row_md(["scenario", "arm", "n runs", "commit_hash", "verdict"]))
+    add(row_md(["---"] * 5))
+    hash_groups: dict[tuple[str, str, str], int] = {}
+    for r in runs:
+        key = (r["cfg"].get("scenario", "?"), r["cfg"].get("system", "?"),
+               run_hash(r))
+        hash_groups[key] = hash_groups.get(key, 0) + 1
+    for (sc, sysname, h), n in sorted(hash_groups.items()):
+        if h_top and h == h_top:
+            verdict = "current: trusted for a frozen final band claim"
+        elif h == "no-hash (pre-round-3 artefact)":
+            verdict = "pre-round-3 run: no hash on record; provenance unknown"
+        else:
+            verdict = ("SUPERSEDED: different engine commit than this "
+                       "report; keep its numbers visibly apart (never "
+                       "mixed into one claim with a current run)")
+        add(row_md([sc, ARM_LABELS.get(sysname, sysname), str(n),
+                    f"`{h}`", verdict]))
+    add("")
+    add("- pooling rule (binding): a numeric cell in this report may mix "
+        "runs across seeds of ONE band, but never across commit hashes; "
+        "the section headers above flag mixed-commit scenarios so a mixed "
+        "cell is traceable to its provenance lines.")
+    add("")
 
     # ---- classification --------------------------------------------------
     add("## Classifier (router-vantage corpus, thresholds fixed before "
