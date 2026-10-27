@@ -3,6 +3,40 @@
  "b_sigkill_residue_then_cleanup": "PASS",
  "c_injected_failed_apply_rollbacks": "PASS",
  "d_watchdog_starve_reaches_safe": "PASS",
+ "c_repeats": [
+ [],
+ {
+  "seed": 555,
+  "verify": "PASS",
+  "last_good_t_s": 25.62,
+  "rolled_back_at_t_s": 26.65,
+  "first_recommit_t_s": 27.74,
+  "arm_to_rollback_s": 1.03
+ },
+ {
+  "seed": 556,
+  "verify": "PASS",
+  "last_good_t_s": 25.65,
+  "rolled_back_at_t_s": 26.68,
+  "first_recommit_t_s": 27.81,
+  "arm_to_rollback_s": 1.03
+ },
+ {
+  "seed": 557,
+  "verify": "PASS",
+  "last_good_t_s": 25.63,
+  "rolled_back_at_t_s": 26.66,
+  "first_recommit_t_s": 27.78,
+  "arm_to_rollback_s": 1.03
+ }
+]
+ "tools": {
+   "tc": "tc utility, iproute2-6.1.0, libbpf 1.3.0",
+   "nft": "nftables v1.0.9 (Old Doc Yak #3)",
+   "iproute2": "ip utility, iproute2-6.1.0, libbpf 1.3.0",
+   "kernel": "7.2.6-76070206-generic",
+   "python": "Python 3.12.3"
+ },
  "host": "/home/mekarz/aciq-venv/bin/python -V",
- "notes": "values PASS/FAIL only; the report quotes this file verbatim"
+ "notes": "values PASS/FAIL only; c_repeats carries the three injected seeds (last-good/rollback/recommit stamps and arm-to-rollback seconds from samples.jsonl policy_outcome), tools are the live host versions; the report quotes this file verbatim"
 }

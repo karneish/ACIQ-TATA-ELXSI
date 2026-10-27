@@ -221,6 +221,9 @@ PLANNED_OUTPUTS: dict[str, str] = {
         "batch step t4_corpus (gen_corpus --port-offset 2000)"),
     "data/experiments/classifier_corpus_fresh/eval.json": (
         "batch step t4_corpus_eval (eval_corpus over the fresh corpus)"),
+    "data/experiments/RESULTS_S2B.md": (
+        "batch step t6_s2b_report (build_report over data/runs_s2b, the "
+        "S2b generalization band, seeds 800-809)"),
 }
 
 

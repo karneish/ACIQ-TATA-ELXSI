@@ -86,10 +86,10 @@ for seed in 555 556 557; do
     # kernel-state dumps: the injected-apply moment and the post-rollback
     # tree, read straight from the live testbed while it exists
     ip netns exec router tc -s qdisc show dev veth-lan \
-        > "$OUT/c_seed$seed_tc_qdisc_after.txt" 2>&1 || true
+        > "${OUT}/c_seed${seed}_tc_qdisc_after.txt" 2>&1 || true
     ip netns exec router tc -j class show dev veth-lan \
-        > "$OUT/c_seed$seed_tc_classes_after.json" 2>&1 || true
-    nft list ruleset > "$OUT/c_seed$seed_nft_ruleset.txt" 2>&1 || true
+        > "${OUT}/c_seed${seed}_tc_classes_after.json" 2>&1 || true
+    nft list ruleset > "${OUT}/c_seed${seed}_nft_ruleset.json" 2>&1 || true
     # detected -> rollback timing, from the samples' own policy_outcome
     # stamps: last-good = the last committed-ok tick before the rollback,
     # recommit = the first committed-ok after it (the run carried on)
@@ -127,7 +127,10 @@ done
 import json, sys
 from pathlib import Path
 raw = Path(sys.argv[1]).read_text().strip()
-items = [json.loads(l) for l in raw.splitlines() if l.strip()]
+items = [json.loads(l) for l in raw.splitlines()
+         if l.strip() and json.loads(l)]
+if len(items) != 3:
+    raise SystemExit(f"s5c repeats incomplete: {items}")
 Path(sys.argv[1]).write_text(json.dumps(items, indent=1) + "\n")
 EOF
 reps=$(grep -c '"verify": "PASS"' "$c_repeats_json")

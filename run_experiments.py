@@ -105,7 +105,7 @@ def main() -> int:
                          "will emit a p-value, and one invocation means the "
                          "testbed is built and torn down once instead of per seed.")
     ap.add_argument("--link", type=float, default=None)
-    ap.add_argument("--drop", type=float, default=20.0)
+    ap.add_argument("--drop", type=float, default=None)
     ap.add_argument("--drop-at", type=float, default=None,
                     help="seconds into the run at which capacity drops")
     ap.add_argument("--recover-at", type=float, default=None,
@@ -311,25 +311,27 @@ def main() -> int:
     # Resolve the defaults that were flags with implicit values, so an
     # explicitly-passed --link/--drop can be told apart from the default
     # when a scenario's declared protocol must win (S2b).
-    args.link = 100.0 if args.link is None else args.link
-    args.drop = 20.0 if args.drop is None else args.drop
-
     # S2b scenarios run their DECLARED link protocol (docs/evidence/
     # s2b-params.md), which the user's --link/--drop flags must not override:
     # a quietly retuned protocol would be exactly the tuning S2b exists to
-    # avoid. Explicit refusals make the conflict visible instead of resolved.
+    # avoid. The check runs on the RAW flags (None unless explicitly given),
+    # so an s2b step that passes neither flag cannot be accused of
+    # overriding the protocol with the base scenarios' defaults.
     for sc in scenarios:
         proto = S2B_PROTOCOLS.get(sc)
         if proto is None:
             continue
         conflicts = []
-        if args.link != proto.get("link_mbps"):
+        if args.link is not None and args.link != proto.get("link_mbps"):
             conflicts.append(f"--link {args.link}")
-        if "drop_mbps" in proto and args.drop != proto["drop_mbps"]:
+        if "drop_mbps" in proto and args.drop is not None \
+                and args.drop != proto["drop_mbps"]:
             conflicts.append(f"--drop {args.drop}")
         if conflicts:
             ap.error(f"{sc} runs its declared protocol "
                      f"{proto}; refusing override: {', '.join(conflicts)}")
+    args.link = 100.0 if args.link is None else args.link
+    args.drop = 20.0 if args.drop is None else args.drop
 
     # A failed run must not be reported as a finished step: the pipeline's
     # resume markers once let an aborted intent step march on silently
