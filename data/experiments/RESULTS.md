@@ -1,6 +1,6 @@
 # Results (generated, no summarised files consulted)
 
-Runs root: `data/experiments/bands_merge` | runs used: 220 | scenarios: s1_iso_during_call, s2_wan_drop, s3_tv_and_gaming, s4_capacity_recovery, s6_intent_expire
+Runs root: `/home/mekarz/Desktop/Full-projects/TATA-ELXSI/data/experiments/bands_merge` | runs used: 190 | scenarios: s1_iso_during_call, s2_wan_drop, s3_tv_and_gaming, s4_capacity_recovery, s6_intent_expire
 
 Skipped 1 incomplete-only directory names: `s2_wan_drop__aciq__adaptive__seed555 (special-condition run: inject_fail_apply)`
 
@@ -150,9 +150,9 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| B0 (default router, pfifo) | 20 | 250.88 (no CI: n=20 out of t-table range) | 3.25 (no CI: n=20 out of t-table range) | 0.468 (no CI: n=20 out of t-table range) | 250.90 (no CI: n=20 out of t-table range) | 95.96 (no CI: n=20 out of t-table range) | 95.46 (no CI: n=20 out of t-table range) | (no drop scenario) | 0.819 (no CI: n=20 out of t-table range) | 1.000 (no CI: n=20 out of t-table range) |
-| CAKE-static (95% of pre-drop link, set and forget) | 20 | 1.42 (no CI: n=20 out of t-table range) | 0.45 (no CI: n=20 out of t-table range) | 0.000 (no CI: n=20 out of t-table range) | 1.44 (no CI: n=20 out of t-table range) | 90.83 (no CI: n=20 out of t-table range) | 90.70 (no CI: n=20 out of t-table range) | (no drop scenario) | 0.835 (no CI: n=20 out of t-table range) | 1.000 (no CI: n=20 out of t-table range) |
-| ACIQ (controller) | 20 | 26.83 (no CI: n=20 out of t-table range) | 0.48 (no CI: n=20 out of t-table range) | 0.071 (no CI: n=20 out of t-table range) | 26.28 (no CI: n=20 out of t-table range) | 78.76 (no CI: n=20 out of t-table range) | 78.27 (no CI: n=20 out of t-table range) | (no drop scenario) | 0.875 (no CI: n=20 out of t-table range) | 1.000 (no CI: n=20 out of t-table range) |
+| B0 (default router, pfifo) | 10 | 250.91 +/- 0.03 | 3.32 +/- 0.02 | 0.380 +/- 0.012 | 250.92 +/- 0.02 | 95.86 +/- 0.00 | 95.46 +/- 0.00 | (no drop scenario) | 0.819 +/- 0.000 | 1.000 +/- 0.000 |
+| CAKE-static (95% of pre-drop link, set and forget) | 10 | 1.44 +/- 0.02 | 0.45 +/- 0.01 | 0.000 +/- 0.000 | 1.46 +/- 0.02 | 90.82 +/- 0.00 | 90.71 +/- 0.00 | (no drop scenario) | 0.835 +/- 0.000 | 1.000 +/- 0.000 |
+| ACIQ (controller) | 10 | 14.67 +/- 7.13 | 0.54 +/- 0.04 | 0.107 +/- 0.058 | 13.89 +/- 6.65 | 80.79 +/- 0.23 | 80.40 +/- 0.23 | (no drop scenario) | 0.868 +/- 0.001 | 1.000 +/- 0.000 |
 
 ## ACIQ vs every arm (positive % is better ACIQ on the metric at the head of the column; a cell like `41.0x` is the multiplicative factor when the baseline is so close to zero that a percentage would mislead)
 
@@ -172,8 +172,8 @@ Bulk compares are POST-DROP ONLY in scenarios with a capacity drop (same `bulk_m
 | s4_capacity_recovery | B0 (default router, pfifo) | +61.8 | disjoint | -3.5 | disjoint |
 | s4_capacity_recovery | CAKE-static (95% of pre-drop link, set and forget) | -6.7 | disjoint | -0.5 | disjoint |
 | s4_capacity_recovery | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 35.0x | disjoint | +6.2 | disjoint |
-| s6_intent_expire | B0 (default router, pfifo) | +89.3 | no CI (t-table) | NOT AVAILABLE |  |
-| s6_intent_expire | CAKE-static (95% of pre-drop link, set and forget) | -1794.9 | no CI (t-table) | NOT AVAILABLE |  |
+| s6_intent_expire | B0 (default router, pfifo) | +94.2 | disjoint | NOT AVAILABLE |  |
+| s6_intent_expire | CAKE-static (95% of pre-drop link, set and forget) | -916.3 | disjoint | NOT AVAILABLE |  |
 
 ## Where ACIQ is worse (the honest column)
 
@@ -205,7 +205,7 @@ The honest column above lists every rival; this one isolates the set-and-forget 
 | s2_wan_drop | 10 | no post-drop applied tree at/below 1.05x post-drop link in any seed | no post-drop applied tree at/below 1.25x post-drop link in any seed | 21.45 +/- 0.11 | 20.0 +/- 0.0 | mean abs 7.3% (seed0: 21.59/20.0 (7.9% off)) |
 | s3_tv_and_gaming | 10 | no post-drop applied tree at/below 1.05x post-drop link in any seed | no post-drop applied tree at/below 1.25x post-drop link in any seed | 56.23 +/- 13.96 | 100.0 +/- 0.0 | mean abs 43.8% (seed0: 59.04/100.0 (41.0% off)) |
 | s4_capacity_recovery | 10 | no post-drop applied tree at/below 1.05x post-drop link in any seed | no post-drop applied tree at/below 1.25x post-drop link in any seed | 21.35 +/- 0.25 | 20.0 +/- 0.0 | mean abs 6.7% (seed0: 21.52/20.0 (7.6% off)) |
-| s6_intent_expire | 20 | no post-drop applied tree at/below 1.05x post-drop link in any seed | no post-drop applied tree at/below 1.25x post-drop link in any seed | 85.82 (no CI: n=20 out of t-table range) | 100.0 (no CI: n=20 out of t-table range) | mean abs 14.2% (seed0: 86.91/100.0 (13.1% off)) |
+| s6_intent_expire | 10 | no post-drop applied tree at/below 1.05x post-drop link in any seed | no post-drop applied tree at/below 1.25x post-drop link in any seed | 92.98 +/- 1.56 | 100.0 +/- 0.0 | mean abs 7.0% (seed0: 92.31/100.0 (7.7% off)) |
 ## Controller resources (ACIQ adaptive runs only; from each result's resources block)
 
 | scenario | n | cpu mean frac | decision p95 ms | decision max ms | max RSS bytes |
@@ -214,7 +214,7 @@ The honest column above lists every rival; this one isolates the set-and-forget 
 | s2_wan_drop | 10 | 0.0043 +/- 0.0001 | 59.97 +/- 17.01 | 75.82 +/- 2.43 | 20893286 +/- 406731 |
 | s3_tv_and_gaming | 10 | 0.0043 +/- 0.0002 | 74.32 +/- 1.15 | 77.82 +/- 2.49 | 20952678 +/- 397623 |
 | s4_capacity_recovery | 10 | 0.0045 +/- 0.0001 | 14.88 +/- 2.76 | 80.21 +/- 1.23 | 21629338 +/- 590585 |
-| s6_intent_expire | 20 | 0.0090 (no CI: n=20 out of t-table range) | 52.69 (no CI: n=20 out of t-table range) | 112.31 (no CI: n=20 out of t-table range) | 29359718 (no CI: n=20 out of t-table range) |
+| s6_intent_expire | 10 | 0.0092 +/- 0.0005 | 27.60 +/- 4.99 | 103.69 +/- 20.45 | 29630874 +/- 726063 |
 
 ## Fairness detail (workload-rate Jain; per-class minima over ASSIGNED classes only, same scope for every mode)
 
@@ -240,9 +240,9 @@ Per-tick counter attribution (fix 18): ACIQ's tree has one leaf per class; the b
 | s4_capacity_recovery | CAKE-static (95% of pre-drop link, set and forget) | 10 | 0.996 +/- 0.000 | NOT AVAILABLE | 2.0 +/- 0.0 | bulk via unknown=20; call via unknown=20; bulk via unknown=20; call via unknown=20; bulk via unknown=19.9; call via unknown=19.9 |
 | s4_capacity_recovery | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 0.820 +/- 0.000 | NOT AVAILABLE | 2.0 +/- 0.0 | bulk via unknown=19; call via unknown=19; bulk via unknown=19; call via unknown=19; bulk via unknown=19; call via unknown=19 |
 | s4_capacity_recovery | ACIQ (controller) | 10 | 0.999 +/- 0.000 | NOT AVAILABLE | 2.0 +/- 0.0 | bulk via unknown=19.8; call via unknown=19.8; bulk via unknown=19.9; call via unknown=19.9; bulk via unknown=19.8; call via unknown=19.8 |
-| s6_intent_expire | B0 (default router, pfifo) | 20 | 0.819 (no CI: n=20 out of t-table range) | 1.000 (no CI: n=20 out of t-table range) | 3.0 (no CI: n=20 out of t-table range) | bulk via unknown=99.6; call via unknown=99.6; game via unknown=99.6; bulk via unknown=99.6; call via unknown=99.6; game via unknown=99.6 |
-| s6_intent_expire | CAKE-static (95% of pre-drop link, set and forget) | 20 | 0.835 (no CI: n=20 out of t-table range) | 1.000 (no CI: n=20 out of t-table range) | 3.0 (no CI: n=20 out of t-table range) | bulk via unknown=94.9; call via unknown=94.9; game via unknown=94.9; bulk via unknown=92.5; call via unknown=92.5; game via unknown=92.5 |
-| s6_intent_expire | ACIQ (controller) | 20 | 0.875 (no CI: n=20 out of t-table range) | 1.000 (no CI: n=20 out of t-table range) | 3.0 (no CI: n=20 out of t-table range) | bulk=74.9; call=0.118; game=0; bulk=62.7; call=0.0592; game=0 |
+| s6_intent_expire | B0 (default router, pfifo) | 10 | 0.819 +/- 0.000 | 1.000 +/- 0.000 | 3.0 +/- 0.0 | bulk via unknown=99.6; call via unknown=99.6; game via unknown=99.6; bulk via unknown=99.7; call via unknown=99.7; game via unknown=99.7 |
+| s6_intent_expire | CAKE-static (95% of pre-drop link, set and forget) | 10 | 0.835 +/- 0.000 | 1.000 +/- 0.000 | 3.0 +/- 0.0 | bulk via unknown=95; call via unknown=95; game via unknown=95; bulk via unknown=94.9; call via unknown=94.9; game via unknown=94.9 |
+| s6_intent_expire | ACIQ (controller) | 10 | 0.868 +/- 0.001 | 1.000 +/- 0.000 | 3.0 +/- 0.0 | bulk=0; call via unknown=0; game via unknown=0; bulk=0; call via unknown=0; game via unknown=0 |
 
 Starvation (TASK 5b, fixed basis): per LABEL, over the class the data says carried the traffic (assigned class, or the router's `unknown`/legacy aggregate when the label's traffic rode there -- chosen by highest mean, and the carrying class is named). A label starved in tick t if its per-tick goodput fell below 20% of its REGIME median -- in a drop scenario the median is the POST-DROP regime's own median, so the shaped link rate can never masquerade as starvation; without a drop it is the whole window's. The cell lists the starved timestamps counted over seeds. With no series at all the cell prints NOT AVAILABLE, never an empty claim.
 
@@ -264,26 +264,114 @@ Starvation (TASK 5b, fixed basis): per LABEL, over the class the data says carri
 | s4_capacity_recovery | CAKE-static (95% of pre-drop link, set and forget) | no starving tick in 20 seed x label series (regime-aware threshold, declared window) |
 | s4_capacity_recovery | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | no starving tick in 20 seed x label series (regime-aware threshold, declared window) |
 | s4_capacity_recovery | ACIQ (controller) | no starving tick in 20 seed x label series (regime-aware threshold, declared window) |
-| s6_intent_expire | B0 (default router, pfifo) | no starving tick in 60 seed x label series (regime-aware threshold, declared window) |
-| s6_intent_expire | CAKE-static (95% of pre-drop link, set and forget) | no starving tick in 60 seed x label series (regime-aware threshold, declared window) |
-| s6_intent_expire | ACIQ (controller) | bulk via bulk_download: 10 ticks over 10 seed(s), first t=2.1; call via unknown: 428 ticks over 10 seed(s), first t=5.3; call via video_call_voice: 1 ticks over 1 seed(s), first t=38.3; game via interactive_gaming: 224 ticks over 8 seed(s), first t=4.3; game via unknown: 480 ticks over 12 seed(s), first t=4.3 |
+| s6_intent_expire | B0 (default router, pfifo) | no starving tick in 30 seed x label series (regime-aware threshold, declared window) |
+| s6_intent_expire | CAKE-static (95% of pre-drop link, set and forget) | no starving tick in 30 seed x label series (regime-aware threshold, declared window) |
+| s6_intent_expire | ACIQ (controller) | bulk via bulk_download: 10 ticks over 10 seed(s), first t=2.1; call via unknown: 428 ticks over 10 seed(s), first t=5.3; game via unknown: 428 ticks over 10 seed(s), first t=5.3 |
 
 Warm-up exclusion (declared): every per-tick window above starts at t >= 2.0 s. The diagnosis round (fix 17's diagnosis.md) shows the first ~2 s of per-tick counter rates are a transmit/counter ramp artefact, not traffic behaviour; dropping those ticks removes nothing else. The window boundary is a declared constant in this generator, not a per-run choice.
 
 Further declared exclusions (TASK 5b): (1) ticks at or beyond the label generator's own measured lifetime (`elapsed_s`, capped by the scenario duration) -- a verdict about a label after its traffic stopped describes nothing about the label; (2) ticks whose link counters went BACKWARDS -- a qdisc del/re-add resets every counter on the device, so that tick's per-class goodput is a reset artefact, not a delivery gap. Stars and minima are computed over what remains; nothing is excluded silently.
 
-## S6 intent scenario (TASK 4: real API intent, TTL expiry inside the run, auto-revert)
+## S6 intent scenario (real API intent, TTL expiry inside the run, auto-revert)
 
-One intent is requested at the run's declared --intent-at (the 2026 protocol: t=10s, after the bulk stream has sat in steady state for a third of the 60s run) on the operator's real surface (IntentService, the exact upstream-declared code path the HTTP handler calls: POST /intent, target device, weight 0.5, TTL 20s, expiring at t~=30). Both endpoints of the intent's life are measured: held while live, auto-reverted at expiry (LeaseBook's implicit sweep plus the per-tick sync_lease), and the recovery window after expiry. Older artefacts in this report may carry the pre-2026 protocol (t~1s, TTL 15s, 40s run); each row states its own run's numbers. Receiver evidence is the per-second sink sampler; the floors line is a FLOOR line, not a preference claim: on a healthy link a reserve must not starve the other classes, and the reserved device must actually receive bytes. The s6 summary file is quoted when present; the table never infers what the verifier measured.
+One intent is requested at the run's declared --intent-at on the operator's real surface (IntentService, the exact upstream-declared code path the HTTP handler calls: POST /intent, target device, weight 0.5). Both endpoints of the intent's life are measured: held while live, auto-reverted at expiry (LeaseBook's implicit sweep plus the per-tick sync_lease), and the recovery window after expiry. The two S6 protocol generations are SEPARATE (legacy: 40s run, intent at t~1s, TTL 15s; current: 60s run, intent at t=10s, TTL 20s) -- no pooling, and with n=10 per arm every CI is a real t-table interval. Receiver evidence is the per-second sink sampler; the floors line is a FLOOR line, not a preference claim: on a healthy link a reserve must not starve the other classes, and the reserved device must actually receive bytes. The s6 summary file is quoted when present; the table never infers what the verifier measured.
+
+- verifier verdict (tools/verify_s6.py, via `/home/mekarz/Desktop/Full-projects/TATA-ELXSI/data/experiments/s6/s6_summary.json`): `{"intent_granted": "PASS", "auto_reverted_at_expiry": "PASS", "floors_held": "PASS", "baselines_declare_unsupported": "PASS", "run_rc": 0, "host": "live step verdict; floors include the absolute fallback floor (verifier re-run over the committed artefacts confirms the same verdict)", "notes": "values PASS/FAIL/NA from verify_s6.py over the 300-309 and 310-319 bands; recovery 17/17 (3 runs N/A: no pre-drop median), declared in the verifier itself", "recovery": "PASS", "verifier": "data/experiments/s6/verify_s6_310_band.out", "protocol": "intent at t=10s, TTL 20s (declared task3-params.md)"}`
+
+### S6 protocol: current protocol: 60s run, intent at t=10, TTL 20s (n=30 across 3 arms)
+
+| arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| B0 (default router, pfifo) | 10 | 250.91 +/- 0.03 | 3.32 +/- 0.02 | 0.380 +/- 0.012 | 250.92 +/- 0.02 | 95.86 +/- 0.00 | 95.46 +/- 0.00 | (no drop scenario) | 0.819 +/- 0.000 | 1.000 +/- 0.000 |
+| CAKE-static (95% of pre-drop link, set and forget) | 10 | 1.44 +/- 0.02 | 0.45 +/- 0.01 | 0.000 +/- 0.000 | 1.46 +/- 0.02 | 90.82 +/- 0.00 | 90.71 +/- 0.00 | (no drop scenario) | 0.835 +/- 0.000 | 1.000 +/- 0.000 |
+| ACIQ (controller) | 10 | 14.67 +/- 7.13 | 0.54 +/- 0.04 | 0.107 +/- 0.058 | 13.89 +/- 6.65 | 80.79 +/- 0.23 | 80.40 +/- 0.23 | (no drop scenario) | 0.868 +/- 0.001 | 1.000 +/- 0.000 |
+
+#### Intent life (grant / auto-revert / floors) — same protocol generation
 
 | arm | intent (verdict from result.json) | auto-revert (lease_active evidence, ticks) | receiver inst in window: game min / bulk min (floors) | declared |
 | --- | --- | --- | --- | --- |
-- verifier verdict (tools/verify_s6.py, via `/home/mekarz/Desktop/Full-projects/TATA-ELXSI/data/experiments/s6/s6_summary.json`): `{"intent_granted": "PASS", "auto_reverted_at_expiry": "PASS", "floors_held": "PASS", "baselines_declare_unsupported": "PASS", "run_rc": 0, "host": "live step verdict; floors include the absolute fallback floor (verifier re-run over the committed artefacts confirms the same verdict)", "notes": "values PASS/FAIL/NA; per-seed details in data/runs/"}`
+| B0 (default router, pfifo) | declared: no intent surface (n=10 seeds) | - (n=10 seeds) | - (n=10 seeds) | declared intent-incapable |
+| CAKE-static (95% of pre-drop link, set and forget) | declared: no intent surface (n=10 seeds) | - (n=10 seeds) | - (n=10 seeds) | declared intent-incapable |
+| CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | NOT AVAILABLE (no s6 run in this protocol) | - | - | declared intent-incapable |
+| ACIQ (controller) | granted t=10.7s, in-effect 17s (TTL 20s); granted t=10.7s, in-effect 17s (TTL 20s); granted t=10.7s, in-effect 17s (TTL 20s); granted t=10.9s, in-effect 16s (TTL 20s); granted t=10.7s, in-effect 17s (TTL 20s); granted t=10.7s, in-effect 15s (TTL 20s); granted t=10.8s, in-effect 17s (TTL 20s); granted t=10.8s, in-effect 17s (TTL 20s); granted t=11.0s, in-effect 17s (TTL 20s); granted t=11.0s, in-effect 17s (TTL 20s) | ok: last active t=30s, clear after 31s (n=10 seeds) | game 0.03 Mbps (>0: PASS); bulk 67.14 Mbps (>=10% of pre-median 76.39: PASS); game 0.03 Mbps (>0: PASS); bulk 65.59 Mbps (>=10% of pre-median 73.15: PASS); game 0.03 Mbps (>0: PASS); bulk 67.57 Mbps (>=10% of pre-median 77.12: PASS); game 0.03 Mbps (>0: PASS); bulk 68.58 Mbps (>=10% of pre-median 76.50: PASS); game 0.03 Mbps (>0: PASS); bulk 65.10 Mbps (>=10% of pre-median 72.98: PASS); game 0.03 Mbps (>0: PASS); bulk 67.13 Mbps (>=10% of pre-median 76.17: PASS); game 0.03 Mbps (>0: PASS); bulk 68.35 Mbps (>=10% of pre-median 77.39: PASS); game 0.03 Mbps (>0: PASS); bulk 70.41 Mbps (>=10% of pre-median 79.93: PASS); game 0.03 Mbps (>0: PASS); bulk 68.79 Mbps (>=10% of pre-median 77.51: PASS); game 0.03 Mbps (>0: PASS); bulk 69.21 Mbps (>=10% of pre-median 77.40: PASS) | ACIQ: intent surface |
 
-| B0 (default router, pfifo) | declared: no intent surface (n=20 seeds) | - (n=20 seeds) | - (n=20 seeds) | declared intent-incapable |
-| CAKE-static (95% of pre-drop link, set and forget) | declared: no intent surface (n=20 seeds) | - (n=20 seeds) | - (n=20 seeds) | declared intent-incapable |
-| CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | NOT AVAILABLE (no s6 run dir) | - | - | declared intent-incapable |
-| ACIQ (controller) | granted t=1.0s, in-effect 13s (TTL 15s); granted t=1.0s, in-effect 13s (TTL 15s); granted t=1.0s, in-effect 14s (TTL 15s); granted t=1.0s, in-effect 13s (TTL 15s); granted t=1.0s, in-effect 13s (TTL 15s); granted t=1.0s, in-effect 13s (TTL 15s); granted t=1.0s, in-effect 13s (TTL 15s); granted t=1.0s, in-effect 13s (TTL 15s); granted t=1.1s, in-effect 13s (TTL 15s); granted t=1.0s, in-effect 13s (TTL 15s); granted t=10.7s, in-effect 17s (TTL 20s); granted t=10.7s, in-effect 17s (TTL 20s); granted t=10.7s, in-effect 17s (TTL 20s); granted t=10.9s, in-effect 16s (TTL 20s); granted t=10.7s, in-effect 17s (TTL 20s); granted t=10.7s, in-effect 15s (TTL 20s); granted t=10.8s, in-effect 17s (TTL 20s); granted t=10.8s, in-effect 17s (TTL 20s); granted t=11.0s, in-effect 17s (TTL 20s); granted t=11.0s, in-effect 17s (TTL 20s) | ok: last active t=15s, clear after 16s; ok: last active t=15s, clear after 16s; ok: last active t=16s, clear after 16s; ok: last active t=15s, clear after 16s; ok: last active t=15s, clear after 16s; ok: last active t=15s, clear after 16s; ok: last active t=15s, clear after 16s; ok: last active t=15s, clear after 16s; ok: last active t=15s, clear after 16s; ok: last active t=15s, clear after 16s; ok: last active t=30s, clear after 31s; ok: last active t=30s, clear after 31s; ok: last active t=30s, clear after 31s; ok: last active t=30s, clear after 31s; ok: last active t=30s, clear after 31s; ok: last active t=30s, clear after 31s; ok: last active t=30s, clear after 31s; ok: last active t=30s, clear after 31s; ok: last active t=30s, clear after 31s; ok: last active t=30s, clear after 31s | game 0.03 Mbps (>0: PASS); bulk 71.43 Mbps (>=10% of pre-median 21.04: PASS); game 0.03 Mbps (>0: PASS); bulk 56.48 Mbps (>=10% of pre-median 0.00: PASS); game 0.03 Mbps (>0: PASS); bulk 59.25 Mbps (>=10% of pre-median 67.92: PASS); game 0.03 Mbps (>0: PASS); bulk 58.93 Mbps (>=10% of pre-median 34.33: PASS); game 0.03 Mbps (>0: PASS); bulk 57.24 Mbps (>=10% of pre-median 20.25: PASS); game 0.03 Mbps (>0: PASS); bulk 71.75 Mbps (>=10% of pre-median 17.83: PASS); game 0.03 Mbps (>0: PASS); bulk 58.85 Mbps (>=10% of pre-median 17.16: PASS); game 0.03 Mbps (>0: PASS); bulk 63.65 Mbps (>=10% of pre-median 0.00: PASS); game 0.03 Mbps (>0: PASS); bulk 55.23 Mbps (>=10% of pre-median 0.00: PASS); game 0.03 Mbps (>0: PASS); bulk 57.35 Mbps (>=10% of pre-median 33.24: PASS); game 0.03 Mbps (>0: PASS); bulk 67.14 Mbps (>=10% of pre-median 76.39: PASS); game 0.03 Mbps (>0: PASS); bulk 65.59 Mbps (>=10% of pre-median 73.15: PASS); game 0.03 Mbps (>0: PASS); bulk 67.57 Mbps (>=10% of pre-median 77.12: PASS); game 0.03 Mbps (>0: PASS); bulk 68.58 Mbps (>=10% of pre-median 76.50: PASS); game 0.03 Mbps (>0: PASS); bulk 65.10 Mbps (>=10% of pre-median 72.98: PASS); game 0.03 Mbps (>0: PASS); bulk 67.13 Mbps (>=10% of pre-median 76.17: PASS); game 0.03 Mbps (>0: PASS); bulk 68.35 Mbps (>=10% of pre-median 77.39: PASS); game 0.03 Mbps (>0: PASS); bulk 70.41 Mbps (>=10% of pre-median 79.93: PASS); game 0.03 Mbps (>0: PASS); bulk 68.79 Mbps (>=10% of pre-median 77.51: PASS); game 0.03 Mbps (>0: PASS); bulk 69.21 Mbps (>=10% of pre-median 77.40: PASS) | ACIQ: intent surface |
+#### Before / during / after windows (per-window mean +/- t-CI over the arm's runs; goodput = per-class RECEIVER sheet median per run, Mbps; probes = the ROUTER's own per-class rtt-p95 sheet median per run, ms; recovery target 90% of the pre-intent receiver median inside 5s of expiry)
+
+**B0 (default router, pfifo)**
+
+| - | - | - | - | - | no intent surface: windows not applicable |
+
+**CAKE-static (95% of pre-drop link, set and forget)**
+
+| - | - | - | - | - | no intent surface: windows not applicable |
+
+**ACIQ (controller)**
+
+| window | call goodput | game goodput | bulk goodput | unknown goodput | probe rtt p95 (attached sheet) |
+| before | 0.16 +/- 0.00 | 0.00 +/- 0.00 | 79.74 +/- 1.67 | 0.00 +/- 0.00 | 112.7 +/- 29.4 |
+| during | 0.12 +/- 0.00 | 0.00 +/- 0.00 | 84.76 +/- 0.02 | 0.00 +/- 0.00 | 111.3 +/- 29.1 |
+| after | 0.16 +/- 0.00 | 0.00 +/- 0.00 | 84.78 +/- 0.03 | 0.00 +/- 0.00 | 109.7 +/- 28.7 |
+| bulk recovery from expiry (s), 90%/5s target, when met | 0.22 +/- 0.09 |
+
+- per-window END-TO-END call/game p95/jitter/loss is NOT AVAILABLE here: the S6 flow jsons store one whole-run distribution each (the sender prints a single json at exit); per-window end-to-end latency arrives with the live instrumented trace, not from these artefacts.
+- 'consumed' deliberately dropped as a duplicate of the bulk sheet; the pre-intent receiver median is already in the verifier's floor line above.
+
+#### Verdict (this protocol, whole-run figures)
+
+- B0 (default router, pfifo): call p95 250.91 +/- 0.03 ms; game p95 250.92 +/- 0.02 ms
+- CAKE-static (95% of pre-drop link, set and forget): call p95 1.44 +/- 0.02 ms; game p95 1.46 +/- 0.02 ms
+- ACIQ (controller): call p95 14.67 +/- 7.13 ms; game p95 13.89 +/- 6.65 ms
+- ACIQ vs CAKE-static call p95 CIs: disjoint; ACIQ vs B0: disjoint.
+- caveat: whole-run distributions include each arm's own launch prefix; the steady-window separation is the S1 section's job (declared prefix, one number, not tuned per run).
+
+### S6 protocol: protocol: 40s run, intent at 1s, TTL 15s (n=30 across 3 arms)
+
+| arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| B0 (default router, pfifo) | 10 | 250.85 +/- 0.03 | 3.18 +/- 0.03 | 0.555 +/- 0.011 | 250.88 +/- 0.03 | 96.06 +/- 0.00 | 95.46 +/- 0.00 | (no drop scenario) | 0.818 +/- 0.000 | 1.000 +/- 0.000 |
+| CAKE-static (95% of pre-drop link, set and forget) | 10 | 1.39 +/- 0.01 | 0.44 +/- 0.01 | 0.000 +/- 0.000 | 1.41 +/- 0.01 | 90.85 +/- 0.01 | 90.69 +/- 0.01 | (no drop scenario) | 0.835 +/- 0.000 | 1.000 +/- 0.000 |
+| ACIQ (controller) | 10 | 39.00 +/- 20.30 | 0.43 +/- 0.01 | 0.035 +/- 0.029 | 38.68 +/- 20.00 | 76.72 +/- 1.12 | 76.14 +/- 1.12 | (no drop scenario) | 0.882 +/- 0.004 | 1.000 +/- 0.000 |
+
+#### Intent life (grant / auto-revert / floors) — same protocol generation
+
+| arm | intent (verdict from result.json) | auto-revert (lease_active evidence, ticks) | receiver inst in window: game min / bulk min (floors) | declared |
+| --- | --- | --- | --- | --- |
+| B0 (default router, pfifo) | declared: no intent surface (n=10 seeds) | - (n=10 seeds) | - (n=10 seeds) | declared intent-incapable |
+| CAKE-static (95% of pre-drop link, set and forget) | declared: no intent surface (n=10 seeds) | - (n=10 seeds) | - (n=10 seeds) | declared intent-incapable |
+| CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | NOT AVAILABLE (no s6 run in this protocol) | - | - | declared intent-incapable |
+| ACIQ (controller) | granted t=1.0s, in-effect 13s (TTL 15s); granted t=1.0s, in-effect 13s (TTL 15s); granted t=1.0s, in-effect 14s (TTL 15s); granted t=1.0s, in-effect 13s (TTL 15s); granted t=1.0s, in-effect 13s (TTL 15s); granted t=1.0s, in-effect 13s (TTL 15s); granted t=1.0s, in-effect 13s (TTL 15s); granted t=1.0s, in-effect 13s (TTL 15s); granted t=1.1s, in-effect 13s (TTL 15s); granted t=1.0s, in-effect 13s (TTL 15s) | ok: last active t=15s, clear after 16s; ok: last active t=15s, clear after 16s; ok: last active t=16s, clear after 16s; ok: last active t=15s, clear after 16s; ok: last active t=15s, clear after 16s; ok: last active t=15s, clear after 16s; ok: last active t=15s, clear after 16s; ok: last active t=15s, clear after 16s; ok: last active t=15s, clear after 16s; ok: last active t=15s, clear after 16s | game 0.03 Mbps (>0: PASS); bulk 71.43 Mbps (>=10% of pre-median 21.04: PASS); game 0.03 Mbps (>0: PASS); bulk 56.48 Mbps (>=10% of pre-median 0.00: PASS); game 0.03 Mbps (>0: PASS); bulk 59.25 Mbps (>=10% of pre-median 67.92: PASS); game 0.03 Mbps (>0: PASS); bulk 58.93 Mbps (>=10% of pre-median 34.33: PASS); game 0.03 Mbps (>0: PASS); bulk 57.24 Mbps (>=10% of pre-median 20.25: PASS); game 0.03 Mbps (>0: PASS); bulk 71.75 Mbps (>=10% of pre-median 17.83: PASS); game 0.03 Mbps (>0: PASS); bulk 58.85 Mbps (>=10% of pre-median 17.16: PASS); game 0.03 Mbps (>0: PASS); bulk 63.65 Mbps (>=10% of pre-median 0.00: PASS); game 0.03 Mbps (>0: PASS); bulk 55.23 Mbps (>=10% of pre-median 0.00: PASS); game 0.03 Mbps (>0: PASS); bulk 57.35 Mbps (>=10% of pre-median 33.24: PASS) | ACIQ: intent surface |
+
+#### Before / during / after windows (per-window mean +/- t-CI over the arm's runs; goodput = per-class RECEIVER sheet median per run, Mbps; probes = the ROUTER's own per-class rtt-p95 sheet median per run, ms; recovery target 90% of the pre-intent receiver median inside 5s of expiry)
+
+**B0 (default router, pfifo)**
+
+| - | - | - | - | - | no intent surface: windows not applicable |
+
+**CAKE-static (95% of pre-drop link, set and forget)**
+
+| - | - | - | - | - | no intent surface: windows not applicable |
+
+**ACIQ (controller)**
+
+| window | call goodput | game goodput | bulk goodput | unknown goodput | probe rtt p95 (attached sheet) |
+| before | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE (probe sheet has no rtt samples) |
+| during | 0.12 +/- 0.00 | 0.00 +/- 0.00 | 68.58 +/- 5.35 | 0.00 +/- 0.00 | 72.8 +/- 17.3 |
+| after | 0.16 +/- 0.00 | 0.00 +/- 0.00 | 81.86 +/- 3.29 | 0.00 +/- 0.00 | 70.9 +/- 17.1 |
+| bulk recovery from expiry (s), 90%/5s target, when met | 1.11 +/- 0.35 |
+
+- per-window END-TO-END call/game p95/jitter/loss is NOT AVAILABLE here: the S6 flow jsons store one whole-run distribution each (the sender prints a single json at exit); per-window end-to-end latency arrives with the live instrumented trace, not from these artefacts.
+- 'consumed' deliberately dropped as a duplicate of the bulk sheet; the pre-intent receiver median is already in the verifier's floor line above.
+
+#### Verdict (this protocol, whole-run figures)
+
+- B0 (default router, pfifo): call p95 250.85 +/- 0.03 ms; game p95 250.88 +/- 0.03 ms
+- CAKE-static (95% of pre-drop link, set and forget): call p95 1.39 +/- 0.01 ms; game p95 1.41 +/- 0.01 ms
+- ACIQ (controller): call p95 39.00 +/- 20.30 ms; game p95 38.68 +/- 20.00 ms
+- ACIQ vs CAKE-static call p95 CIs: disjoint; ACIQ vs B0: disjoint.
+- caveat: whole-run distributions include each arm's own launch prefix; the steady-window separation is the S1 section's job (declared prefix, one number, not tuned per run).
+
+
+- the two protocols are never pooled: every cell above is computed inside one generation (2 generation(s) on disk).
 
 ## Classifier (router-vantage corpus, thresholds fixed before held-out)
 
@@ -299,7 +387,7 @@ One intent is requested at the run's declared --intent-at (the 2026 protocol: t=
 - n_heldout: `120`
 - per-class floor 30: met (counts: `{"video_call_voice": 30, "interactive_gaming": 30, "adaptive_video_streaming": 49, "bulk_download": 40, "software_update": 49, "cloud_backup": 30}`)
 
-Source: `data/experiments/classifier_corpus_fresh/eval.json` (written by the corpus evaluator, whose failure table is copied verbatim).
+Source: `/home/mekarz/Desktop/Full-projects/TATA-ELXSI/data/experiments/classifier_corpus_fresh/eval.json` (written by the corpus evaluator, whose failure table is copied verbatim).
 
 ## Safe-state and failure injection (S5)
 

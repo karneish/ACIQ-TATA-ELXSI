@@ -137,6 +137,19 @@ DEFAULT_FAMILY_RANGES: dict[str, str] = {
 FAMILY_RANK = ("POST-FIX", "EVAL", "DEV", "PRE-FIX")
 
 
+def s6fam_matches(famname: str, rank: str) -> bool:
+    """Family-name match for the S6 protocol split.
+
+    The S6 protocol families are labelled "POST-FIX (protocol: ...)"; the
+    declared protocol keeps the bare "POST-FIX" name so every table keyed on
+    rank still renders with n=10 cells. Prefix matching stays scoped to S6
+    labels only -- no other family uses that spelling.
+    """
+    return (famname == rank
+            or (famname.startswith(rank + " (")
+                and "protocol:" in famname))
+
+
 def load_runs(runs_root: Path) -> tuple[list[dict], list[str]]:
     """POST-FIX-primary view (back-compat; tests grep this signature).
     The per-family breakdown is load_runs_families()."""
@@ -229,12 +242,39 @@ def _load_runs_inner(
     runs_by_family: dict[tuple[str, str, str], list[dict]] = {}
     dropped = []
     for (sc, sysname), members in sorted(fam.items()):
-        # S6 runs on their own 300-309 family: they are neither a PRE-FIX
-        # repeat nor a POST-FIX rerun of an existing family; their purpose
-        # (intent grant/revert) does not depend on the fix timeline.
+        # S6 runs split BY PROTOCOL (declaration task3-params.md: no pooling
+        # across protocol generations). The older charts mixed two protocols
+        # (300-309: 40s run, intent at t~1s, TTL 15s; 310-319: 60s run,
+        # intent at t=10s, TTL 20s) into ONE n=20 cell, which pushed n out of
+        # the t-table range and hid a protocol change the reader had no way
+        # to see. The protocol tuple comes from each run's config.json. The
+        # protocol whose tuple matches the current declared protocol feeds
+        # the primary "POST-FIX" family (back-compat with every table keyed
+        # on rank), and every OTHER protocol generation gets its own labelled
+        # family "POST-FIX (protocol ...)".
         if sc == "s6_intent_expire":
+            declared = (60.0, 10.0, 20.0)
+            proto: dict[tuple[float, float, float], list] = {}
             keep_any = set(s for s, _ in members)
-            runs_by_family[(sc, sysname, "POST-FIX")] = [r for _, r in members]
+            for _s, r in members:
+                key = tuple(float(r["cfg"].get(k) or fallback)
+                            for k, fallback in
+                            (("duration_s", 40.0), ("intent_at_s", 1.0),
+                             ("intent_ttl_s", 15.0)))
+                proto.setdefault(key, []).append(r)
+            if declared in proto:
+                runs_by_family[(sc, sysname, "POST-FIX")] = proto[declared]
+                del proto[declared]
+            else:      # unseen protocol: keep the pool only if all agree
+                tops = sorted(proto.items())
+                if len(tops) == 1:
+                    runs_by_family[(sc, sysname, "POST-FIX")] = tops[0][1]
+                    del proto[tops[0][0]]
+            for (dur, at, ttl), rs in sorted(proto.items()):
+                runs_by_family[
+                    (sc, sysname,
+                     f"POST-FIX (protocol: {dur:.0f}s run, intent at "
+                     f"{at:.0f}s, TTL {ttl:.0f}s)")] = rs
             dropped.extend([])
             continue
         seeds_all = sorted(s for s, _ in members)
@@ -264,11 +304,17 @@ def _load_runs_inner(
                     + "; ".join(f"{k} {v}" for k, v in famspec.items())
                     + ")")
     skipped.extend(sorted(dropped))
-    # Primary band = the first ranked family present (POST-FIX normally)
+    # Primary band = the first ranked family present (POST-FIX normally).
+    # Exact name first; the S6 protocol-labelled spellings only fill a rank
+    # when no exact-family run shares it (so the declared protocol family
+    # never pools with a legacy one).
     runs = []
     for rank in FAMILY_RANK:
         blocks = [runs_by_family[k] for k in runs_by_family
                   if k[2] == rank]
+        if not blocks:
+            blocks = [runs_by_family[k] for k in runs_by_family
+                      if s6fam_matches(k[2], rank)]
         if blocks:
             runs = [r for blk in blocks for r in blk]
             break
@@ -348,6 +394,202 @@ _SINK_TS_RE = re.compile(r"\[\s*([\w.-]+) sink\]\s+t=(\S+)\s+cum=(\d+)\s+"
 #: settle time BEFORE the driver's t=0, so the sink's own clock runs AHEAD
 #: of the run clock by that much. Declared constant, never fitted.
 SINK_CLOCK_LEAD_S = 1.0
+
+
+#: S6 window split (task3-params.md): the run divides at the intent's own
+#: times, not at chosen landmarks. Recovery definitions are the constants
+#: tools/verify_s6.py already enforces (90% of the pre-intent receiver
+#: median within 5 s of expiry); they are re-declared here so the report
+#: table and the verifier cannot drift apart in silence.
+S6_RECOVERY_FRAC = 0.90
+S6_RECOVERY_LIMIT_S = 5.0
+
+#: Sheets the window table reports, verbatim sheet keys as samples.jsonl
+#: carries them.
+S6_SHEETS = ("video_call_voice", "interactive_gaming", "bulk_download",
+             "unknown")
+
+
+def _window_of(run: dict) -> tuple[float, float, float] | None:
+    """(fired, expiry, run_end) in run seconds, or None without an intent."""
+    res = run.get("res") if isinstance(run.get("res"), dict) else {}
+    intent = res.get("intent") or {}
+    fired = intent.get("fired_at_run_t_s")
+    ttl = run["cfg"].get("intent_ttl_s")
+    if not isinstance(fired, (int, float)):
+        return None
+    ttl = ttl if isinstance(ttl, (int, float)) else 20.0
+    duration = run["cfg"].get("duration_s")
+    end = (duration if isinstance(duration, (int, float))
+           else (run["samples"][-1]["t"] if run["samples"] else fired + ttl))
+    return float(fired), float(fired) + float(ttl), float(end)
+
+
+def _class_sheet_median(run: dict, window: tuple[float, float],
+                        sheet: str, field: str) -> float | None:
+    """Median of one per-tick sheet field inside a window. An empty window
+    is never reported as 0: None means no ticks carried the value."""
+    lo, hi = window
+    if hi <= lo:
+        return None
+    vals = []
+    for x in run["samples"]:
+        t = x.get("t")
+        if not (isinstance(t, (int, float)) and lo <= t < hi):
+            continue
+        v = (x.get("per_class") or {}).get(sheet) or {}
+        w = v.get(field)
+        if w is not None:
+            vals.append(float(w))
+    return statistics.median(vals) if vals else None
+
+
+def _run_recovery_s(run: dict) -> float | None:
+    """Receiver-side seconds from the intent's expiry to the bulk stream at
+    >= 90% of its pre-intent median (declared 0.90/5s), or None."""
+    w = _window_of(run)
+    if w is None:
+        return None
+    fired, expiry, end = w
+    c_bulk, _bb = sink_inst_series(run, "bulk")
+    pre = [v for t, v in c_bulk if t < fired]
+    med = statistics.median(pre) if pre else 0.0
+    if med <= 0:
+        return None
+    hits = [t for t, v in c_bulk
+            if expiry <= t <= expiry + S6_RECOVERY_LIMIT_S
+            and v >= S6_RECOVERY_FRAC * med]
+    return float(min(hits) - expiry) if hits else None
+
+
+def _per_arm_recovery(runs_: list[dict]) -> list[float]:
+    """Recovery seconds per run; runs without one (no meter / no
+    pre-median) drop out, and len() vs n is visible to the reader."""
+    return [s for r in runs_
+            if (s := _run_recovery_s(r)) is not None]
+
+
+
+def s6_verdict_prose(add, grp: list[dict]) -> None:
+    """Per-protocol verdict bullets, computed from the runs on disk (never
+    pooled with the other generation): whole-run call p95 and game p95 per
+    arm, pairwise CI-overlap ACIQ-vs-CAKE-static and ACIQ-vs-B0, and the
+    whole-run caveat that these figures include each arm's own launch
+    behaviour (the prefix every system pays, quantified in S1/S2)."""
+    add("#### Verdict (this protocol, whole-run figures)")
+    add("")
+    got = {}
+    for arm in ARM_ORDER:
+        runs_ = [x for x in grp if x["cfg"].get("system") == arm]
+        if not runs_:
+            continue
+        calls = [call_metrics(r["wl"]).get("p95") for r in runs_]
+        calls = [c for c in calls if c is not None]
+        games = [game_p95(r["wl"]) for r in runs_]
+        games = [g for g in games if g is not None]
+        got[arm] = (runs_, calls, games)
+        add(f"- {ARM_LABELS.get(arm, arm)}: call p95 {fmt(calls)} ms; "
+            f"game p95 {fmt(games)} ms")
+    if "aciq" in got and "b1_cake95" in got:
+        txt = (f"- ACIQ vs CAKE-static call p95 CIs: "
+               f"{ci_overlap(got['aciq'][1], got['b1_cake95'][1])}")
+        if "b0_fifo" in got:
+            txt += ("; ACIQ vs B0: "
+                    f"{ci_overlap(got['aciq'][1], got['b0_fifo'][1])}")
+        txt += "."
+        add(txt)
+    add("- caveat: whole-run distributions include each arm's own launch "
+        "prefix; the steady-window separation is the S1 section's job "
+        "(declared prefix, one number, not tuned per run).")
+    add("")
+
+
+def emit_s6_windows(add, grp: list[dict]) -> None:
+    """Before / during / after table for ONE protocol generation.
+
+    Windows come from each run's own intent: [start, fired), [fired,
+    fired+ttl), [fired+ttl, end). Per-window END-TO-END call/game p95 is not
+    derivable from the committed S6 artefacts (the flow jsons carry
+    whole-run distributions only); that cell says NOT AVAILABLE instead of
+    reusing the whole-run number. Per-tick per-class goodput medians and the
+    router's own per-class probe p95 medians are aggregated to per-window
+    mean +/- t-CI across the arm's n=10 runs."""
+    add("#### Before / during / after windows (per-window mean +/- t-CI "
+        "over the arm's runs; goodput = per-class RECEIVER sheet median "
+        "per run, Mbps; probes = the ROUTER's own per-class rtt-p95 sheet "
+        f"median per run, ms; recovery target {S6_RECOVERY_FRAC:.0%} of the "
+        f"pre-intent receiver median inside {S6_RECOVERY_LIMIT_S:.0f}s of "
+        "expiry)")
+    add("")
+    rows: list[tuple[str, list[list[str]]]] = []
+    for arm in ARM_ORDER:
+        runs_ = [x for x in grp if x["cfg"].get("system") == arm]
+        if not runs_:
+            continue
+        # windows only make sense where an intent was granted; arms without
+        # an intent surface get one honest line, not an empty table
+        if not any(_window_of(x) for x in runs_):
+            rows.append((ARM_LABELS.get(arm, arm), [[
+                "-", "-", "-", "-", "-",
+                "no intent surface: windows not applicable"]]))
+            continue
+        cells: list[list[str]] = []
+        cells.append(["window", "call goodput", "game goodput",
+                      "bulk goodput", "unknown goodput",
+                      "probe rtt p95 (attached sheet)"])
+        windows = ("before", "during", "after")
+        for wname in windows:
+            row = [wname]
+            for sheet in ("video_call_voice", "interactive_gaming",
+                          "bulk_download", "unknown"):
+                vals = _collect_window(runlist=runs_, wname=wname,
+                                       sheet=sheet, field="goodput_mbps")
+                row.append(fmt(vals, 2) if vals else NOT_AVAILABLE)
+            vals = _collect_window(runlist=runs_, wname=wname,
+                                   sheet="unknown", field="rtt_p95")
+            row.append(fmt(vals, 1) if vals else
+                       NOT_AVAILABLE + " (probe sheet has no rtt samples)")
+            cells.append(row)
+        rec_vals = _per_arm_recovery(runs_)
+        cells.append(["bulk recovery from expiry (s), "
+                      "90%/5s target, when met",
+                      fmt(rec_vals, 2) if rec_vals
+                      else (NOT_AVAILABLE
+                            + " (no run met the target)")])
+        rows.append((ARM_LABELS.get(arm, arm), cells))
+    for arm_label, cells in rows:
+        add(f"**{arm_label}**")
+        add("")
+        for cells_row in cells:
+            add(row_md(cells_row))
+        add("")
+    add("- per-window END-TO-END call/game p95/jitter/loss is NOT AVAILABLE "
+        "here: the S6 flow jsons store one whole-run distribution each (the "
+        "sender prints a single json at exit); per-window end-to-end latency "
+        "arrives with the live instrumented trace, not from these artefacts.")
+    add("- 'consumed' deliberately dropped as a duplicate of the bulk sheet; "
+        "the pre-intent receiver median is already in the verifier's floor "
+        "line above.")
+    add("")
+
+
+def _collect_window(runlist: list[dict], wname: str, sheet: str,
+                    field: str) -> list[float]:
+    """Per-window values across runs: (wname) -> each run's per-window
+    median of [sheet][field]."""
+    out = []
+    for r in runlist:
+        w = _window_of(r)
+        if w is None:
+            continue
+        fired, expiry, end = w
+        start = max(2.0, r["cfg"].get("settle_s") or 0.0)
+        lo_hi = {"before": (start, fired), "during": (fired, expiry),
+                 "after": (expiry, end)}[wname]
+        v = _class_sheet_median(r, lo_hi, sheet, field)
+        if v is not None:
+            out.append(v)
+    return out
 
 
 def sink_inst_series(run: dict, label: str) -> tuple[
@@ -877,7 +1119,8 @@ def build_report(runs_root: Path, out_md: Path,
             if rank == primary_fam:
                 continue
             sec = [r for k, v in runs_by_family.items()
-                   if k[0] == sc and k[2] == rank for r in v]
+                   if k[0] == sc and s6fam_matches(k[2], rank)
+                   for r in v]
             if sec:
                 add(f"### {sc} ({fam_seed_label(rank)})")
                 add("")
@@ -1197,34 +1440,40 @@ def build_report(runs_root: Path, out_md: Path,
     add("")
 
     # ---- S6: the intent scenario (TASK 4) ---------------------------------
-    if any(r["cfg"].get("scenario") == "s6_intent_expire" for r in runs):
-        add("## S6 intent scenario (TASK 4: real API intent, TTL expiry "
+    # Protocol split (ours, task3-params): the older charts pooled two S6
+    # protocol generations into one n=20 cell. Each generation now renders
+    # its own block, with its name in the header, and the
+    # before / during / after window table sits beside the grant/revert
+    # evidence instead of an aggregate that mixes both lives of the intent.
+    s6_groups: dict[str, list[dict]] = {}
+    for k, v in runs_by_family.items():
+        if k[0] != "s6_intent_expire":
+            continue
+        label = ("current protocol: 60s run, intent at t=10, TTL 20s"
+                 if k[2] == "POST-FIX"
+                 else k[2].replace("POST-FIX ", "").strip("()"))
+        s6_groups.setdefault(label, []).extend(v)
+    if s6_groups:
+        add("## S6 intent scenario (real API intent, TTL expiry "
             "inside the run, auto-revert)")
         add("")
-        add("One intent is requested at the run's declared --intent-at (the "
-            "2026 protocol: t=10s, after the bulk stream has sat in steady "
-            "state for a third of the 60s run) on the operator's real surface "
-            "(IntentService, the exact upstream-declared code path the HTTP "
-            "handler calls: POST /intent, target device, weight 0.5, TTL "
-            "20s, expiring at t~=30). Both endpoints of the intent's life are "
-            "measured: held while live, auto-reverted at expiry (LeaseBook's "
-            "implicit sweep plus the per-tick sync_lease), and the recovery "
-            "window after expiry. Older artefacts in this report may carry "
-            "the pre-2026 protocol (t~1s, TTL 15s, 40s run); each row states "
-            "its own run's numbers. Receiver evidence is the per-second sink "
-            "sampler; the floors line is a FLOOR line, not a preference "
-            "claim: on a healthy link a reserve must not starve the other "
-            "classes, and the reserved device must actually receive bytes. "
-            "The s6 summary file is quoted when present; the table never "
-            "infers what the verifier measured.")
+        add("One intent is requested at the run's declared --intent-at on "
+            "the operator's real surface (IntentService, the exact "
+            "upstream-declared code path the HTTP handler calls: POST "
+            "/intent, target device, weight 0.5). Both endpoints of the "
+            "intent's life are measured: held while live, auto-reverted at "
+            "expiry (LeaseBook's implicit sweep plus the per-tick "
+            "sync_lease), and the recovery window after expiry. The two S6 "
+            "protocol generations are SEPARATE (legacy: 40s run, intent at "
+            "t~1s, TTL 15s; current: 60s run, intent at t=10s, TTL 20s) -- "
+            "no pooling, and with n=10 per arm every CI is a real t-table "
+            "interval. Receiver evidence is the per-second sink sampler; "
+            "the floors line is a FLOOR line, not a preference claim: on a "
+            "healthy link a reserve must not starve the other classes, and "
+            "the reserved device must actually receive bytes. The s6 "
+            "summary file is quoted when present; the table never infers "
+            "what the verifier measured.")
         add("")
-        add(row_md(
-            ["arm",
-             "intent (verdict from result.json)",
-             "auto-revert (lease_active evidence, ticks)",
-             "receiver inst in window: game min / bulk min (floors)",
-             "declared"]))
-        add(row_md(["---"] * 5))
         if s6_json and Path(s6_json).exists():
             try:
                 s6sum = json.loads(Path(s6_json).read_text())
@@ -1233,100 +1482,121 @@ def build_report(runs_root: Path, out_md: Path,
                     f"`{json.dumps({k: v for k, v in s6sum.items()})}`")
             except json.JSONDecodeError as e:
                 add(f"- s6 summary unreadable: {e}")
-        elif any(r["cfg"].get("scenario") == "s6_intent_expire"
-                 for r in runs):
+        else:
             add(f"- s6 summary: {NOT_AVAILABLE} "
                 "(no `data/experiments/s6/s6_summary.json`; the live "
                 "script writes it after the verifier runs)")
         add("")
-        for arm in arms:
-            grp = [x for x in runs if x["cfg"].get("scenario")
-                   == "s6_intent_expire"
-                   and x["cfg"].get("system") == arm]
-            if not grp:
+        for proto_label, grp in s6_groups.items():
+            add(f"### S6 protocol: {proto_label} (n={len(grp)} "
+                f"across {len({x['cfg'].get('system') for x in grp})} arms)")
+            add("")
+            # arm metrics for THIS protocol only (t-table CIs at n=10)
+            emit_arm_table(add, "s6_intent_expire", grp)
+            add("")
+            add("#### Intent life (grant / auto-revert / floors) — same "
+                "protocol generation")
+            add("")
+            add(row_md(
+                ["arm",
+                 "intent (verdict from result.json)",
+                 "auto-revert (lease_active evidence, ticks)",
+                 "receiver inst in window: game min / bulk min (floors)",
+                 "declared"]))
+            add(row_md(["---"] * 5))
+            for arm in arms:
+                fgrp = [x for x in grp if x["cfg"].get("system") == arm]
+                if not fgrp:
+                    add(row_md([ARM_LABELS.get(arm, arm),
+                                "NOT AVAILABLE (no s6 run in this protocol)",
+                                "-", "-", "declared intent-incapable"]))
+                    continue
+                def _collapse(cells: list[str]) -> str:
+                    if len(set(cells)) == 1:
+                        return f"{cells[0]} (n={len(cells)} seeds)"
+                    return "; ".join(cells)
+                granted_c: list[str] = []
+                revert_c: list[str] = []
+                floor_c: list[str] = []
+                for r in fgrp:
+                    res = r.get("res") if isinstance(r.get("res"), dict) else {}
+                    intent = res.get("intent") or {}
+                    s = r["samples"]
+                    fired = intent.get("fired_at_run_t_s")
+                    held = intent.get("in_effect_s")
+                    ttl = r["cfg"].get("intent_ttl_s") or 20.0
+                    if res.get("system") != "aciq":
+                        gran = ("declared: no intent surface"
+                                if intent.get("supported") is False
+                                else NOT_AVAILABLE + " (no declaration)")
+                        granted_c.append(gran)
+                        revert_c.append("-")
+                        floor_c.append("-")
+                        continue
+                    note = intent.get("note") or ""
+                    if fired is None or not isinstance(fired, (int, float)):
+                        granted_c.append(NOT_AVAILABLE + " (" + note[:50] + ")")
+                        revert_c.append("-")
+                        floor_c.append("-")
+                        continue
+                    if "GRANTED" not in note:
+                        granted_c.append(f"NOT granted at t={fired:.1f}s "
+                                         f"({note[:60]})")
+                        revert_c.append("-")
+                        floor_c.append("-")
+                        continue
+                    granted_c.append(f"granted t={fired:.1f}s, in-effect "
+                                     f"{held if held is not None else 0:.0f}s "
+                                     f"(TTL {ttl:.0f}s)")
+                    inside = sorted(x["t"] for x in s
+                                    if x.get("lease_active") is True
+                                    and fired <= x["t"] <= fired + ttl)
+                    after = sorted(x["t"] for x in s
+                                   if x.get("lease_active") is True
+                                   and x["t"] > fired + ttl + 2.5)
+                    if inside and not after:
+                        revert_c.append(
+                            f"ok: last active t={inside[-1]:.0f}s, clear after "
+                            f"{fired + ttl:.0f}s")
+                    elif inside and after:
+                        revert_c.append(f"FAILED: still active at t={after[0]:.0f}s")
+                    else:
+                        revert_c.append(NOT_AVAILABLE
+                                        + " (lease never observed active)")
+                    c_game, _bg = sink_inst_series(r, "game")
+                    c_bulk, _bb = sink_inst_series(r, "bulk")
+
+                    def _in(sr, lo, hi):
+                        return [v for t, v in sr if lo <= t <= hi]
+
+                    gvals = _in(c_game, fired, fired + ttl)
+                    bvals = _in(c_bulk, fired, fired + ttl)
+                    pre_bulk = _in(c_bulk, 0.0, fired)
+                    med = statistics.median(pre_bulk) if pre_bulk else 0.0
+                    if gvals and bvals:
+                        bulk_ok = (med <= 0) or (min(bvals) >= 0.1 * med)
+                        floor_c.append(
+                            f"game {min(gvals):.2f} Mbps "
+                            f"(>0: {'PASS' if min(gvals) > 0 else 'FAIL'}); "
+                            f"bulk {min(bvals):.2f} Mbps (>=10% of pre-median "
+                            f"{med:.2f}: {'PASS' if bulk_ok else 'FAIL'})")
+                    else:
+                        floor_c.append(NOT_AVAILABLE
+                                       + " (no per-second sink sampler data in "
+                                       "the window)")
                 add(row_md([ARM_LABELS.get(arm, arm),
-                            "NOT AVAILABLE (no s6 run dir)", "-", "-",
+                            _collapse(granted_c) if granted_c else "-",
+                            _collapse(revert_c) if revert_c else "-",
+                            _collapse(floor_c) if floor_c else "-",
+                            "ACIQ: intent surface" if arm == "aciq" else
                             "declared intent-incapable"]))
-                continue
-            def _collapse(cells: list[str]) -> str:
-                if len(set(cells)) == 1:
-                    return f"{cells[0]} (n={len(cells)} seeds)"
-                return "; ".join(cells)
-            granted_c: list[str] = []
-            revert_c: list[str] = []
-            floor_c: list[str] = []
-            for r in grp:
-                res = r.get("res") if isinstance(r.get("res"), dict) else {}
-                intent = res.get("intent") or {}
-                s = r["samples"]
-                fired = intent.get("fired_at_run_t_s")
-                held = intent.get("in_effect_s")
-                ttl = r["cfg"].get("intent_ttl_s") or 20.0
-                if res.get("system") != "aciq":
-                    gran = ("declared: no intent surface"
-                            if intent.get("supported") is False
-                            else NOT_AVAILABLE + " (no declaration)")
-                    granted_c.append(gran)
-                    revert_c.append("-")
-                    floor_c.append("-")
-                    continue
-                note = intent.get("note") or ""
-                if fired is None or not isinstance(fired, (int, float)):
-                    granted_c.append(NOT_AVAILABLE + " (" + note[:50] + ")")
-                    revert_c.append("-")
-                    floor_c.append("-")
-                    continue
-                if "GRANTED" not in note:
-                    granted_c.append(f"NOT granted at t={fired:.1f}s "
-                                     f"({note[:60]})")
-                    revert_c.append("-")
-                    floor_c.append("-")
-                    continue
-                granted_c.append(f"granted t={fired:.1f}s, in-effect "
-                                 f"{held if held is not None else 0:.0f}s "
-                                 f"(TTL {ttl:.0f}s)")
-                inside = sorted(x["t"] for x in s
-                                if x.get("lease_active") is True
-                                and fired <= x["t"] <= fired + ttl)
-                after = sorted(x["t"] for x in s
-                               if x.get("lease_active") is True
-                               and x["t"] > fired + ttl + 2.5)
-                if inside and not after:
-                    revert_c.append(
-                        f"ok: last active t={inside[-1]:.0f}s, clear after "
-                        f"{fired + ttl:.0f}s")
-                elif inside and after:
-                    revert_c.append(f"FAILED: still active at t={after[0]:.0f}s")
-                else:
-                    revert_c.append(NOT_AVAILABLE
-                                    + " (lease never observed active)")
-                c_game, _bg = sink_inst_series(r, "game")
-                c_bulk, _bb = sink_inst_series(r, "bulk")
-
-                def _in(sr, lo, hi):
-                    return [v for t, v in sr if lo <= t <= hi]
-
-                gvals = _in(c_game, fired, fired + ttl)
-                bvals = _in(c_bulk, fired, fired + ttl)
-                pre_bulk = _in(c_bulk, 0.0, fired)
-                med = statistics.median(pre_bulk) if pre_bulk else 0.0
-                if gvals and bvals:
-                    bulk_ok = (med <= 0) or (min(bvals) >= 0.1 * med)
-                    floor_c.append(
-                        f"game {min(gvals):.2f} Mbps "
-                        f"(>0: {'PASS' if min(gvals) > 0 else 'FAIL'}); "
-                        f"bulk {min(bvals):.2f} Mbps (>=10% of pre-median "
-                        f"{med:.2f}: {'PASS' if bulk_ok else 'FAIL'})")
-                else:
-                    floor_c.append(NOT_AVAILABLE
-                                   + " (no per-second sink sampler data in "
-                                   "the window)")
-            add(row_md([ARM_LABELS.get(arm, arm),
-                        _collapse(granted_c) if granted_c else "-",
-                        _collapse(revert_c) if revert_c else "-",
-                        _collapse(floor_c) if floor_c else "-",
-                        "ACIQ: intent surface" if arm == "aciq" else
-                        "declared intent-incapable"]))
+            add("")
+            emit_s6_windows(add, grp)
+            s6_verdict_prose(add, grp)
+        add("")
+        add("- the two protocols are never pooled: every cell above is "
+            f"computed inside one generation ({len(s6_groups)} generation(s) "
+            "on disk).")
         add("")
 
     # ---- classification --------------------------------------------------
