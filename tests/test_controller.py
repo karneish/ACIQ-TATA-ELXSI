@@ -18,7 +18,6 @@ The tests concentrate on the CONTRACTS the docstrings promise:
 from __future__ import annotations
 
 import unittest
-from dataclasses import replace
 
 from aciq.capacity import Measurement
 from aciq.controller import Controller, Phase

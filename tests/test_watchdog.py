@@ -7,7 +7,6 @@ handler mechanics themselves are fully assertable offline.
 
 from __future__ import annotations
 
-import json
 import os
 import signal
 import subprocess
@@ -110,12 +109,13 @@ class TestRealSignalDelivery(unittest.TestCase):
             marker = os.path.join(d, "safe.path")
             lines = [
                 "import sys, time",
-                "sys.path.insert(0, %r)" % os.getcwd(),
+                f"sys.path.insert(0, {os.getcwd()!r})",
                 "from aciq.watchdog import Watchdog",
-                "open(%r, 'w').write('safe')" % marker,
+                f"open({marker!r}, 'w').write('safe')",
                 "Watchdog("
-                "lambda: open(%r, 'a').write('done'), re_raise=True)"
-                ".install()" % marker,
+                f"lambda: open({marker!r}, 'a').write('done'), "
+                "re_raise=True)"
+                ".install()",
                 "print('armed', flush=True)",
                 "time.sleep(30)",
             ]

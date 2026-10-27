@@ -18,7 +18,7 @@ import unittest
 
 from aciq.features import FlowFeatures
 from aciq.model import Flow
-from aciq.observer import DEFAULT_SNAPLEN, HeaderObserver
+from aciq.observer import HeaderObserver
 from aciq.tap import KernelTap, TapSource, merge_features
 
 

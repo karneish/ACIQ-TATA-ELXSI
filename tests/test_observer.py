@@ -20,9 +20,7 @@ from __future__ import annotations
 import unittest
 
 from aciq.features import FlowFeatures
-from aciq.model import Flow
 from aciq.observer import (
-    DEFAULT_WINDOW,
     HeaderObserver,
     parse_frame,
 )

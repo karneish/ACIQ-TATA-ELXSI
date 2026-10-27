@@ -14,7 +14,6 @@ if nothing happened. This pins the fixed contract:
     dir stays; judging it belongs to tools/verify_s5c.py.
 """
 
-import json
 import run_experiments
 import subprocess
 import sys

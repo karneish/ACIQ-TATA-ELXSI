@@ -61,7 +61,7 @@ class Watchdog:
     def engaged(self) -> bool:
         return self._fired
 
-    def install(self) -> "Watchdog":
+    def install(self) -> Watchdog:
         s = self._sig
         for sig in (signal.SIGTERM, signal.SIGINT):
             s.signal(sig, self._on_signal)

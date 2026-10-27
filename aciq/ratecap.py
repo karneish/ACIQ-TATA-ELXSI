@@ -471,7 +471,6 @@ class RateGovernor:
         # law's dwell instead, so it can never starve behind the budget that
         # the S2/S4 evidence measured, and the flap risk stays covered where
         # it is real (upward probing).
-        recent = [t for t, _rose in self._change_ts if now - t <= 60.0]
         ups_recent = [t for t, rose in self._change_ts
                       if now - t <= 60.0 and rose]
         budget_left = cfg.max_changes_per_min - len(ups_recent)

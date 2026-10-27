@@ -33,7 +33,7 @@ sys.path.insert(0, str(ROOT))
 from aciq.classify import classify  # noqa: E402
 from aciq.features import Flow, FlowFeatures  # noqa: E402
 from aciq.classify import TrustStore  # noqa: E402
-from aciq.model import TrafficClass, broad_class  # noqa: E402
+from aciq.model import broad_class  # noqa: E402
 import tools.gen_corpus as g  # noqa: E402
 
 #: The rule base is defined by exactly this file and its constants. Written

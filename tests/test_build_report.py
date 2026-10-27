@@ -18,9 +18,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from tools.build_report import (NOT_AVAILABLE, build_report, call_metrics,
-                                ci_overlap, delta_pct, fmt, game_p95,
-                                load_runs, run_fairness, t95)
+from tools.build_report import (NOT_AVAILABLE, build_report, ci_overlap, delta_pct, fmt, game_p95,
+                                load_runs)
 import tools.build_report as br  # noqa: E402
 
 

@@ -28,10 +28,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from aciq.experiment import git_commit_hash  # noqa: E402
-from aciq.fairness import (assigned_classes, class_of_label, flow_rates,  # noqa: E402
-                           jain, label_carrying, mean_over_time,
-                           minimum_over_time, per_class_series,
-                           run_demand_fairness, run_fairness, starved_ticks)
+from aciq.fairness import (class_of_label, flow_rates,  # noqa: E402
+                           label_carrying, mean_over_time,
+                           minimum_over_time, run_demand_fairness, run_fairness, starved_ticks)
 
 NOT_AVAILABLE = "NOT AVAILABLE"
 
@@ -1095,6 +1094,18 @@ def _call_obs_series(run: dict) -> list[tuple[float, float]] | None:
     return [(rt, rtt) for _seq, rt, rtt in rows] or None
 
 
+def _latency_cell(ser: list[tuple[float, float]] | None, lo: float,
+                  hi: float) -> str:
+    """One window cell of the per-run call-latency table; module level so
+    the loop variable never rides a closure (B023)."""
+    w = _window_latency([rtt for t, rtt in ser or []
+                         if lo <= t < hi])
+    if w is None:
+        return NOT_AVAILABLE
+    return (f"{w['p50']:.2f}/{w['p95']:.2f}"
+            f"/{w['p99']:.2f}/{w['max']:.2f}")
+
+
 def _window_latency(v: list[float]) -> dict | None:
     if not v:
         return None
@@ -1133,16 +1144,7 @@ def emit_call_obs(add, runlist: list[dict]) -> None:
         cells = []
         for lo, hi in ((0.0, float("inf")), (0.0, 10.0), (10.0, 20.0),
                        (20.0, 30.0)):
-
-            def _cell(lo, hi):
-                w = _window_latency([rtt for t, rtt in ser
-                                     if lo <= t < hi])
-                if w is None:
-                    return NOT_AVAILABLE
-                return (f"{w['p50']:.2f}/{w['p95']:.2f}"
-                        f"/{w['p99']:.2f}/{w['max']:.2f}")
-
-            cells.append(_cell(lo, hi))
+            cells.append(_latency_cell(ser, lo, hi))
         add(row_md([r["dir"], *cells]))
 
 
@@ -1492,7 +1494,7 @@ def ci_overlap(a: list[float], b: list[float]) -> str:
     """'overlap' / 'disjoint' on the 95% CIs of the two arms' means."""
     if len(a) < 2 or len(b) < 2:
         return "no CI (n<2)"
-    (ma, sda, cia), (mb, sdb, cib) = mean_ci(a), mean_ci(b)
+    (ma, _sda, cia), (mb, _sdb, cib) = mean_ci(a), mean_ci(b)
     if cia is None or cib is None:
         return "no CI (t-table)"
     lo_a, hi_a, lo_b, hi_b = ma - cia, ma + cia, mb - cib, mb + cib
@@ -1874,7 +1876,7 @@ def build_report(runs_root: Path, out_md: Path,
         if ests:
             acc = "; ".join(
                 f"{e:.2f}/{l:.1f} ({er:.1f}% off)" for e, l, er in
-                zip(ests[:3], links[:3], errs[:3]))
+                zip(ests[:3], links[:3], errs[:3], strict=True))
             acc = (f"mean abs {statistics.mean(errs):.1f}% "
                    f"(seed0: {acc.split('; ')[0]})")
         else:
@@ -1901,7 +1903,6 @@ def build_report(runs_root: Path, out_md: Path,
                for r in grp if (r["res"] or {}).get("resources")]
         rss = [r["res"]["resources"].get("rss_max_bytes")
                for r in grp if (r["res"] or {}).get("resources")]
-        p50s = [(d or {}).get("p50_ms") for d in dms if isinstance(d, dict)]
         p95s = [(d or {}).get("p95_ms") for d in dms if isinstance(d, dict)]
         mxs = [(d or {}).get("max_ms") for d in dms if isinstance(d, dict)]
         if cpu or p95s or mxs or rss:
@@ -1937,7 +1938,7 @@ def build_report(runs_root: Path, out_md: Path,
             if ratios:
                 per_sc = ", ".join(
                     f"{sc_} {ratio:.2f}x" for sc_, ratio
-                    in zip(common, ratios))
+                    in zip(common, ratios, strict=True))
                 add(f"- CPU context (adaptive vs adaptive): CAKE-adaptive "
                     f"runs at {statistics.fmean(ratios):.2f}x the ACIQ CPU "
                     f"fraction on the shared scenario(s): {per_sc}. The "
@@ -2073,14 +2074,14 @@ def build_report(runs_root: Path, out_md: Path,
         "those ticks removes nothing else. The window boundary is a "
         "declared constant in this generator, not a per-run choice.")
     add("")
-    add(f"Further declared exclusions (TASK 5b): (1) ticks at or beyond the "
-        f"label generator's own measured lifetime (`elapsed_s`, capped by the "
-        f"scenario duration) -- a verdict about a label after its traffic "
-        f"stopped describes nothing about the label; (2) ticks whose link "
-        f"counters went BACKWARDS -- a qdisc del/re-add resets every counter "
-        f"on the device, so that tick's per-class goodput is a reset "
-        f"artefact, not a delivery gap. Stars and minima are computed over "
-        f"what remains; nothing is excluded silently.")
+    add("Further declared exclusions (TASK 5b): (1) ticks at or beyond the "
+        "label generator's own measured lifetime (`elapsed_s`, capped by the "
+        "scenario duration) -- a verdict about a label after its traffic "
+        "stopped describes nothing about the label; (2) ticks whose link "
+        "counters went BACKWARDS -- a qdisc del/re-add resets every counter "
+        "on the device, so that tick's per-class goodput is a reset "
+        "artefact, not a delivery gap. Stars and minima are computed over "
+        "what remains; nothing is excluded silently.")
     add("")
 
     # ---- S6: the intent scenario (TASK 4) ---------------------------------
@@ -2364,9 +2365,9 @@ def build_report(runs_root: Path, out_md: Path,
                         "corpus step must re-run; per-class metrics below "
                         "carry the exact counts and are not extrapolated")
                 else:
+                    counts_txt = json.dumps(counts.get("per_label", {}))
                     add(f"- per-class floor {CORPUS_MIN_PER_CLASS}: met "
-                        f"(counts: `{json.dumps(counts.get('per_label',
-                                                             {}))}`)")
+                        f"(counts: `{counts_txt}`)")
             except json.JSONDecodeError as e:
                 add(f"- counts.json unreadable: {e}")
         if ev.get("n_heldout", 0) < CORPUS_MIN_PER_CLASS // 2:
@@ -2474,7 +2475,6 @@ def to_html(src: str) -> str:
     """The same tables as HTML; only syntax, never extra numbers."""
     rows: list[str] = []
     in_table = False
-    body: list[str] = []
     for raw in src.splitlines():
         line = raw.rstrip()
         if line.startswith("|"):

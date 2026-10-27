@@ -1119,7 +1119,6 @@ class Harness:
         up the tick loop that long, and that number belongs in the artefact,
         not in a hypothesis about it.
         """
-        from .metrics import goodput_mbps, rate_per_s
         import time as _t
         _t0 = _t.perf_counter()
         try:

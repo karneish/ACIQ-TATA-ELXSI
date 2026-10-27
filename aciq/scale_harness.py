@@ -14,7 +14,6 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from .classify import classify, finalise
-from .corrections import CorrectionStore
 from .flowtrack import FlowFeatures
 from .intent import LeaseBook
 from .model import Flow, TrafficClass
@@ -52,7 +51,6 @@ class ScaleHarness:
     def run(self) -> dict:
         results = []
         for case in CASES:
-            corrections = CorrectionStore()
             trust = None
             from aciq.classify import TrustStore
             trust = TrustStore()

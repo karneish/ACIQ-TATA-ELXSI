@@ -25,10 +25,10 @@ import select
 import socket
 import sys
 import time
-from dataclasses import dataclass, replace
+from dataclasses import replace
 
 from .features import FlowFeatures
-from .observer import DEFAULT_SNAPLEN, HeaderObserver, parse_frame
+from .observer import DEFAULT_SNAPLEN, HeaderObserver
 
 #: AF_PACKET with ETH_P_ALL: every packet with an 802.3-ish shape, ingress
 #: and egress. Filtering to the one device happens at bind time.

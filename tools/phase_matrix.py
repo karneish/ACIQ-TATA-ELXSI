@@ -192,10 +192,14 @@ def _paired_one_scenario(results: list[dict], baseline: str,
                     (d.get(workload, {}).get(metric, None)
                      if d.get(workload, {}).get(metric, None) is not None
                      else None) for d in (db, de))
-                    for db, de in zip(base_vals, eng_vals)]
-                missing = [s for s, (a, b) in zip(shared, pairs)
+                    for db, de in zip(base_vals, eng_vals, strict=True)]
+                missing = [s for s, (a, b) in zip(shared, pairs, strict=True)
                            if a is None or b is None]
-                clean = [(a, b) for (a, b) in pairs
+                # The seed values ride WITH their pair: a zip(shared, clean)
+                # after the None filter would re-pair seed names onto the
+                # wrong values in a sparse-metrics edge case.
+                clean = [(s, a, b) for s, (a, b)
+                         in zip(shared, pairs, strict=True)
                          if a is not None and b is not None]
                 row = {"engine": engine, "workload": workload,
                        "metric": metric, "pairs": len(clean),
@@ -207,9 +211,9 @@ def _paired_one_scenario(results: list[dict], baseline: str,
                         from aciq.compare import compare_runs
                         cmp_ = compare_runs(
                             [{"seed": s, metric: a}
-                             for s, (a, _b) in zip(shared, clean)],
+                             for s, a, _b in clean],
                             [{"seed": s, metric: b}
-                             for s, (_a, b) in zip(shared, clean)],
+                             for s, _a, b in clean],
                             metric)
                         row.update({
                             "baseline_median": cmp_.baseline_median,

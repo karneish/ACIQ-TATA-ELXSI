@@ -9,7 +9,6 @@ against it without becoming the default path.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence
 
 from .flowtrack import FlowFeatures
 from .model import Classification, TrafficClass

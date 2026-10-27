@@ -90,12 +90,12 @@ def wilcoxon_signed_rank(pairs: list[tuple[float, float]]) -> WilcoxonResult:
         return WilcoxonResult(0, zeros, 0.0, 1.0,
                               "all pairs tied; no test possible")
     ranks = _ranks_of([abs(d) for d in diffs])
-    w_plus_obs = sum(r for r, d in zip(ranks, diffs) if d > 0)
+    w_plus_obs = sum(r for r, d in zip(ranks, diffs, strict=True) if d > 0)
     # null distribution of W+ over every sign pattern, exact
     total = 2 ** n
     count_ge = 0
     for signs in itertools.product((1, -1), repeat=n):
-        w = sum(r for r, s in zip(ranks, signs) if s > 0)
+        w = sum(r for r, s in zip(ranks, signs, strict=True) if s > 0)
         # two-sided distance of W+ from its null mean n(n+1)/4
         if abs(w - n * (n + 1) / 4.0) >= abs(w_plus_obs - n * (n + 1) / 4.0) \
                 - 1e-12:

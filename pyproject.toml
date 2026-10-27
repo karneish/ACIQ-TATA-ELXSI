@@ -50,10 +50,15 @@ ignore = ["B008"]
 # are the literal strings written into tc argv and into JSON evidence, and
 # switching to StrEnum changes how they render. Not a correctness issue.
 "aciq/harness.py" = ["UP042"]
-# UP042: same reason for TrafficClass (model.py) and Mode (shield.py) -- these
-# enums' values are literal strings written into tc argv and JSON evidence.
+# UP042: same reason for TrafficClass (model.py), Mode (shield.py), and the
+# controller's Phase: their values are literal strings written into tc argv
+# and JSON evidence.
 "aciq/model.py" = ["UP042"]
 "aciq/shield.py" = ["UP042"]
+"aciq/controller.py" = ["UP042"]
+# B905: the calibration bins are ADJACENT-PAIR zip(BIN_EDGES, BIN_EDGES[1:])
+# by construction; strict=True raised and broke the calibration tests.
+"tools/eval_corpus.py" = ["B905"]
 # Workload generators and the netns launcher are executed as scripts inside
 # namespaces; their imports are used for side effects and their names are read
 # from sys.argv.

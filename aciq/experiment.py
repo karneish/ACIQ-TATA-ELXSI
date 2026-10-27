@@ -1188,7 +1188,7 @@ class ExperimentRunner:
                               f"{system.value} is a baseline with no intent "
                               "surface"] if self._api_intent
                           and system is not SystemSpec.ACIQ
-                          else ([f"S6 API intent NOT fired (enforcement off)"]
+                          else (["S6 API intent NOT fired (enforcement off)"]
                                 if self._api_intent else [])))
                    + ([f"workload start offsets (seeded): "
                        f"{self._start_offsets}" ] if self._start_offsets else [])),

@@ -6,7 +6,6 @@ corpus collapses into bulk_download (live evidence, first run: 5/6 wrong).
 from __future__ import annotations
 
 import sys
-import time
 import unittest
 from pathlib import Path
 
