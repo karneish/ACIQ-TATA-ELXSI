@@ -218,7 +218,14 @@ Source: `data/experiments/classifier_corpus_fresh/eval.json` (written by the cor
 
 ## Safe-state and failure injection (S5)
 
-- NOT AVAILABLE: unreadable: Expecting ',' delimiter: line 32 column 2 (char 666)
+- a_sigterm_no_filter_residue: `"PASS"`
+- b_sigkill_residue_then_cleanup: `"PASS"`
+- c_injected_failed_apply_rollbacks: `"PASS"`
+- c_repeats: `[{"seed": 555, "verify": "PASS", "last_good_t_s": 25.52, "rolled_back_at_t_s": 26.54, "first_recommit_t_s": 27.63, "arm_to_rollback_s": 1.02}, {"seed": 556, "verify": "PASS", "last_good_t_s": 25.53, "rolled_back_at_t_s": 26.56, "first_recommit_t_s": 27.65, "arm_to_rollback_s": 1.03}, {"seed": 557, "verify": "PASS", "last_good_t_s": 25.53, "rolled_back_at_t_s": 26.55, "first_recommit_t_s": 27.64, "arm_to_rollback_s": 1.02}]`
+- d_watchdog_starve_reaches_safe: `"PASS"`
+- host: `"/home/mekarz/aciq-venv/bin/python -V"`
+- notes: `"values PASS/FAIL only; c_repeats carries the three injected seeds (last-good/rollback/recommit stamps and arm-to-rollback seconds from samples.jsonl policy_outcome), tools are the live host versions; the report quotes this file verbatim"`
+- tools: `{"tc": "tc utility, iproute2-6.1.0, libbpf 1.3.0", "nft": "nftables v1.0.9 (Old Doc Yak #3)", "iproute2": "ip utility, iproute2-6.1.0, libbpf 1.3.0", "kernel": "7.2.6-76070206-generic", "python": "Python 3.12.3"}`
 
 ## EMULATION statement (what is modelled, what is not)
 
