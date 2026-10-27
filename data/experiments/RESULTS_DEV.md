@@ -14,11 +14,21 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | ACIQ (controller) | 10 | 93.21 +/- 14.44 | 0.59 +/- 0.05 | 0.180 +/- 0.055 | NOT AVAILABLE | 89.13 +/- 0.10 | 88.32 +/- 0.10 | (no drop scenario) | 0.927 +/- 0.000 | NOT AVAILABLE |
 
+#### Time-resolved call latency (per-packet trace, --observe runs only; p50/p95/p99/max in ms per run)
+
+NOT AVAILABLE (no run in this band carries call.obs.jsonl; live --observe runs add it, and this table refuses whole-run distributions in its place)
+
+
 ### s2_wan_drop (primary band: DEV (400-409))
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | ACIQ (controller) | 10 | 64.38 +/- 2.52 | 0.62 +/- 0.01 | 0.135 +/- 0.038 | NOT AVAILABLE | 74.15 +/- 0.07 | 71.71 +/- 0.10 | 19.59 +/- 0.17 | 0.964 +/- 0.000 | NOT AVAILABLE |
+
+#### Time-resolved call latency (per-packet trace, --observe runs only; p50/p95/p99/max in ms per run)
+
+NOT AVAILABLE (no run in this band carries call.obs.jsonl; live --observe runs add it, and this table refuses whole-run distributions in its place)
+
 
 ### s3_tv_and_gaming (primary band: DEV (400-409))
 
@@ -26,11 +36,24 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | ACIQ (controller) | 10 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | 2.27 +/- 0.19 | NOT AVAILABLE | NOT AVAILABLE | (no drop scenario) | 0.509 +/- 0.000 | 1.000 +/- 0.000 |
 
+#### Per-TV delivered goodput (receiver sampler, mean inst Mbps whole-run / final third)
+
+| arm | n | tv1 | tv2 | tv3 | which band carries the sampler |
+| --- | --- | --- | --- | --- | --- |
+| ACIQ (controller) | 10 | 4.45 +/- 0.04 / 4.62 +/- 0.16 | 4.45 +/- 0.04 / 4.98 +/- 0.16 | 4.44 +/- 0.04 / 5.19 +/- 0.13 | per-second (n_sampler=10/10) |
+- each TV cell is the label's own receiver series; TV streams share the streaming sheet in the controller's tree, so the SPLIT between them is a receiver-side fact and the arm-table's streaming-class counters are the router-side view.
+
+
 ### s4_capacity_recovery (primary band: DEV (400-409))
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | ACIQ (controller) | 10 | 50.92 +/- 7.97 | 0.65 +/- 0.02 | 0.097 +/- 0.017 | NOT AVAILABLE | 55.27 +/- 0.27 | 54.02 +/- 0.32 | 18.53 +/- 0.62 | 0.997 +/- 0.000 | NOT AVAILABLE |
+
+#### Time-resolved call latency (per-packet trace, --observe runs only; p50/p95/p99/max in ms per run)
+
+NOT AVAILABLE (no run in this band carries call.obs.jsonl; live --observe runs add it, and this table refuses whole-run distributions in its place)
+
 
 ## ACIQ vs every arm (positive % is better ACIQ on the metric at the head of the column; a cell like `41.0x` is the multiplicative factor when the baseline is so close to zero that a percentage would mislead)
 
@@ -101,28 +124,27 @@ Further declared exclusions (TASK 5b): (1) ticks at or beyond the label generato
 
 ## Classifier (router-vantage corpus, thresholds fixed before held-out)
 
-- HEADLINE (fresh held-out, tuple-split by flow, no threshold tuned on this half): strict accuracy 0.5877192982456141 on n=114 (67 correct, 0 abstained). The FULL-corpus figures below are context, not the verdict: the held-out half is the one the classifier never shaped.
+- HEADLINE (fresh held-out, tuple-split by flow, no threshold tuned on this half): broad-taxonomy accuracy 0.75 on n=120 (90 correct, 0 abstained); narrow-taxonomy accuracy 0.65 on the same rows (78 correct, 0 abstained). The FULL-corpus figures below are context, not the verdict: the held-out half is the one the classifier never shaped.
+- broad_heldout: `{"n": 120, "correct": 90, "abstained": 0, "confident_or_wrong": 30, "accuracy_strict": 0.75, "accuracy_excl_abstain": 0.75}`
+- broad_accept_abstain_heldout: `{"n": 120, "correct": 90, "abstained": 0, "confident_or_wrong": 30, "accuracy_strict": 0.75, "accuracy_excl_abstain": 0.75}`
+- calibration_heldout: `[{"lo": 0.0, "hi": 0.2, "n": 0, "correct": 0, "empirical_accuracy": null, "mean_predicted": null}, {"lo": 0.2, "hi": 0.4, "n": 0, "correct": 0, "empirical_accuracy": null, "mean_predicted": null}, {"lo": 0.4, "hi": 0.6, "n": 27, "correct": 15, "empirical_accuracy": 0.5556, "mean_predicted": 0.55}, {"lo": 0.6, "hi": 0.8, "n": 93, "correct": 63, "empirical_accuracy": 0.6774, "mean_predicted": 0.629}, {"lo": 0.8, "hi": 1.0, "n": 0, "correct": 0, "empirical_accuracy": null, "mean_predicted": null}]`
+- confidently_wrong_heldout: `[]`
 - strict: `{"n": 228, "correct": 139, "abstained": 0, "confident_or_wrong": 89, "accuracy_strict": 0.6096491228070176, "accuracy_excl_abstain": 0.6096491228070176}`
-- strict_fixed: `{"n": 114, "correct": 72, "abstained": 0, "confident_or_wrong": 42, "accuracy_strict": 0.631578947368421, "accuracy_excl_abstain": 0.631578947368421}`
-- strict_heldout: `{"n": 114, "correct": 67, "abstained": 0, "confident_or_wrong": 47, "accuracy_strict": 0.5877192982456141, "accuracy_excl_abstain": 0.5877192982456141}`
+- strict_fixed: `{"n": 108, "correct": 61, "abstained": 0, "confident_or_wrong": 47, "accuracy_strict": 0.5648148148148148, "accuracy_excl_abstain": 0.5648148148148148}`
+- strict_heldout: `{"n": 120, "correct": 78, "abstained": 0, "confident_or_wrong": 42, "accuracy_strict": 0.65, "accuracy_excl_abstain": 0.65}`
 - accept_abstain: `{"n": 228, "correct": 139, "abstained": 0, "confident_or_wrong": 89, "accuracy_strict": 0.6096491228070176, "accuracy_excl_abstain": 0.6096491228070176}`
-- accept_abstain_heldout: `{"n": 114, "correct": 67, "abstained": 0, "confident_or_wrong": 47, "accuracy_strict": 0.5877192982456141, "accuracy_excl_abstain": 0.5877192982456141}`
-- confusion_heldout: `{"classes": ["adaptive_video_streaming", "bulk_download", "cloud_backup", "interactive_gaming", "software_update", "video_call_voice"], "matrix": {"adaptive_video_streaming": {"bulk_download": 0, "cloud_backup": 0, "interactive_gaming": 0, "software_update": 0, "video_call_voice": 0, "adaptive_video_streaming": 26, "?abstain": 0}, "bulk_download": {"adaptive_video_streaming": 4, "cloud_backup": 0, "interactive_gaming": 0, "software_update": 0, "video_call_voice": 0, "bulk_download": 13, "?abstain": 0}, "cloud_backup": {"adaptive_video_streaming": 0, "bulk_download": 0, "interactive_gaming": 0, "software_update": 0, "video_call_voice": 0, "cloud_backup": 15, "?abstain": 0}, "interactive_gaming": {"adaptive_video_streaming": 0, "bulk_download": 0, "cloud_backup": 0, "software_update": 0, "video_call_voice": 18, "interactive_gaming": 0, "?abstain": 0}, "software_update": {"adaptive_video_streaming": 25, "bulk_download": 0, "cloud_backup": 0, "interactive_gaming": 0, "video_call_voice": 0, "software_update": 0, "?abstain": 0}, "video_call_voice": {"adaptive_video_streaming": 0, "bulk_download": 0, "cloud_backup": 0, "interactive_gaming": 0, "software_update": 0, "video_call_voice": 13, "?abstain": 0}}, "per_class": {"adaptive_video_streaming": {"tp": 26, "fp": 29, "fn": 0, "support": 26, "precision": 0.4727272727272727, "recall": 1.0, "f1": 0.6419753086419753}, "bulk_download": {"tp": 13, "fp": 0, "fn": 4, "support": 17, "precision": 1.0, "recall": 0.7647058823529411, "f1": 0.8666666666666666}, "cloud_backup": {"tp": 15, "fp": 0, "fn": 0, "support": 15, "precision": 1.0, "recall": 1.0, "f1": 1.0}, "interactive_gaming": {"tp": 0, "fp": 0, "fn": 18, "support": 18, "precision": null, "recall": 0.0, "f1": null}, "software_update": {"tp": 0, "fp": 0, "fn": 25, "support": 25, "precision": null, "recall": 0.0, "f1": null}, "video_call_voice": {"tp": 13, "fp": 18, "fn": 0, "support": 13, "precision": 0.41935483870967744, "recall": 1.0, "f1": 0.5909090909090909}}}`
+- accept_abstain_heldout: `{"n": 120, "correct": 78, "abstained": 0, "confident_or_wrong": 42, "accuracy_strict": 0.65, "accuracy_excl_abstain": 0.65}`
+- confusion_heldout: `{"classes": ["adaptive_video_streaming", "bulk_download", "cloud_backup", "interactive_gaming", "software_update", "video_call_voice"], "matrix": {"adaptive_video_streaming": {"bulk_download": 0, "cloud_backup": 0, "interactive_gaming": 0, "software_update": 0, "video_call_voice": 0, "adaptive_video_streaming": 32, "?abstain": 0}, "bulk_download": {"adaptive_video_streaming": 6, "cloud_backup": 0, "interactive_gaming": 0, "software_update": 0, "video_call_voice": 0, "bulk_download": 18, "?abstain": 0}, "cloud_backup": {"adaptive_video_streaming": 0, "bulk_download": 0, "interactive_gaming": 0, "software_update": 0, "video_call_voice": 0, "cloud_backup": 13, "?abstain": 0}, "interactive_gaming": {"adaptive_video_streaming": 0, "bulk_download": 0, "cloud_backup": 0, "software_update": 0, "video_call_voice": 12, "interactive_gaming": 0, "?abstain": 0}, "software_update": {"adaptive_video_streaming": 24, "bulk_download": 0, "cloud_backup": 0, "interactive_gaming": 0, "video_call_voice": 0, "software_update": 0, "?abstain": 0}, "video_call_voice": {"adaptive_video_streaming": 0, "bulk_download": 0, "cloud_backup": 0, "interactive_gaming": 0, "software_update": 0, "video_call_voice": 15, "?abstain": 0}}, "per_class": {"adaptive_video_streaming": {"tp": 32, "fp": 30, "fn": 0, "support": 32, "precision": 0.5161290322580645, "recall": 1.0, "f1": 0.6808510638297872}, "bulk_download": {"tp": 18, "fp": 0, "fn": 6, "support": 24, "precision": 1.0, "recall": 0.75, "f1": 0.8571428571428571}, "cloud_backup": {"tp": 13, "fp": 0, "fn": 0, "support": 13, "precision": 1.0, "recall": 1.0, "f1": 1.0}, "interactive_gaming": {"tp": 0, "fp": 0, "fn": 12, "support": 12, "precision": null, "recall": 0.0, "f1": null}, "software_update": {"tp": 0, "fp": 0, "fn": 24, "support": 24, "precision": null, "recall": 0.0, "f1": null}, "video_call_voice": {"tp": 15, "fp": 12, "fn": 0, "support": 15, "precision": 0.5555555555555556, "recall": 1.0, "f1": 0.7142857142857143}}}`
 - paths_fixed: `["aciq/classify.py", "aciq/features.py", "aciq/model.py:BROAD_TAXONOMY"]`
 - n_corpus: `228`
-- n_heldout: `114`
+- n_heldout: `120`
 - per-class floor 30: met (counts: `{"video_call_voice": 30, "interactive_gaming": 30, "adaptive_video_streaming": 49, "bulk_download": 40, "software_update": 49, "cloud_backup": 30}`)
 
-Source: `/home/mekarz/Desktop/Full-projects/TATA-ELXSI/data/experiments/classifier_corpus/eval.json` (written by the corpus evaluator, whose failure table is copied verbatim).
+Source: `data/experiments/classifier_corpus_fresh/eval.json` (written by the corpus evaluator, whose failure table is copied verbatim).
 
 ## Safe-state and failure injection (S5)
 
-- a_sigterm_no_filter_residue: `"PASS"`
-- b_sigkill_residue_then_cleanup: `"PASS"`
-- c_injected_failed_apply_rollbacks: `"PASS"`
-- d_watchdog_starve_reaches_safe: `"PASS"`
-- host: `"/home/mekarz/aciq-venv/bin/python -V"`
-- notes: `"values PASS/FAIL only; the report quotes this file verbatim"`
+- NOT AVAILABLE: unreadable: Expecting ',' delimiter: line 32 column 2 (char 666)
 
 ## EMULATION statement (what is modelled, what is not)
 

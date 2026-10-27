@@ -101,8 +101,9 @@ def fmt(values: list[float] | list[None], nd: int = 2) -> str:
 ARM_LABELS = {
     "b0_fifo": "B0 (default router, pfifo)",
     "b1_cake95": "CAKE-static (95% of pre-drop link, set and forget)",
-    "b1_cake_oracle": ("CAKE-oracle (post-drop rate from t=0; "
-                       "an oracle an operator cannot have)"),
+    "b1_cake_oracle": ("CAKE-oracle (0.95x the protocol's declared final "
+                       "rate, from t=0; an oracle an operator cannot "
+                       "have)"),
     "aciq": "ACIQ (controller)",
 }
 ARM_ORDER = ["b0_fifo", "b1_cake95", "b1_cake_oracle", "aciq"]
@@ -651,25 +652,49 @@ def _s2b_truth_fn(run: dict) -> tuple[callable, float]:
 
 
 def _s2b_series(run: dict) -> list[tuple[float, float]]:
-    """(t, applied_mbps) per sample; None capacities drop out (the report
-    does not invent a rate for a tick the harness did not measure)."""
+    """(t, applied_mbps) for the row's "applied" semantics, per ARM.
+
+    ACIQ re-arms every tick, so its samples' capacity_mbps IS the applied
+    tree. The CAKE arms shape ONCE at launch into per-class tokens; their
+    samples' capacity_mbps carries the launch LINK, never the shaped rate,
+    so the applied value comes from config.json's cake_rate_at_apply (the
+    artefact states the tree rate). B0 shapes nothing; its samples'
+    capacity is its launch set, so the series stands. None capacities drop
+    out (the report does not invent a rate for a tick the harness did not
+    measure)."""
     out = []
     for s in run["samples"]:
         cap = s.get("capacity_mbps")
         if isinstance(cap, (int, float)) and math.isfinite(float(cap)):
             out.append((float(s["t"]), float(cap)))
+    cfg = run["cfg"]
+    if cfg.get("system") in ("b1_cake95", "b1_cake_oracle"):
+        rate = cfg.get("cake_rate_at_apply")
+        if isinstance(rate, (int, float)) and math.isfinite(float(rate)):
+            return [(float(s["t"]), float(rate)) for s in run["samples"]
+                    if isinstance(s.get("t"), (int, float))]
     return out
 
 
 def _s2b_bind_s(run: dict) -> float | None:
     """First tick >= change_at satisfying S2B_BIND_TOL of truth, which then
-    holds to the END of the run (the declared 'stays there')."""
+    holds to the END of the run (the declared 'stays there').
+
+    Ramp runs are judged AFTER the ramp completes (the declared rule): the
+    truth is a moving target inside the ramp window, and a tick that
+    happens to track a moving target says nothing about settling."""
     truth, at = _s2b_truth_fn(run)
+    cfg = run["cfg"]
+    ramp_to = cfg.get("ramp_to_mbps")
+    hold_from = at
+    if ramp_to is not None:
+        ramp_end = float(at) + float(cfg.get("ramp_duration_s") or 0.0)
+        hold_from = ramp_end
     ser = _s2b_series(run)
     ok = None
     for t, cap in ser:
         tv = truth(t)
-        if abs(cap - tv) <= S2B_BIND_TOL * tv and t >= at:
+        if abs(cap - tv) <= S2B_BIND_TOL * tv and t >= hold_from:
             if ok is None:
                 ok = t
         else:

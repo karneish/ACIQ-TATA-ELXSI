@@ -180,7 +180,8 @@ echo " \"c_injected_failed_apply_rollbacks\": \"$s5c\","
 echo " \"d_watchdog_starve_reaches_safe\": \"$s5d\","
 printf ' "c_repeats": ';
 cat "$c_repeats_json"
-echo ' "tools": {'; \
+echo ','
+echo ' "tools": {'
 echo "   \"tc\": \"$TCV\","; \
 echo "   \"nft\": \"$NFTV\","; \
 echo "   \"iproute2\": \"$IPV\","; \

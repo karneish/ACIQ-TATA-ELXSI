@@ -2,11 +2,13 @@
 
 Runs root: `data/experiments/bands_merge` | runs used: 190 | scenarios: s1_iso_during_call, s2_wan_drop, s3_tv_and_gaming, s4_capacity_recovery, s6_intent_expire
 
-Skipped 1 incomplete-only directory names: `s2_wan_drop__aciq__adaptive__seed555 (special-condition run: inject_fail_apply)`
+Skipped 10 incomplete-only directory names: `s2_wan_drop__aciq__adaptive__seed42 (missing config.json or workloads.json)`, `s2_wan_drop__aciq__adaptive__seed555 (special-condition run: inject_fail_apply)`, `s2_wan_drop__aciq__adaptive__seed556 (special-condition run: inject_fail_apply)`, `s2_wan_drop__aciq__adaptive__seed557 (special-condition run: inject_fail_apply)`, `s1_iso_during_call__aciq__adaptive__seed210 (outside tracked seed families: PRE-FIX 0-9,42-51; POST-FIX 200-209; DEV 400-409; EVAL 500-509)`, `s1_iso_during_call__aciq__adaptive__seed211 (outside tracked seed families: PRE-FIX 0-9,42-51; POST-FIX 200-209; DEV 400-409; EVAL 500-509)`, `s2_wan_drop__aciq__adaptive__seed210 (outside tracked seed families: PRE-FIX 0-9,42-51; POST-FIX 200-209; DEV 400-409; EVAL 500-509)`, `s2_wan_drop__aciq__adaptive__seed211 (outside tracked seed families: PRE-FIX 0-9,42-51; POST-FIX 200-209; DEV 400-409; EVAL 500-509)`, `s4_capacity_recovery__aciq__adaptive__seed210 (outside tracked seed families: PRE-FIX 0-9,42-51; POST-FIX 200-209; DEV 400-409; EVAL 500-509)`, `s4_capacity_recovery__aciq__adaptive__seed211 (outside tracked seed families: PRE-FIX 0-9,42-51; POST-FIX 200-209; DEV 400-409; EVAL 500-509)`
 
 **Skipped directories (summary):**
-- special-condition run: 1
-- total skipped: 1
+- missing required files: 1
+- outside tracked seed families: 6
+- special-condition run: 3
+- total skipped: 10
 
 ## Delay and throughput, every scenario x arm (mean +/- 95% CI over seeds; t(9)=2.262 for n=10)
 
@@ -21,7 +23,7 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | B0 (default router, pfifo) | 10 | 250.67 +/- 0.03 | 3.09 +/- 0.03 | 0.766 +/- 0.025 | NOT AVAILABLE | 96.29 +/- 0.00 | 95.49 +/- 0.00 | (no drop scenario) | 0.909 +/- 0.000 | NOT AVAILABLE |
 | CAKE-static (95% of pre-drop link, set and forget) | 10 | 1.45 +/- 0.01 | 0.45 +/- 0.01 | 0.000 +/- 0.000 | NOT AVAILABLE | 90.96 +/- 0.00 | 90.74 +/- 0.00 | (no drop scenario) | 0.922 +/- 0.000 | NOT AVAILABLE |
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 1.45 +/- 0.01 | 0.44 +/- 0.01 | 0.000 +/- 0.000 | NOT AVAILABLE | 90.96 +/- 0.00 | 90.74 +/- 0.00 | (no drop scenario) | 0.922 +/- 0.000 | NOT AVAILABLE |
-| ACIQ (controller) | 10 | 82.49 +/- 0.49 | 0.61 +/- 0.05 | 0.180 +/- 0.060 | NOT AVAILABLE | 86.22 +/- 0.93 | 85.41 +/- 0.93 | (no drop scenario) | 0.934 +/- 0.002 | NOT AVAILABLE |
+| ACIQ (controller) | 10 | 82.58 +/- 0.63 | 0.62 +/- 0.04 | 0.167 +/- 0.060 | NOT AVAILABLE | 86.98 +/- 1.14 | 86.16 +/- 1.14 | (no drop scenario) | 0.932 +/- 0.003 | NOT AVAILABLE |
 
 #### Time-resolved call latency (per-packet trace, --observe runs only; p50/p95/p99/max in ms per run)
 
@@ -74,7 +76,7 @@ NOT AVAILABLE (no run in this band carries call.obs.jsonl; live --observe runs a
 | B0 (default router, pfifo) | 10 | 251.28 +/- 0.09 | 4.36 +/- 0.06 | 8.710 +/- 0.323 | NOT AVAILABLE | 79.58 +/- 0.01 | NOT AVAILABLE | 22.16 +/- 0.05 | 0.950 +/- 0.000 | NOT AVAILABLE |
 | CAKE-static (95% of pre-drop link, set and forget) | 10 | 70.31 +/- 1.73 | 0.51 +/- 0.01 | 0.160 +/- 0.015 | NOT AVAILABLE | 75.17 +/- 0.04 | 74.41 +/- 0.04 | 20.12 +/- 0.01 | 0.961 +/- 0.000 | NOT AVAILABLE |
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 2.33 +/- 0.03 | 0.31 +/- 0.01 | 0.000 +/- 0.000 | NOT AVAILABLE | 18.09 +/- 0.00 | 18.06 +/- 0.00 | 18.71 +/- 0.06 | 0.820 +/- 0.000 | NOT AVAILABLE |
-| ACIQ (controller) | 10 | 73.60 +/- 2.48 | 0.63 +/- 0.03 | 0.265 +/- 0.041 | NOT AVAILABLE | 71.69 +/- 0.58 | 69.54 +/- 0.56 | 20.15 +/- 0.01 | 0.969 +/- 0.001 | NOT AVAILABLE |
+| ACIQ (controller) | 10 | 72.89 +/- 3.27 | 0.64 +/- 0.03 | 0.240 +/- 0.050 | NOT AVAILABLE | 72.29 +/- 0.92 | 70.08 +/- 0.83 | 20.05 +/- 0.15 | 0.968 +/- 0.002 | NOT AVAILABLE |
 
 #### Time-resolved call latency (per-packet trace, --observe runs only; p50/p95/p99/max in ms per run)
 
@@ -113,7 +115,7 @@ NOT AVAILABLE (no run in this band carries call.obs.jsonl; live --observe runs a
 | B0 (default router, pfifo) | 10 | 248.96 +/- 0.73 | 2.89 +/- 0.25 | 9.095 +/- 0.197 | NOT AVAILABLE | 41.18 +/- 0.03 | 39.95 +/- 0.02 | 20.70 +/- 0.02 | 0.991 +/- 0.000 | NOT AVAILABLE |
 | CAKE-static (95% of pre-drop link, set and forget) | 10 | 89.55 +/- 0.96 | 0.69 +/- 0.02 | 0.380 +/- 0.081 | NOT AVAILABLE | 39.06 +/- 0.03 | 38.58 +/- 0.02 | 20.05 +/- 0.00 | 0.985 +/- 0.000 | NOT AVAILABLE |
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 2.38 +/- 0.05 | 0.34 +/- 0.02 | 0.000 +/- 0.000 | NOT AVAILABLE | 18.09 +/- 0.00 | 18.06 +/- 0.00 | 18.55 +/- 0.07 | 0.820 +/- 0.000 | NOT AVAILABLE |
-| ACIQ (controller) | 11 | 111.60 +/- 30.10 | 1.10 +/- 0.49 | 0.945 +/- 1.264 | NOT AVAILABLE | 43.20 +/- 8.28 | 41.92 +/- 8.03 | 20.36 +/- 0.77 | 0.983 +/- 0.008 | NOT AVAILABLE |
+| ACIQ (controller) | 10 | 98.11 +/- 1.70 | 0.88 +/- 0.04 | 0.380 +/- 0.113 | NOT AVAILABLE | 39.48 +/- 0.07 | 38.31 +/- 0.08 | 20.01 +/- 0.01 | 0.986 +/- 0.000 | NOT AVAILABLE |
 
 #### Time-resolved call latency (per-packet trace, --observe runs only; p50/p95/p99/max in ms per run)
 
@@ -201,7 +203,7 @@ NOT AVAILABLE (no run in this band carries call.obs.jsonl; live --observe runs a
 | B0 (default router, pfifo) | 10 | 250.43 +/- 0.06 | 3.05 +/- 0.02 | 6.017 +/- 0.155 | NOT AVAILABLE | 59.45 +/- 0.01 | 58.26 +/- 0.01 | 20.68 +/- 0.01 | 0.993 +/- 0.000 | NOT AVAILABLE |
 | CAKE-static (95% of pre-drop link, set and forget) | 10 | 89.73 +/- 1.08 | 0.63 +/- 0.02 | 0.197 +/- 0.052 | NOT AVAILABLE | 56.51 +/- 0.02 | 56.04 +/- 0.02 | 20.04 +/- 0.00 | 0.996 +/- 0.000 | NOT AVAILABLE |
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 2.74 +/- 0.03 | 0.48 +/- 0.01 | 0.000 +/- 0.000 | NOT AVAILABLE | 18.08 +/- 0.00 | 18.06 +/- 0.00 | 18.78 +/- 0.01 | 0.820 +/- 0.000 | NOT AVAILABLE |
-| ACIQ (controller) | 10 | 95.74 +/- 0.90 | 0.73 +/- 0.01 | 0.280 +/- 0.023 | NOT AVAILABLE | 53.88 +/- 0.08 | 52.79 +/- 0.08 | 19.95 +/- 0.00 | 0.999 +/- 0.000 | NOT AVAILABLE |
+| ACIQ (controller) | 10 | 88.47 +/- 10.67 | 0.71 +/- 0.03 | 0.257 +/- 0.055 | NOT AVAILABLE | 54.03 +/- 0.28 | 52.90 +/- 0.21 | 19.46 +/- 0.73 | 0.998 +/- 0.000 | NOT AVAILABLE |
 
 #### Time-resolved call latency (per-packet trace, --observe runs only; p50/p95/p99/max in ms per run)
 
@@ -262,17 +264,17 @@ NOT AVAILABLE (no run in this band carries call.obs.jsonl; live --observe runs a
 Bulk compares are POST-DROP ONLY in scenarios with a capacity drop (same `bulk_mbps` whole-run mean otherwise): the whole-run number dilutes the post-drop regime with a saturated prefix, which is the opposite of the decision those scenarios exist to measure.
 
 | s1_iso_during_call | B0 (default router, pfifo) | +67.1 | disjoint | NOT AVAILABLE | NOT AVAILABLE |
-| s1_iso_during_call | CAKE-static (95% of pre-drop link, set and forget) | 57.0x | disjoint | NOT AVAILABLE | NOT AVAILABLE |
-| s1_iso_during_call | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 56.7x | disjoint | NOT AVAILABLE | NOT AVAILABLE |
-| s2_wan_drop | B0 (default router, pfifo) | +70.7 | disjoint | -9.1 | disjoint |
-| s2_wan_drop | CAKE-static (95% of pre-drop link, set and forget) | -4.7 | overlap | +0.1 | disjoint |
-| s2_wan_drop | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 31.6x | disjoint | +7.7 | disjoint |
+| s1_iso_during_call | CAKE-static (95% of pre-drop link, set and forget) | 57.1x | disjoint | NOT AVAILABLE | NOT AVAILABLE |
+| s1_iso_during_call | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 56.8x | disjoint | NOT AVAILABLE | NOT AVAILABLE |
+| s2_wan_drop | B0 (default router, pfifo) | +71.0 | disjoint | -9.5 | disjoint |
+| s2_wan_drop | CAKE-static (95% of pre-drop link, set and forget) | -3.7 | overlap | -0.3 | overlap |
+| s2_wan_drop | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 31.3x | disjoint | +7.2 | disjoint |
 | s3_tv_and_gaming | B0 (default router, pfifo) | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE |
 | s3_tv_and_gaming | CAKE-static (95% of pre-drop link, set and forget) | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE |
 | s3_tv_and_gaming | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE |
-| s4_capacity_recovery | B0 (default router, pfifo) | +61.8 | disjoint | -3.5 | disjoint |
-| s4_capacity_recovery | CAKE-static (95% of pre-drop link, set and forget) | -6.7 | disjoint | -0.5 | disjoint |
-| s4_capacity_recovery | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 35.0x | disjoint | +6.2 | disjoint |
+| s4_capacity_recovery | B0 (default router, pfifo) | +64.7 | disjoint | -5.9 | disjoint |
+| s4_capacity_recovery | CAKE-static (95% of pre-drop link, set and forget) | +1.4 | overlap | -2.9 | overlap |
+| s4_capacity_recovery | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 32.3x | disjoint | +3.6 | overlap |
 | s6_intent_expire | B0 (default router, pfifo) | +94.2 | disjoint | NOT AVAILABLE | NOT AVAILABLE |
 | s6_intent_expire | CAKE-static (95% of pre-drop link, set and forget) | -916.3 | disjoint | NOT AVAILABLE | NOT AVAILABLE |
 
@@ -282,14 +284,14 @@ Every row above where ACIQ's signed delta is negative, collected so a CAKE win c
 
 | scenario | vs arm | metric where ACIQ is worse |
 | --- | --- | --- |
-| s1_iso_during_call | CAKE-static (95% of pre-drop link, set and forget) | call p95 57.0x |
-| s1_iso_during_call | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | call p95 56.7x |
-| s2_wan_drop | B0 (default router, pfifo) | post-drop bulk Mbps -9.1 |
-| s2_wan_drop | CAKE-static (95% of pre-drop link, set and forget) | call p95 -4.7 |
-| s2_wan_drop | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | call p95 31.6x |
-| s4_capacity_recovery | B0 (default router, pfifo) | post-drop bulk Mbps -3.5 |
-| s4_capacity_recovery | CAKE-static (95% of pre-drop link, set and forget) | call p95 -6.7 and post-drop bulk Mbps -0.5 |
-| s4_capacity_recovery | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | call p95 35.0x |
+| s1_iso_during_call | CAKE-static (95% of pre-drop link, set and forget) | call p95 57.1x |
+| s1_iso_during_call | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | call p95 56.8x |
+| s2_wan_drop | B0 (default router, pfifo) | post-drop bulk Mbps -9.5 |
+| s2_wan_drop | CAKE-static (95% of pre-drop link, set and forget) | call p95 -3.7 and post-drop bulk Mbps -0.3 |
+| s2_wan_drop | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | call p95 31.3x |
+| s4_capacity_recovery | B0 (default router, pfifo) | post-drop bulk Mbps -5.9 |
+| s4_capacity_recovery | CAKE-static (95% of pre-drop link, set and forget) | post-drop bulk Mbps -2.9 |
+| s4_capacity_recovery | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | call p95 32.3x |
 | s6_intent_expire | CAKE-static (95% of pre-drop link, set and forget) | call p95 -916.3 |
 
 ## Where CAKE-static wins
@@ -298,28 +300,28 @@ The honest column above lists every rival; this one isolates the set-and-forget 
 
 | scenario | metric where CAKE-static beats ACIQ | see column in the ACIQ-vs-every table |
 | --- | --- | --- |
-| s1_iso_during_call | CAKE-static (95% of pre-drop link, set and forget) | call p95 57.0x |
-| s2_wan_drop | CAKE-static (95% of pre-drop link, set and forget) | call p95 -4.7 |
-| s4_capacity_recovery | CAKE-static (95% of pre-drop link, set and forget) | call p95 -6.7 and post-drop bulk Mbps -0.5 |
+| s1_iso_during_call | CAKE-static (95% of pre-drop link, set and forget) | call p95 57.1x |
+| s2_wan_drop | CAKE-static (95% of pre-drop link, set and forget) | call p95 -3.7 and post-drop bulk Mbps -0.3 |
+| s4_capacity_recovery | CAKE-static (95% of pre-drop link, set and forget) | post-drop bulk Mbps -2.9 |
 | s6_intent_expire | CAKE-static (95% of pre-drop link, set and forget) | call p95 -916.3 |
 
 ## ACIQ adaptation and capacity accuracy (from the same runs above)
 
 | scenario | n | bind: drop -> first applied <=1.05x post-drop (s) | bind: drop -> first applied <=1.25x post-drop (s) | final estimate | configured end link | estimate error % |
 | --- | --- | --- | --- | --- | --- | --- |
-| s1_iso_during_call | 10 | no post-drop applied tree at/below 1.05x post-drop link in any seed | no post-drop applied tree at/below 1.25x post-drop link in any seed | 95.73 +/- 0.08 | 100.0 +/- 0.0 | mean abs 4.3% (seed0: 95.61/100.0 (4.4% off)) |
-| s2_wan_drop | 10 | no post-drop applied tree at/below 1.05x post-drop link in any seed | no post-drop applied tree at/below 1.25x post-drop link in any seed | 21.45 +/- 0.11 | 20.0 +/- 0.0 | mean abs 7.3% (seed0: 21.59/20.0 (7.9% off)) |
+| s1_iso_during_call | 10 | no post-drop applied tree at/below 1.05x post-drop link in any seed | no post-drop applied tree at/below 1.25x post-drop link in any seed | 96.92 +/- 1.78 | 100.0 +/- 0.0 | mean abs 3.7% (seed0: 101.72/100.0 (1.7% off)) |
+| s2_wan_drop | 10 | 3.24 (n=2) | 3.24 (n=2) | 21.32 +/- 0.31 | 20.0 +/- 0.0 | mean abs 6.6% (seed0: 21.45/20.0 (7.2% off)) |
 | s3_tv_and_gaming | 10 | no post-drop applied tree at/below 1.05x post-drop link in any seed | no post-drop applied tree at/below 1.25x post-drop link in any seed | 56.23 +/- 13.96 | 100.0 +/- 0.0 | mean abs 43.8% (seed0: 59.04/100.0 (41.0% off)) |
-| s4_capacity_recovery | 10 | no post-drop applied tree at/below 1.05x post-drop link in any seed | no post-drop applied tree at/below 1.25x post-drop link in any seed | 21.35 +/- 0.25 | 20.0 +/- 0.0 | mean abs 6.7% (seed0: 21.52/20.0 (7.6% off)) |
+| s4_capacity_recovery | 10 | 5.81 (n=2) | 5.81 (n=2) | 20.81 +/- 0.81 | 20.0 +/- 0.0 | mean abs 6.5% (seed0: 18.80/20.0 (6.0% off)) |
 | s6_intent_expire | 10 | no post-drop applied tree at/below 1.05x post-drop link in any seed | no post-drop applied tree at/below 1.25x post-drop link in any seed | 92.98 +/- 1.56 | 100.0 +/- 0.0 | mean abs 7.0% (seed0: 92.31/100.0 (7.7% off)) |
 ## Controller resources (ACIQ adaptive runs only; from each result's resources block)
 
 | scenario | n | cpu mean frac | decision p95 ms | decision max ms | max RSS bytes |
 | --- | --- | --- | --- | --- | --- |
-| s1_iso_during_call | 10 | 0.0042 +/- 0.0001 | 37.29 +/- 18.57 | 76.59 +/- 2.65 | 20649574 +/- 384796 |
-| s2_wan_drop | 10 | 0.0043 +/- 0.0001 | 59.97 +/- 17.01 | 75.82 +/- 2.43 | 20893286 +/- 406731 |
+| s1_iso_during_call | 10 | 0.0042 +/- 0.0001 | 36.89 +/- 18.88 | 75.62 +/- 2.58 | 22148710 +/- 1937925 |
+| s2_wan_drop | 10 | 0.0042 +/- 0.0001 | 53.80 +/- 19.37 | 74.82 +/- 2.08 | 22326477 +/- 1841593 |
 | s3_tv_and_gaming | 10 | 0.0043 +/- 0.0002 | 74.32 +/- 1.15 | 77.82 +/- 2.49 | 20952678 +/- 397623 |
-| s4_capacity_recovery | 10 | 0.0045 +/- 0.0001 | 14.88 +/- 2.76 | 80.21 +/- 1.23 | 21629338 +/- 590585 |
+| s4_capacity_recovery | 10 | 0.0044 +/- 0.0001 | 25.89 +/- 17.06 | 78.69 +/- 2.58 | 23099802 +/- 1754937 |
 | s6_intent_expire | 10 | 0.0092 +/- 0.0005 | 27.60 +/- 4.99 | 103.69 +/- 20.45 | 29630874 +/- 726063 |
 
 ## Fairness detail (workload-rate Jain; per-class minima over ASSIGNED classes only, same scope for every mode)
@@ -333,11 +335,11 @@ Per-tick counter attribution (fix 18): ACIQ's tree has one leaf per class; the b
 | s1_iso_during_call | B0 (default router, pfifo) | 10 | 0.909 +/- 0.000 | NOT AVAILABLE | 2.0 +/- 0.0 | bulk via unknown=99.6; call via unknown=99.6; bulk via unknown=99.6; call via unknown=99.6; bulk via unknown=99.6; call via unknown=99.6 |
 | s1_iso_during_call | CAKE-static (95% of pre-drop link, set and forget) | 10 | 0.922 +/- 0.000 | NOT AVAILABLE | 2.0 +/- 0.0 | bulk via unknown=95; call via unknown=95; bulk via unknown=95; call via unknown=95; bulk via unknown=94.9; call via unknown=94.9 |
 | s1_iso_during_call | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 0.922 +/- 0.000 | NOT AVAILABLE | 2.0 +/- 0.0 | bulk via unknown=95; call via unknown=95; bulk via unknown=95; call via unknown=95; bulk via unknown=95; call via unknown=95 |
-| s1_iso_during_call | ACIQ (controller) | 10 | 0.934 +/- 0.002 | NOT AVAILABLE | 2.0 +/- 0.0 | bulk via unknown=85.8; call via unknown=85.8; bulk via unknown=86; call via unknown=86; bulk via unknown=86; call via unknown=86 |
+| s1_iso_during_call | ACIQ (controller) | 10 | 0.932 +/- 0.003 | NOT AVAILABLE | 2.0 +/- 0.0 | bulk via unknown=91.4; call via unknown=91.4; bulk via unknown=91.3; call via unknown=91.3; bulk via unknown=86; call via unknown=86 |
 | s2_wan_drop | B0 (default router, pfifo) | 10 | 0.950 +/- 0.000 | NOT AVAILABLE | 2.0 +/- 0.0 | bulk via unknown=19.9; call via unknown=19.9; bulk via unknown=19.9; call via unknown=19.9; bulk via unknown=19.9; call via unknown=19.9 |
 | s2_wan_drop | CAKE-static (95% of pre-drop link, set and forget) | 10 | 0.961 +/- 0.000 | NOT AVAILABLE | 2.0 +/- 0.0 | bulk via unknown=20; call via unknown=20; bulk via unknown=20; call via unknown=20; bulk via unknown=20; call via unknown=20 |
 | s2_wan_drop | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 0.820 +/- 0.000 | NOT AVAILABLE | 2.0 +/- 0.0 | bulk via unknown=19; call via unknown=19; bulk via unknown=19; call via unknown=19; bulk via unknown=19; call via unknown=19 |
-| s2_wan_drop | ACIQ (controller) | 10 | 0.969 +/- 0.001 | NOT AVAILABLE | 2.0 +/- 0.0 | bulk via unknown=19.9; call via unknown=19.9; bulk via unknown=19.9; call via unknown=19.9; bulk via unknown=19.9; call via unknown=19.9 |
+| s2_wan_drop | ACIQ (controller) | 10 | 0.968 +/- 0.002 | NOT AVAILABLE | 2.0 +/- 0.0 | bulk via unknown=19.2; call via unknown=19.2; bulk via unknown=19.8; call via unknown=19.8; bulk via unknown=19.9; call via unknown=19.9 |
 | s3_tv_and_gaming | B0 (default router, pfifo) | 10 | 0.510 +/- 0.000 | 1.000 +/- 0.000 | 4.0 +/- 0.0 | game via unknown=4.64; tv1 via unknown=4.64; tv2 via unknown=4.64; tv3 via unknown=4.64; game via unknown=4.64; tv1 via unknown=4.64 |
 | s3_tv_and_gaming | CAKE-static (95% of pre-drop link, set and forget) | 10 | 0.510 +/- 0.000 | 1.000 +/- 0.000 | 4.0 +/- 0.0 | game via unknown=4.68; tv1 via unknown=4.68; tv2 via unknown=4.68; tv3 via unknown=4.68; game via unknown=4.64; tv1 via unknown=4.64 |
 | s3_tv_and_gaming | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 0.510 +/- 0.000 | 1.000 +/- 0.000 | 4.0 +/- 0.0 | game via unknown=4.66; tv1 via unknown=4.66; tv2 via unknown=4.66; tv3 via unknown=4.66; game via unknown=4.64; tv1 via unknown=4.64 |
@@ -345,7 +347,7 @@ Per-tick counter attribution (fix 18): ACIQ's tree has one leaf per class; the b
 | s4_capacity_recovery | B0 (default router, pfifo) | 10 | 0.993 +/- 0.000 | NOT AVAILABLE | 2.0 +/- 0.0 | bulk via unknown=20; call via unknown=20; bulk via unknown=20; call via unknown=20; bulk via unknown=19.9; call via unknown=19.9 |
 | s4_capacity_recovery | CAKE-static (95% of pre-drop link, set and forget) | 10 | 0.996 +/- 0.000 | NOT AVAILABLE | 2.0 +/- 0.0 | bulk via unknown=20; call via unknown=20; bulk via unknown=20; call via unknown=20; bulk via unknown=19.9; call via unknown=19.9 |
 | s4_capacity_recovery | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 0.820 +/- 0.000 | NOT AVAILABLE | 2.0 +/- 0.0 | bulk via unknown=19; call via unknown=19; bulk via unknown=19; call via unknown=19; bulk via unknown=19; call via unknown=19 |
-| s4_capacity_recovery | ACIQ (controller) | 10 | 0.999 +/- 0.000 | NOT AVAILABLE | 2.0 +/- 0.0 | bulk via unknown=19.8; call via unknown=19.8; bulk via unknown=19.9; call via unknown=19.9; bulk via unknown=19.8; call via unknown=19.8 |
+| s4_capacity_recovery | ACIQ (controller) | 10 | 0.998 +/- 0.000 | NOT AVAILABLE | 2.0 +/- 0.0 | bulk via unknown=16.8; call via unknown=16.8; bulk via unknown=16.7; call via unknown=16.7; bulk via unknown=19.8; call via unknown=19.8 |
 | s6_intent_expire | B0 (default router, pfifo) | 10 | 0.819 +/- 0.000 | 1.000 +/- 0.000 | 3.0 +/- 0.0 | bulk via unknown=99.6; call via unknown=99.6; game via unknown=99.6; bulk via unknown=99.7; call via unknown=99.7; game via unknown=99.7 |
 | s6_intent_expire | CAKE-static (95% of pre-drop link, set and forget) | 10 | 0.835 +/- 0.000 | 1.000 +/- 0.000 | 3.0 +/- 0.0 | bulk via unknown=95; call via unknown=95; game via unknown=95; bulk via unknown=94.9; call via unknown=94.9; game via unknown=94.9 |
 | s6_intent_expire | ACIQ (controller) | 10 | 0.868 +/- 0.001 | 1.000 +/- 0.000 | 3.0 +/- 0.0 | bulk=0; call via unknown=0; game via unknown=0; bulk=0; call via unknown=0; game via unknown=0 |
@@ -501,15 +503,12 @@ Source: `data/experiments/classifier_corpus_fresh/eval.json` (written by the cor
 
 ## Safe-state and failure injection (S5)
 
-- a_sigterm_no_filter_residue: `"PASS"`
-- b_sigkill_residue_then_cleanup: `"PASS"`
-- c_injected_failed_apply_rollbacks: `"PASS"`
-- d_watchdog_starve_reaches_safe: `"PASS"`
-- host: `"/home/mekarz/aciq-venv/bin/python -V"`
-- notes: `"values PASS/FAIL only; the report quotes this file verbatim"`
+- NOT AVAILABLE: unreadable: Expecting ',' delimiter: line 32 column 2 (char 666)
 
 **Time to safe state (S5c injected failed apply; rollback = the kernel back on last-good):**
-- s2_wan_drop__aciq__adaptive__seed555: 26.680 s (arm->rollback)
+- s2_wan_drop__aciq__adaptive__seed555: 26.540 s (arm->rollback)
+- s2_wan_drop__aciq__adaptive__seed556: 26.560 s (arm->rollback)
+- s2_wan_drop__aciq__adaptive__seed557: 26.550 s (arm->rollback)
 
 ## EMULATION statement (what is modelled, what is not)
 

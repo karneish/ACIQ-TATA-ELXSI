@@ -366,6 +366,45 @@ class TestS2bRampLink(unittest.TestCase):
             self.assertIn("estimator_saturated", s)
             self.assertIsInstance(s["estimator_confidence"], float)
 
+    def test_oracle_from_start_engages_for_every_declared_final(self):
+        """The declared oracle semantics ("0.95 x the true final capacity,
+        from t=0, where the protocol declares one") must cover recover- and
+        ramp-protocoled scenarios too -- under the old drop-only rule the
+        step-up oracle applied 95% of the LAUNCH link and the ramp oracle
+        applied 95% of the launch link, neither of which is the declared
+        rate."""
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            p = r.run_paths("s2b_step_up_20to100", SystemSpec.B1_ORACLE,
+                            CapacityMode.STATIC, 42)
+            r.run("s2b_step_up_20to100", SystemSpec.B1_ORACLE,
+                  CapacityMode.STATIC, 42, recover_at_s=10.0,
+                  recover_to_mbps=100.0)
+            cfg = json.loads((p.root / "config.json").read_text())
+            self.assertTrue(cfg["oracle_from_start"])
+            self.assertAlmostEqual(cfg["cake_rate_at_apply"], 95.0)
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            p = r.run_paths("s2b_ramp_100to30", SystemSpec.B1_ORACLE,
+                            CapacityMode.STATIC, 42)
+            r.run("s2b_ramp_100to30", SystemSpec.B1_ORACLE,
+                  CapacityMode.STATIC, 42,
+                  ramp_at_s=10.0, ramp_duration_s=20.0, ramp_to_mbps=30.0)
+            cfg = json.loads((p.root / "config.json").read_text())
+            self.assertTrue(cfg["oracle_from_start"])
+            self.assertAlmostEqual(cfg["cake_rate_at_apply"], 28.5)
+        # the ordinarly CAKE-static arm keeps its launch-rate semantics
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            p = r.run_paths("s2b_step_up_20to100", SystemSpec.B1,
+                            CapacityMode.STATIC, 42)
+            r.run("s2b_step_up_20to100", SystemSpec.B1,
+                  CapacityMode.STATIC, 42, link_mbps=20.0,
+                  recover_at_s=10.0, recover_to_mbps=100.0)
+            cfg = json.loads((p.root / "config.json").read_text())
+            self.assertFalse(cfg["oracle_from_start"])
+            self.assertAlmostEqual(cfg["cake_rate_at_apply"], 19.0)
+
     def test_without_ramp_args_the_recorded_fields_stay_none(self):
         with tempfile.TemporaryDirectory() as d:
             r = self._runner(d)

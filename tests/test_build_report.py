@@ -179,6 +179,54 @@ class TestS2bRows(unittest.TestCase):
         self.assertIn("UNSATURATED", md)
         self.assertIn("confidence 0.12", md)
 
+    def test_cake_rows_read_the_applied_rate_from_config(self):
+        """The samples' capacity_mbps carries the LAUNCH link for the CAKE
+        arms (they shape once into per-class tokens); the row's applied-
+        error must read cake_rate_at_apply from config.json, never inherit
+        B0's number."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for arm in ("b0_fifo", "b1_cake95"):
+                for seed in range(10):
+                    self._mk_s2b(
+                        root, "s2b_step_50", arm, seed,
+                        [(t * 2.0, 100.0) for t in range(19)],
+                        proto={"drop_at_s": 10.0, "drop_mbps": 50.0,
+                               **({"cake_rate_at_apply": 95.0}
+                                  if arm == "b1_cake95" else {})})
+            runs, _sk, _fam = br.load_runs_families(root)
+            cake = [r for r in runs if r["cfg"]["system"] == "b1_cake95"][0]
+            truth, _at = br._s2b_truth_fn(cake)
+            errs = br._s2b_window_err(cake, 20.0, 38.0)
+            self.assertAlmostEqual(errs, 45.0)   # |95 - 50|, NOT |100 - 50|
+            b0 = [r for r in runs if r["cfg"]["system"] == "b0_fifo"][0]
+            self.assertAlmostEqual(br._s2b_window_err(b0, 20.0, 38.0), 50.0)
+
+    def test_ramp_bind_judged_after_the_ramp_ends(self):
+        """Declared rule for the ramp: the bind is judged after
+        ramp_at + duration; a tick that happens to track a moving target
+        inside the ramp window says nothing about settling."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            # truth(12.0) = 88.0: a tree AT the moving truth transiently but
+            # the run afterwards sits at 45 Mbps (15 off the final 30),
+            # never within the 3.0 tolerance again: any bind computed
+            # INSIDE the ramp window must be refused.
+            def truth(t: float) -> float:
+                if t <= 10.0:
+                    return 100.0
+                if t >= 30.0:
+                    return 30.0
+                return 100.0 - 3.5 * (t - 10.0)
+            self._mk_s2b(root, "s2b_ramp_100to30", "aciq", 0,
+                         [(t * 2.0, truth(t * 2.0) if t == 6 else 45.0)
+                          for t in range(21)],
+                         proto={"ramp_at_s": 10.0, "ramp_duration_s": 20.0,
+                                "ramp_to_mbps": 30.0})
+            runs, _sk, _fam = br.load_runs_families(root)
+            run = [r for r in runs if r["cfg"]["system"] == "aciq"][0]
+            self.assertIsNone(br._s2b_bind_s(run))
+
     def test_no_bind_reported_when_tolerance_never_met(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -479,12 +479,28 @@ class ExperimentRunner:
         # ---- config, written before anything runs so a crashed run is
         # ---- still reproducible from its artefacts
         ports = sc.seed_workloads(seed)
-        # CAKE-oracle is applied at the POST-DROP rate FROM THE START; compute
+        # CAKE-oracle is applied at the POST-CHANGE rate FROM THE START; compute
         # that here so config.json can state it before any kernel call. For
         # every other system the tree is built at the link's starting rate.
+        # The declared semantics ("0.95 x the true final capacity, from t=0,
+        # where the protocol declares one") needs the final capacity whether
+        # the change is a drop, a recover, or a ramp -- not only the drop.
         oracle_from_start = (system is SystemSpec.B1_ORACLE
-                             and drop_at_s is not None)
-        start_capacity = drop_mbps if oracle_from_start else link_mbps
+                             and (drop_at_s is not None
+                                  or recover_to_mbps is not None
+                                  or ramp_to_mbps is not None))
+        if oracle_from_start:
+            # precedence: the scenario's LAST declared capacity wins. The
+            # 20->100 step declares BOTH a drop-time (10 s) and a final
+            # recover_to (100); the oracle read is the final rate.
+            if recover_to_mbps is not None:
+                start_capacity = recover_to_mbps
+            elif drop_at_s is not None:
+                start_capacity = drop_mbps
+            else:
+                start_capacity = ramp_to_mbps
+        else:
+            start_capacity = link_mbps
         cfg = {
             "scenario": sc.name, "system": system.value, "mode": mode.value,
             "seed": seed, "link_mbps": link_mbps, "drop_mbps": drop_mbps,
