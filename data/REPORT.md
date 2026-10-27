@@ -180,14 +180,14 @@ Cells are **mean (min-max)** over seeds. A mean alone would hide the tails this 
 | aciq | 10 | 1.008 (0.928-1.216) | 69.402 (55.924-77.909) | 91.149 (58.990-138.122) | 0.560 (0.527-0.601) | 0.001 (0.000-0.002) |
 | b0_fifo | 10 | 602.287 (581.496-628.889) | 822.545 (822.307-822.828) | 828.971 (828.656-829.242) | 19.247 (19.078-19.422) | 0.013 (0.013-0.013) |
 | b1_cake95 | 10 | 80.614 (76.068-84.302) | 134.618 (131.199-141.057) | 162.923 (155.763-167.715) | 0.859 (0.820-0.879) | 0.006 (0.004-0.008) |
-| b1_cake_oracle | 10 | 81.199 (76.065-84.939) | 132.804 (129.910-136.510) | 162.079 (159.205-167.014) | 0.857 (0.834-0.884) | 0.005 (0.002-0.007) |
+| b1_cake_oracle | 10 | 0.901 (0.870-0.925) | 2.296 (2.275-2.321) | 3.100 (2.773-3.454) | 0.468 (0.459-0.475) | 0.000 |
 
 **Where ACIQ wins or loses on the mean (not yet a significance claim):**
 
-- **p50: ACIQ beats b0_fifo and b1_cake95 and b1_cake_oracle.**
-- **p95: ACIQ beats b0_fifo and b1_cake95 and b1_cake_oracle.**
-- **p99: ACIQ beats b0_fifo and b1_cake95 and b1_cake_oracle.**
-- **jitter_ms: ACIQ beats b0_fifo and b1_cake95 and b1_cake_oracle.**
+- **p50: ACIQ beats b0_fifo and b1_cake95 and LOSES to b1_cake_oracle.**
+- **p95: ACIQ beats b0_fifo and b1_cake95 and LOSES to b1_cake_oracle.**
+- **p99: ACIQ beats b0_fifo and b1_cake95 and LOSES to b1_cake_oracle.**
+- **jitter_ms: ACIQ beats b0_fifo and b1_cake95 and LOSES to b1_cake_oracle.**
 
 These lines compare means. Whether a difference is statistically distinguishable is tested separately, below, by paired exact Wilcoxon per metric; read the two together.
 ### s2b_step_10
@@ -243,7 +243,7 @@ Cells are **mean (min-max)** over seeds. A mean alone would hide the tails this 
 | aciq | 10 | 0.464 (0.450-0.480) | 1.716 (1.618-1.966) | 2.983 (2.294-4.261) | 0.286 (0.245-0.403) | 0.000 (0.000-0.001) |
 | b0_fifo | 10 | 108.667 (102.182-124.382) | 563.491 (549.913-570.946) | 593.283 (592.234-594.190) | 1.012 (0.882-1.147) | 0.021 (0.019-0.024) |
 | b1_cake95 | 10 | 0.858 (0.835-0.877) | 2.635 (2.583-2.685) | 3.376 (3.286-3.602) | 0.384 (0.351-0.416) | 0.000 |
-| b1_cake_oracle | 10 | 0.850 (0.797-0.885) | 2.652 (2.596-2.721) | 3.487 (3.339-3.795) | 0.395 (0.359-0.428) | 0.000 |
+| b1_cake_oracle | 10 | 1.136 (1.117-1.152) | 88.314 (86.243-90.293) | 101.198 (95.541-107.229) | 0.660 (0.640-0.679) | 0.001 (0.000-0.003) |
 
 **Where ACIQ wins or loses on the mean (not yet a significance claim):**
 
@@ -274,11 +274,11 @@ ACIQ against each rival, paired by seed. Exact, by enumerating sign flips -- 2^n
 | s2b_ramp_100to30 | call | b1_cake95 | p99 | 10 | 0 | 0.0 | 0.0020 | -1.00 |
 | s2b_ramp_100to30 | call | b1_cake95 | jitter_ms | 10 | 0 | 0.0 | 0.0020 | -1.00 |
 | s2b_ramp_100to30 | call | b1_cake95 | loss_ratio | 10 | 0 | 0.0 | 0.0020 | -1.00 |
-| s2b_ramp_100to30 | call | b1_cake_oracle | p50 | 10 | 0 | 0.0 | 0.0020 | -1.00 |
-| s2b_ramp_100to30 | call | b1_cake_oracle | p95 | 10 | 0 | 0.0 | 0.0020 | -1.00 |
-| s2b_ramp_100to30 | call | b1_cake_oracle | p99 | 10 | 0 | 0.0 | 0.0020 | -1.00 |
-| s2b_ramp_100to30 | call | b1_cake_oracle | jitter_ms | 10 | 0 | 0.0 | 0.0020 | -1.00 |
-| s2b_ramp_100to30 | call | b1_cake_oracle | loss_ratio | 10 | 0 | 0.0 | 0.0020 | -1.00 |
+| s2b_ramp_100to30 | call | b1_cake_oracle | p50 | 10 | 0 | 55.0 | 0.0020 | +1.00 |
+| s2b_ramp_100to30 | call | b1_cake_oracle | p95 | 10 | 0 | 55.0 | 0.0020 | +1.00 |
+| s2b_ramp_100to30 | call | b1_cake_oracle | p99 | 10 | 0 | 55.0 | 0.0020 | +1.00 |
+| s2b_ramp_100to30 | call | b1_cake_oracle | jitter_ms | 10 | 0 | 55.0 | 0.0020 | +1.00 |
+| s2b_ramp_100to30 | call | b1_cake_oracle | loss_ratio | 9 | 1 | 45.0 | 0.0039 | +1.00 |
 | s2b_step_10 | call | b0_fifo | p50 | 10 | 0 | 0.0 | 0.0020 | -1.00 |
 | s2b_step_10 | call | b0_fifo | p95 | 10 | 0 | 0.0 | 0.0020 | -1.00 |
 | s2b_step_10 | call | b0_fifo | p99 | 10 | 0 | 0.0 | 0.0020 | -1.00 |
@@ -320,12 +320,13 @@ ACIQ against each rival, paired by seed. Exact, by enumerating sign flips -- 2^n
 | s2b_step_up_20to100 | call | b1_cake95 | jitter_ms | 10 | 0 | 1.0 | 0.0039 | -0.96 |
 | s2b_step_up_20to100 | call | b1_cake_oracle | p50 | 10 | 0 | 0.0 | 0.0020 | -1.00 |
 | s2b_step_up_20to100 | call | b1_cake_oracle | p95 | 10 | 0 | 0.0 | 0.0020 | -1.00 |
-| s2b_step_up_20to100 | call | b1_cake_oracle | p99 | 10 | 0 | 8.0 | 0.0488 | -0.71 |
+| s2b_step_up_20to100 | call | b1_cake_oracle | p99 | 10 | 0 | 0.0 | 0.0020 | -1.00 |
 | s2b_step_up_20to100 | call | b1_cake_oracle | jitter_ms | 10 | 0 | 0.0 | 0.0020 | -1.00 |
+| s2b_step_up_20to100 | call | b1_cake_oracle | loss_ratio | 7 | 3 | 0.0 | 0.0156 | -1.00 |
 
-**53 of 58 comparisons reach p < 0.05.** Each is one metric against one rival in one scenario; they are not independent of each other, so this is a count of results, not a family-wise error rate.
+**54 of 59 comparisons reach p < 0.05.** Each is one metric against one rival in one scenario; they are not independent of each other, so this is a count of results, not a family-wise error rate.
 
-5 pair(s) had zero difference and were dropped from the signed-rank test; each dropped pair lowers n and raises the smallest attainable p, which is stated per row rather than hidden.
+9 pair(s) had zero difference and were dropped from the signed-rank test; each dropped pair lowers n and raises the smallest attainable p, which is stated per row rather than hidden.
 
 ## Reporting caveats
 
