@@ -37,6 +37,22 @@ step() {
 
 # the first round-2 batch ran cleanup at the end (netns gone): the repair
 # needs the testbed back up before any run -- re-setup, never re-tune.
+# First the sink orphan: the first batch left a host-side `call.py
+# --listen` alive (it has no lifetime cap; a killed parent never stops
+# it), appending lab-idle 0.00 Mbps lines to a COMMITTED seed42 artefact
+# every second. Kill every orphan sink, then restore the polluted
+# artefact to its committed state so no future commit snapshots idle
+# noise. This kills only the three workload turns' LISTENERS, never a
+# probe (probes carry --dst and exit on their own duration).
+step s2b_fix_sinkorphans bash -c \
+  'pkill -9 -f "workloads/call.py --port [0-9]* --listen" 2>/dev/null;
+   pkill -9 -f "workloads/bulk.py --port [0-9]* --listen" 2>/dev/null;
+   pkill -9 -f "workloads/video.py --port [0-9]* --listen" 2>/dev/null;
+   chown -R mekarz:mekarz data/runs/s2_wan_drop__aciq__adaptive__seed42 || true;
+   git checkout -- data/runs/s2_wan_drop__aciq__adaptive__seed42/call.sink.log || true;
+   chown -R mekarz:mekarz data/runs/s2_wan_drop__aciq__adaptive__seed42 || true;
+   sleep 2; tail -1 data/runs/s2_wan_drop__aciq__adaptive__seed42/call.sink.log'
+
 step s2b_fix_setup ./testbed/setup.sh
 
 step s2b_fix_uporphans bash -c \
