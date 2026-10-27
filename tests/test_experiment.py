@@ -351,6 +351,21 @@ class TestS2bRampLink(unittest.TestCase):
             self.assertEqual(cfg["ramp_duration_s"], 20.0)
             self.assertEqual(cfg["ramp_to_mbps"], 30.0)
 
+    def test_estimator_confidence_is_recorded_per_tick(self):
+        """The honesty rows need the confidence NUMBER in the artefact; a
+        run whose samples carry saturation but no confidence would make the
+        unsaturated-low-trust claim unfalsifiable from disk."""
+        with tempfile.TemporaryDirectory() as d:
+            r = self._runner(d)
+            p = r.run_paths("s2b_step_50", SystemSpec.ACIQ,
+                            CapacityMode.ADAPTIVE, 42)
+            r.run("s2b_step_50", SystemSpec.ACIQ, CapacityMode.ADAPTIVE, 42)
+            samples = (p.root / "samples.jsonl").read_text().splitlines()
+            s = json.loads(samples[0])
+            self.assertIn("estimator_confidence", s)
+            self.assertIn("estimator_saturated", s)
+            self.assertIsInstance(s["estimator_confidence"], float)
+
     def test_without_ramp_args_the_recorded_fields_stay_none(self):
         with tempfile.TemporaryDirectory() as d:
             r = self._runner(d)

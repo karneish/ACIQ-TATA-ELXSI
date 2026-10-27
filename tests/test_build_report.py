@@ -150,6 +150,35 @@ class TestS2bRows(unittest.TestCase):
         self.assertIn("final tick: saturated, applied 90.0 vs truth 100.0",
                       md)
 
+    def test_honesty_row_carries_the_confidence_number(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            d = root / "s2b_ramp_100to30__aciq__adaptive__seed0"
+            d.mkdir(parents=True)
+            (d / "workloads.json").write_text(json.dumps(
+                {"call": {"label": "call", "p50": 0.2, "p95": 12.0,
+                          "p99": 13.0, "jitter_ms": 0.4,
+                          "loss_ratio": 0.01},
+                 "bulk": {"label": "bulk", "sender_mbps": 70.0}}))
+            (d / "config.json").write_text(json.dumps(
+                {"scenario": "s2b_ramp_100to30", "system": "aciq",
+                 "seed": 0, "mode": "adaptive", "link_mbps": 100.0,
+                 "ramp_at_s": 10.0, "ramp_duration_s": 20.0,
+                 "ramp_to_mbps": 30.0, "duration_s": 60.0,
+                 "settle_s": 4.0}))
+            (d / "samples.jsonl").write_text("\n".join(
+                json.dumps({"t": t * 2.0, "capacity_mbps": 30.0,
+                            "estimator_saturated": False,
+                            "estimator_confidence": 0.12})
+                for t in range(20)))
+            out = root / "r.md"
+            build_report(root, out)
+            md = out.read_text()
+        # unsaturated at the final tick: the confidence number must sit in
+        # the same cell, so "low trust" is a number the reader can check
+        self.assertIn("UNSATURATED", md)
+        self.assertIn("confidence 0.12", md)
+
     def test_no_bind_reported_when_tolerance_never_met(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

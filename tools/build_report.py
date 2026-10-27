@@ -717,13 +717,18 @@ def _s2b_honesty(run: dict) -> str:
     truth, _at = _s2b_truth_fn(run)
     tv = truth(last["t"])
     cap_s = (f"{cap:.1f}" if isinstance(cap, (int, float)) else NOT_AVAILABLE)
+    conf = last.get("estimator_confidence")
+    conf_s = (f", confidence {conf:.2f}"
+              if isinstance(conf, (int, float)) else "")
     if sat:
-        return f"final tick: saturated, applied {cap_s} vs truth {tv:.1f}"
+        return (f"final tick: saturated, applied {cap_s} vs truth {tv:.1f}"
+                f"{conf_s}")
     err = (abs(cap - tv) / tv * 100.0
            if isinstance(cap, (int, float)) and tv > 0 else None)
     why = (f", {err:.0f}% off truth" if err is not None else "")
     return (f"final tick: UNSATURATED (estimator not saturated at the "
-            f"end regime), applied {cap_s} vs truth {tv:.1f}{why}")
+            f"end regime), applied {cap_s} vs truth {tv:.1f}{why}"
+            f"{conf_s}")
 
 
 def emit_s2b(add, runs: list[dict]) -> None:
@@ -778,6 +783,137 @@ def emit_s2b(add, runs: list[dict]) -> None:
                 extra or "honesty row declared for ACIQ only",
             ]))
         add("")
+
+
+def emit_s3_per_tv(add, runlist: list[dict]) -> None:
+    """S3 per-TV delivered goodput (TASK 5a): the three TV streams each get
+    their own row basis, computed from that TV's per-second receiver
+    sampler (`tvN.sink.log`). The sampler came in with the 2026 protocol;
+    runs whose sinks printed only the whole-run total line say NOT
+    AVAILABLE rather than reusing the sender's pushed rate. Gaming delay is
+    already the dedicated `game p95 ms` column in the arm table above."""
+    if not runlist:
+        return
+    add("#### Per-TV delivered goodput (receiver sampler, mean inst Mbps "
+        "whole-run / final third)")
+    add("")
+    add(row_md(["arm", "n", "tv1", "tv2", "tv3",
+                "which band carries the sampler"]))
+    add(row_md(["---"] * 6))
+    arms_seen = sorted({r["cfg"].get("system") for r in runlist})
+    for arm in [a for a in ARM_ORDER if a in arms_seen]:
+        grp = [r for r in runlist if r["cfg"].get("system") == arm]
+        cells: list[str] = []
+        n_with_sampler = 0
+        for tv in ("tv1", "tv2", "tv3"):
+            vals = []
+            ft_vals = []
+            n_sampler = 0
+            for r in grp:
+                series, note = sink_inst_series(r, tv)
+                if series:
+                    n_sampler += 1
+                    vals.append(statistics.fmean(v for _t, v in series))
+                    lo, hi = _s2b_final_third(r)
+                    ft_vals.append(statistics.fmean(
+                        v for t, v in series if lo <= t <= hi))
+            if vals:
+                n_with_sampler = max(n_with_sampler, n_sampler)
+                cells.append(f"{fmt(vals, 2)} / {fmt(ft_vals, 2)}")
+            else:
+                cells.append(NOT_AVAILABLE
+                             + " (no per-second sampler total line)")
+        # One run, per-seed inspection, names where the sampler exists --
+        # aggregated, not assumed from the first run.
+        sampler = (f"per-second (n_sampler={n_with_sampler}/{len(grp)})"
+                   if n_with_sampler else "whole-run total only")
+        add(row_md([ARM_LABELS.get(arm, arm), str(len(grp)), *cells,
+                    sampler]))
+    add("- each TV cell is the label's own receiver series; TV streams share "
+        "the streaming sheet in the controller's tree, so the SPLIT between "
+        "them is a receiver-side fact and the arm-table's streaming-class "
+        "counters are the router-side view.")
+    add("")
+
+
+def _call_obs_series(run: dict) -> list[tuple[float, float]] | None:
+    """(recv_t, rtt_ms) per packet from call.obs.jsonl (the --observe
+    per-packet trace). The writer flushes its tail out of sequence order,
+    so the file is sorted by its own seq field first; runs without the
+    trace return None and the table says NOT AVAILABLE."""
+    p = run.get("path")
+    if p is None:
+        return None
+    f = Path(p) / "call.obs.jsonl"
+    if not f.exists():
+        return None
+    rows = []
+    for line in f.read_text(errors="replace").splitlines():
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        seq = rec.get("seq")
+        rt = rec.get("recv_t")
+        rtt = rec.get("rtt_ms")
+        if seq is None or rt is None or rtt is None:
+            continue
+        rows.append((seq, float(rt), float(rtt)))
+    rows.sort()
+    return [(rt, rtt) for _seq, rt, rtt in rows] or None
+
+
+def _window_latency(v: list[float]) -> dict | None:
+    if not v:
+        return None
+    v = sorted(v)
+    n = len(v)
+    return {"p50": v[n // 2],
+            "p95": v[min(n - 1, int(0.95 * n))],
+            "p99": v[min(n - 1, int(0.99 * n))],
+            "max": v[-1], "n": n}
+
+
+def emit_call_obs(add, runlist: list[dict]) -> None:
+    """Time-resolved call latency (TASK 6): per-packet rtt trace split
+    into declared windows (before/at the first capacity change, then
+    thirds). Whole-run percentiles name WHAT they integrate over but not
+    WHEN they happened; this table answers 'when'. Only runs that carry
+    call.obs.jsonl (the --observe trace) can appear: a run without the
+    trace contributes absence, not a whole-run number in disguise."""
+    if not runlist:
+        return
+    with_trace = [r for r in runlist if _call_obs_series(r) is not None]
+    add("#### Time-resolved call latency (per-packet trace, --observe "
+        "runs only; p50/p95/p99/max in ms per run)")
+    add("")
+    if not with_trace:
+        add(f"{NOT_AVAILABLE} (no run in this band carries "
+            "call.obs.jsonl; live --observe runs add it, and this "
+            "table refuses whole-run distributions in its place)")
+        add("")
+        return
+    add(row_md(["run", "whole run", "first 10 s", "second 10 s",
+                "third 10 s"]))
+    add(row_md(["---"] * 5))
+    for r in sorted(with_trace, key=lambda x: x["dir"]):
+        ser = _call_obs_series(r)
+        cells = []
+        for lo, hi in ((0.0, float("inf")), (0.0, 10.0), (10.0, 20.0),
+                       (20.0, 30.0)):
+
+            def _cell(lo, hi):
+                w = _window_latency([rtt for t, rtt in ser
+                                     if lo <= t < hi])
+                if w is None:
+                    return NOT_AVAILABLE
+                return (f"{w['p50']:.2f}/{w['p95']:.2f}"
+                        f"/{w['p99']:.2f}/{w['max']:.2f}")
+
+            cells.append(_cell(lo, hi))
+        add(row_md([r["dir"], *cells]))
 
 
 def sink_inst_series(run: dict, label: str) -> tuple[
@@ -1303,6 +1439,15 @@ def build_report(runs_root: Path, out_md: Path,
         add("")
         emit_arm_table(add, sc, runs)
         add("")
+        if sc == "s3_tv_and_gaming":
+            emit_s3_per_tv(add, [r for r in runs
+                                 if r["cfg"].get("scenario") == sc])
+            add("")
+        if sc in ("s1_iso_during_call", "s2_wan_drop",
+                  "s4_capacity_recovery"):
+            emit_call_obs(add, [r for r in runs
+                                if r["cfg"].get("scenario") == sc])
+            add("")
         for rank in FAMILY_RANK:
             if rank == primary_fam:
                 continue
@@ -1314,6 +1459,13 @@ def build_report(runs_root: Path, out_md: Path,
                 add("")
                 emit_arm_table(add, sc, sec)
                 add("")
+                if sc == "s3_tv_and_gaming":
+                    emit_s3_per_tv(add, sec)
+                    add("")
+                if sc in ("s1_iso_during_call", "s2_wan_drop",
+                          "s4_capacity_recovery"):
+                    emit_call_obs(add, sec)
+                    add("")
 
     # ---- improvement table ----------------------------------------------
     add("## ACIQ vs every arm (positive % is better ACIQ on the metric at "
@@ -1360,17 +1512,25 @@ def build_report(runs_root: Path, out_md: Path,
             via_int = lambda vs: [float(x) for x in vs if x is not None]
             add(row_md([sc, ARM_LABELS.get(arm, arm), d95,
                         ci_overlap(via_int(base_p95), via_int(p95s))
-                        if a95 else "",
+                        if a95 else NOT_AVAILABLE,
                         dbk,
                         ci_overlap(via_int(base_bulk), via_int(bulks))
-                        if abk else ""]))
+                        if abk else NOT_AVAILABLE]))
             bulk_label = "post-drop bulk Mbps" if sc_has_drop \
                 else "bulk Mbps"
-            lost = [m for m, d in (("call p95", d95), (bulk_label, dbk))
-                    if d and d.startswith("-")]
+            # The direction is the ARROW the delta itself returns, not a
+            # "-" prefix: a "57.0x" factor cell is a loss when the arrow
+            # says "worse", and the "-" heuristic silently missed that --
+            # which is how a CAKE-static latency win in S1 could fade out
+            # of the honest column.
+            lost = [(name, shown) for name, shown, arrow in
+                    (("call p95", d95, a95), (bulk_label, dbk, abk))
+                    if arrow == "worse"]
             if lost:
-                worse_rows.append(row_md([sc, ARM_LABELS.get(arm, arm),
-                                          " and ".join(lost)]))
+                worse_rows.append(row_md(
+                    [sc, ARM_LABELS.get(arm, arm),
+                     " and ".join(f"{name} {shown}" for name, shown
+                                  in lost)]))
     add("")
 
     # ---- where CAKE wins -------------------------------------------------
@@ -1817,14 +1977,27 @@ def build_report(runs_root: Path, out_md: Path,
             ev = {"fatal": f"unreadable: {e}"}
         if "strict_heldout" in ev and not ev.get("fatal"):
             sho = ev["strict_heldout"]
+            # THE headline is the BROAD held-out number (docs/evidence/
+            # task4-params.md: the taxonomy the plan actually acts on);
+            # the narrow figure sits beside it with its error mode, never
+            # instead of it. Two numbers total: both held-out, both printed
+            # in this paragraph, so no reader has to hunt through dumps.
+            bho = ev.get("broad_heldout") or {}
             add(f"- HEADLINE (fresh held-out, tuple-split by flow, no "
-                f"threshold tuned on this half): strict accuracy "
-                f"{sho.get('accuracy_strict')} on n={sho.get('n')} "
+                f"threshold tuned on this half): broad-taxonomy accuracy "
+                f"{bho.get('accuracy_strict') if bho else NOT_AVAILABLE} "
+                f"on n={bho.get('n') if bho else NOT_AVAILABLE} "
+                f"({bho.get('correct') if bho else NOT_AVAILABLE} correct, "
+                f"{bho.get('abstained') if bho else NOT_AVAILABLE} "
+                "abstained); narrow-taxonomy accuracy "
+                f"{sho.get('accuracy_strict')} on the same rows "
                 f"({sho.get('correct')} correct, {sho.get('abstained')} "
-                f"abstained). The FULL-corpus figures below are context, "
+                "abstained). The FULL-corpus figures below are context, "
                 "not the verdict: the held-out half is the one the "
                 "classifier never shaped.")
-        for key in ("strict", "strict_fixed", "strict_heldout",
+        for key in ("broad_heldout", "broad_accept_abstain_heldout",
+                    "calibration_heldout", "confidently_wrong_heldout",
+                    "strict", "strict_fixed", "strict_heldout",
                     "accept_abstain", "accept_abstain_heldout",
                     "confusion", "confusion_heldout",
                     "paths_fixed", "n_corpus", "n_heldout"):

@@ -1,6 +1,6 @@
 # Results (generated, no summarised files consulted)
 
-Runs root: `/home/mekarz/Desktop/Full-projects/TATA-ELXSI/data/experiments/bands_merge` | runs used: 190 | scenarios: s1_iso_during_call, s2_wan_drop, s3_tv_and_gaming, s4_capacity_recovery, s6_intent_expire
+Runs root: `data/experiments/bands_merge` | runs used: 190 | scenarios: s1_iso_during_call, s2_wan_drop, s3_tv_and_gaming, s4_capacity_recovery, s6_intent_expire
 
 Skipped 1 incomplete-only directory names: `s2_wan_drop__aciq__adaptive__seed555 (special-condition run: inject_fail_apply)`
 
@@ -23,6 +23,11 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 1.45 +/- 0.01 | 0.44 +/- 0.01 | 0.000 +/- 0.000 | NOT AVAILABLE | 90.96 +/- 0.00 | 90.74 +/- 0.00 | (no drop scenario) | 0.922 +/- 0.000 | NOT AVAILABLE |
 | ACIQ (controller) | 10 | 82.49 +/- 0.49 | 0.61 +/- 0.05 | 0.180 +/- 0.060 | NOT AVAILABLE | 86.22 +/- 0.93 | 85.41 +/- 0.93 | (no drop scenario) | 0.934 +/- 0.002 | NOT AVAILABLE |
 
+#### Time-resolved call latency (per-packet trace, --observe runs only; p50/p95/p99/max in ms per run)
+
+NOT AVAILABLE (no run in this band carries call.obs.jsonl; live --observe runs add it, and this table refuses whole-run distributions in its place)
+
+
 ### s1_iso_during_call (EVAL, seeds 500-509)
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
@@ -32,11 +37,21 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 1.46 +/- 0.01 | 0.45 +/- 0.01 | 0.000 +/- 0.000 | NOT AVAILABLE | 90.96 +/- 0.00 | 90.74 +/- 0.00 | (no drop scenario) | 0.922 +/- 0.000 | NOT AVAILABLE |
 | ACIQ (controller) | 10 | 88.58 +/- 10.87 | 0.57 +/- 0.04 | 0.200 +/- 0.045 | NOT AVAILABLE | 89.15 +/- 0.12 | 88.34 +/- 0.12 | (no drop scenario) | 0.927 +/- 0.000 | NOT AVAILABLE |
 
+#### Time-resolved call latency (per-packet trace, --observe runs only; p50/p95/p99/max in ms per run)
+
+NOT AVAILABLE (no run in this band carries call.obs.jsonl; live --observe runs add it, and this table refuses whole-run distributions in its place)
+
+
 ### s1_iso_during_call (DEV, seeds 400-409)
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | ACIQ (controller) | 10 | 93.21 +/- 14.44 | 0.59 +/- 0.05 | 0.180 +/- 0.055 | NOT AVAILABLE | 89.13 +/- 0.10 | 88.32 +/- 0.10 | (no drop scenario) | 0.927 +/- 0.000 | NOT AVAILABLE |
+
+#### Time-resolved call latency (per-packet trace, --observe runs only; p50/p95/p99/max in ms per run)
+
+NOT AVAILABLE (no run in this band carries call.obs.jsonl; live --observe runs add it, and this table refuses whole-run distributions in its place)
+
 
 ### s1_iso_during_call (PRE-FIX, seeds 0-9,42-51)
 
@@ -47,6 +62,11 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 1.74 +/- 0.33 | 0.50 +/- 0.06 | 0.000 +/- 0.000 | NOT AVAILABLE | 90.97 +/- 0.01 | 90.74 +/- 0.00 | (no drop scenario) | 0.922 +/- 0.000 | NOT AVAILABLE |
 | ACIQ (controller) | 10 | 238.89 +/- 0.37 | 1.13 +/- 0.08 | 0.873 +/- 0.061 | NOT AVAILABLE | 96.30 +/- 0.00 | 95.50 +/- 0.01 | (no drop scenario) | 0.909 +/- 0.000 | NOT AVAILABLE |
 
+#### Time-resolved call latency (per-packet trace, --observe runs only; p50/p95/p99/max in ms per run)
+
+NOT AVAILABLE (no run in this band carries call.obs.jsonl; live --observe runs add it, and this table refuses whole-run distributions in its place)
+
+
 ### s2_wan_drop (primary band: POST-FIX (200-209))
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
@@ -55,6 +75,11 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | CAKE-static (95% of pre-drop link, set and forget) | 10 | 70.31 +/- 1.73 | 0.51 +/- 0.01 | 0.160 +/- 0.015 | NOT AVAILABLE | 75.17 +/- 0.04 | 74.41 +/- 0.04 | 20.12 +/- 0.01 | 0.961 +/- 0.000 | NOT AVAILABLE |
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 2.33 +/- 0.03 | 0.31 +/- 0.01 | 0.000 +/- 0.000 | NOT AVAILABLE | 18.09 +/- 0.00 | 18.06 +/- 0.00 | 18.71 +/- 0.06 | 0.820 +/- 0.000 | NOT AVAILABLE |
 | ACIQ (controller) | 10 | 73.60 +/- 2.48 | 0.63 +/- 0.03 | 0.265 +/- 0.041 | NOT AVAILABLE | 71.69 +/- 0.58 | 69.54 +/- 0.56 | 20.15 +/- 0.01 | 0.969 +/- 0.001 | NOT AVAILABLE |
+
+#### Time-resolved call latency (per-packet trace, --observe runs only; p50/p95/p99/max in ms per run)
+
+NOT AVAILABLE (no run in this band carries call.obs.jsonl; live --observe runs add it, and this table refuses whole-run distributions in its place)
+
 
 ### s2_wan_drop (EVAL, seeds 500-509)
 
@@ -65,11 +90,21 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 2.33 +/- 0.04 | 0.31 +/- 0.01 | 0.000 +/- 0.000 | NOT AVAILABLE | 18.09 +/- 0.00 | 18.06 +/- 0.00 | 18.66 +/- 0.08 | 0.820 +/- 0.000 | NOT AVAILABLE |
 | ACIQ (controller) | 10 | 64.14 +/- 2.15 | 0.61 +/- 0.01 | 0.135 +/- 0.038 | NOT AVAILABLE | 74.14 +/- 0.07 | 71.68 +/- 0.11 | 19.54 +/- 0.22 | 0.964 +/- 0.000 | NOT AVAILABLE |
 
+#### Time-resolved call latency (per-packet trace, --observe runs only; p50/p95/p99/max in ms per run)
+
+NOT AVAILABLE (no run in this band carries call.obs.jsonl; live --observe runs add it, and this table refuses whole-run distributions in its place)
+
+
 ### s2_wan_drop (DEV, seeds 400-409)
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | ACIQ (controller) | 10 | 64.38 +/- 2.52 | 0.62 +/- 0.01 | 0.135 +/- 0.038 | NOT AVAILABLE | 74.15 +/- 0.07 | 71.71 +/- 0.10 | 19.59 +/- 0.17 | 0.964 +/- 0.000 | NOT AVAILABLE |
+
+#### Time-resolved call latency (per-packet trace, --observe runs only; p50/p95/p99/max in ms per run)
+
+NOT AVAILABLE (no run in this band carries call.obs.jsonl; live --observe runs add it, and this table refuses whole-run distributions in its place)
+
 
 ### s2_wan_drop (PRE-FIX, seeds 0-9,42-51)
 
@@ -80,6 +115,11 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 2.38 +/- 0.05 | 0.34 +/- 0.02 | 0.000 +/- 0.000 | NOT AVAILABLE | 18.09 +/- 0.00 | 18.06 +/- 0.00 | 18.55 +/- 0.07 | 0.820 +/- 0.000 | NOT AVAILABLE |
 | ACIQ (controller) | 11 | 111.60 +/- 30.10 | 1.10 +/- 0.49 | 0.945 +/- 1.264 | NOT AVAILABLE | 43.20 +/- 8.28 | 41.92 +/- 8.03 | 20.36 +/- 0.77 | 0.983 +/- 0.008 | NOT AVAILABLE |
 
+#### Time-resolved call latency (per-packet trace, --observe runs only; p50/p95/p99/max in ms per run)
+
+NOT AVAILABLE (no run in this band carries call.obs.jsonl; live --observe runs add it, and this table refuses whole-run distributions in its place)
+
+
 ### s3_tv_and_gaming (primary band: POST-FIX (200-209))
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
@@ -88,6 +128,17 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | CAKE-static (95% of pre-drop link, set and forget) | 10 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | 2.33 +/- 0.25 | NOT AVAILABLE | NOT AVAILABLE | (no drop scenario) | 0.510 +/- 0.000 | 1.000 +/- 0.000 |
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | 2.41 +/- 0.17 | NOT AVAILABLE | NOT AVAILABLE | (no drop scenario) | 0.510 +/- 0.000 | 1.000 +/- 0.000 |
 | ACIQ (controller) | 10 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | 2.37 +/- 0.11 | NOT AVAILABLE | NOT AVAILABLE | (no drop scenario) | 0.510 +/- 0.000 | 1.000 +/- 0.000 |
+
+#### Per-TV delivered goodput (receiver sampler, mean inst Mbps whole-run / final third)
+
+| arm | n | tv1 | tv2 | tv3 | which band carries the sampler |
+| --- | --- | --- | --- | --- | --- |
+| B0 (default router, pfifo) | 10 | NOT AVAILABLE (no per-second sampler total line) | NOT AVAILABLE (no per-second sampler total line) | NOT AVAILABLE (no per-second sampler total line) | whole-run total only |
+| CAKE-static (95% of pre-drop link, set and forget) | 10 | NOT AVAILABLE (no per-second sampler total line) | NOT AVAILABLE (no per-second sampler total line) | NOT AVAILABLE (no per-second sampler total line) | whole-run total only |
+| CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | NOT AVAILABLE (no per-second sampler total line) | NOT AVAILABLE (no per-second sampler total line) | NOT AVAILABLE (no per-second sampler total line) | whole-run total only |
+| ACIQ (controller) | 10 | NOT AVAILABLE (no per-second sampler total line) | NOT AVAILABLE (no per-second sampler total line) | NOT AVAILABLE (no per-second sampler total line) | whole-run total only |
+- each TV cell is the label's own receiver series; TV streams share the streaming sheet in the controller's tree, so the SPLIT between them is a receiver-side fact and the arm-table's streaming-class counters are the router-side view.
+
 
 ### s3_tv_and_gaming (EVAL, seeds 500-509)
 
@@ -98,11 +149,30 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | 2.34 +/- 0.19 | NOT AVAILABLE | NOT AVAILABLE | (no drop scenario) | 0.509 +/- 0.000 | 1.000 +/- 0.000 |
 | ACIQ (controller) | 10 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | 2.24 +/- 0.17 | NOT AVAILABLE | NOT AVAILABLE | (no drop scenario) | 0.509 +/- 0.000 | 1.000 +/- 0.000 |
 
+#### Per-TV delivered goodput (receiver sampler, mean inst Mbps whole-run / final third)
+
+| arm | n | tv1 | tv2 | tv3 | which band carries the sampler |
+| --- | --- | --- | --- | --- | --- |
+| B0 (default router, pfifo) | 10 | 4.53 +/- 0.05 / 5.14 +/- 0.15 | 4.53 +/- 0.05 / 5.36 +/- 0.13 | 4.53 +/- 0.05 / 5.47 +/- 0.16 | per-second (n_sampler=10/10) |
+| CAKE-static (95% of pre-drop link, set and forget) | 10 | 4.53 +/- 0.05 / 5.13 +/- 0.15 | 4.53 +/- 0.05 / 5.35 +/- 0.13 | 4.53 +/- 0.05 / 5.46 +/- 0.16 | per-second (n_sampler=10/10) |
+| CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 4.53 +/- 0.05 / 5.14 +/- 0.15 | 4.53 +/- 0.05 / 5.35 +/- 0.12 | 4.53 +/- 0.05 / 5.46 +/- 0.16 | per-second (n_sampler=10/10) |
+| ACIQ (controller) | 10 | 4.46 +/- 0.05 / 4.67 +/- 0.20 | 4.46 +/- 0.05 / 4.94 +/- 0.18 | 4.46 +/- 0.05 / 5.08 +/- 0.21 | per-second (n_sampler=10/10) |
+- each TV cell is the label's own receiver series; TV streams share the streaming sheet in the controller's tree, so the SPLIT between them is a receiver-side fact and the arm-table's streaming-class counters are the router-side view.
+
+
 ### s3_tv_and_gaming (DEV, seeds 400-409)
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | ACIQ (controller) | 10 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | 2.27 +/- 0.19 | NOT AVAILABLE | NOT AVAILABLE | (no drop scenario) | 0.509 +/- 0.000 | 1.000 +/- 0.000 |
+
+#### Per-TV delivered goodput (receiver sampler, mean inst Mbps whole-run / final third)
+
+| arm | n | tv1 | tv2 | tv3 | which band carries the sampler |
+| --- | --- | --- | --- | --- | --- |
+| ACIQ (controller) | 10 | 4.45 +/- 0.04 / 4.62 +/- 0.16 | 4.45 +/- 0.04 / 4.98 +/- 0.16 | 4.44 +/- 0.04 / 5.19 +/- 0.13 | per-second (n_sampler=10/10) |
+- each TV cell is the label's own receiver series; TV streams share the streaming sheet in the controller's tree, so the SPLIT between them is a receiver-side fact and the arm-table's streaming-class counters are the router-side view.
+
 
 ### s3_tv_and_gaming (PRE-FIX, seeds 0-9,42-51)
 
@@ -113,6 +183,17 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | 2.23 +/- 0.17 | NOT AVAILABLE | NOT AVAILABLE | (no drop scenario) | 0.510 +/- 0.000 | 1.000 +/- 0.000 |
 | ACIQ (controller) | 10 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | 2.13 +/- 0.25 | NOT AVAILABLE | NOT AVAILABLE | (no drop scenario) | 0.510 +/- 0.000 | 1.000 +/- 0.000 |
 
+#### Per-TV delivered goodput (receiver sampler, mean inst Mbps whole-run / final third)
+
+| arm | n | tv1 | tv2 | tv3 | which band carries the sampler |
+| --- | --- | --- | --- | --- | --- |
+| B0 (default router, pfifo) | 10 | NOT AVAILABLE (no per-second sampler total line) | NOT AVAILABLE (no per-second sampler total line) | NOT AVAILABLE (no per-second sampler total line) | whole-run total only |
+| CAKE-static (95% of pre-drop link, set and forget) | 10 | NOT AVAILABLE (no per-second sampler total line) | NOT AVAILABLE (no per-second sampler total line) | NOT AVAILABLE (no per-second sampler total line) | whole-run total only |
+| CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | NOT AVAILABLE (no per-second sampler total line) | NOT AVAILABLE (no per-second sampler total line) | NOT AVAILABLE (no per-second sampler total line) | whole-run total only |
+| ACIQ (controller) | 10 | NOT AVAILABLE (no per-second sampler total line) | NOT AVAILABLE (no per-second sampler total line) | NOT AVAILABLE (no per-second sampler total line) | whole-run total only |
+- each TV cell is the label's own receiver series; TV streams share the streaming sheet in the controller's tree, so the SPLIT between them is a receiver-side fact and the arm-table's streaming-class counters are the router-side view.
+
+
 ### s4_capacity_recovery (primary band: POST-FIX (200-209))
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
@@ -121,6 +202,11 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | CAKE-static (95% of pre-drop link, set and forget) | 10 | 89.73 +/- 1.08 | 0.63 +/- 0.02 | 0.197 +/- 0.052 | NOT AVAILABLE | 56.51 +/- 0.02 | 56.04 +/- 0.02 | 20.04 +/- 0.00 | 0.996 +/- 0.000 | NOT AVAILABLE |
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 2.74 +/- 0.03 | 0.48 +/- 0.01 | 0.000 +/- 0.000 | NOT AVAILABLE | 18.08 +/- 0.00 | 18.06 +/- 0.00 | 18.78 +/- 0.01 | 0.820 +/- 0.000 | NOT AVAILABLE |
 | ACIQ (controller) | 10 | 95.74 +/- 0.90 | 0.73 +/- 0.01 | 0.280 +/- 0.023 | NOT AVAILABLE | 53.88 +/- 0.08 | 52.79 +/- 0.08 | 19.95 +/- 0.00 | 0.999 +/- 0.000 | NOT AVAILABLE |
+
+#### Time-resolved call latency (per-packet trace, --observe runs only; p50/p95/p99/max in ms per run)
+
+NOT AVAILABLE (no run in this band carries call.obs.jsonl; live --observe runs add it, and this table refuses whole-run distributions in its place)
+
 
 ### s4_capacity_recovery (EVAL, seeds 500-509)
 
@@ -131,11 +217,21 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 2.74 +/- 0.02 | 0.48 +/- 0.01 | 0.000 +/- 0.000 | NOT AVAILABLE | 18.08 +/- 0.00 | 18.06 +/- 0.00 | 18.78 +/- 0.01 | 0.820 +/- 0.000 | NOT AVAILABLE |
 | ACIQ (controller) | 10 | 59.56 +/- 15.64 | 0.81 +/- 0.26 | 0.087 +/- 0.030 | NOT AVAILABLE | 55.45 +/- 0.32 | 54.22 +/- 0.35 | 18.82 +/- 0.58 | 0.997 +/- 0.000 | NOT AVAILABLE |
 
+#### Time-resolved call latency (per-packet trace, --observe runs only; p50/p95/p99/max in ms per run)
+
+NOT AVAILABLE (no run in this band carries call.obs.jsonl; live --observe runs add it, and this table refuses whole-run distributions in its place)
+
+
 ### s4_capacity_recovery (DEV, seeds 400-409)
 
 | arm | n | call p95 ms | call jitter ms | call loss % | game p95 ms | bulk Mbps (sender) | bulk Mbps (receiver/sink) | post-drop bulk (tree) | jain (workload-rate Jain) | jain (demand-normalized) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | ACIQ (controller) | 10 | 50.92 +/- 7.97 | 0.65 +/- 0.02 | 0.097 +/- 0.017 | NOT AVAILABLE | 55.27 +/- 0.27 | 54.02 +/- 0.32 | 18.53 +/- 0.62 | 0.997 +/- 0.000 | NOT AVAILABLE |
+
+#### Time-resolved call latency (per-packet trace, --observe runs only; p50/p95/p99/max in ms per run)
+
+NOT AVAILABLE (no run in this band carries call.obs.jsonl; live --observe runs add it, and this table refuses whole-run distributions in its place)
+
 
 ### s4_capacity_recovery (PRE-FIX, seeds 0-9,42-51)
 
@@ -145,6 +241,11 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | CAKE-static (95% of pre-drop link, set and forget) | 10 | 89.95 +/- 0.46 | 0.84 +/- 0.29 | 0.407 +/- 0.367 | NOT AVAILABLE | 32.38 +/- 0.01 | 32.12 +/- 0.01 | 20.02 +/- 0.00 | 0.956 +/- 0.000 | NOT AVAILABLE |
 | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 10 | 2.75 +/- 0.03 | 0.49 +/- 0.01 | 0.000 +/- 0.000 | NOT AVAILABLE | 18.08 +/- 0.00 | 18.06 +/- 0.00 | 18.79 +/- 0.01 | 0.820 +/- 0.000 | NOT AVAILABLE |
 | ACIQ (controller) | 10 | 96.87 +/- 1.09 | 0.88 +/- 0.02 | 0.363 +/- 0.054 | NOT AVAILABLE | 32.65 +/- 0.05 | 31.99 +/- 0.05 | 19.95 +/- 0.01 | 0.958 +/- 0.000 | NOT AVAILABLE |
+
+#### Time-resolved call latency (per-packet trace, --observe runs only; p50/p95/p99/max in ms per run)
+
+NOT AVAILABLE (no run in this band carries call.obs.jsonl; live --observe runs add it, and this table refuses whole-run distributions in its place)
+
 
 ### s6_intent_expire (primary band: POST-FIX (200-209))
 
@@ -160,20 +261,20 @@ Bulk has TWO columns on purpose (TASK 5a): `sender` is what the generator pushed
 | --- | --- | --- | --- | --- | --- |
 Bulk compares are POST-DROP ONLY in scenarios with a capacity drop (same `bulk_mbps` whole-run mean otherwise): the whole-run number dilutes the post-drop regime with a saturated prefix, which is the opposite of the decision those scenarios exist to measure.
 
-| s1_iso_during_call | B0 (default router, pfifo) | +67.1 | disjoint | NOT AVAILABLE |  |
-| s1_iso_during_call | CAKE-static (95% of pre-drop link, set and forget) | 57.0x | disjoint | NOT AVAILABLE |  |
-| s1_iso_during_call | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 56.7x | disjoint | NOT AVAILABLE |  |
+| s1_iso_during_call | B0 (default router, pfifo) | +67.1 | disjoint | NOT AVAILABLE | NOT AVAILABLE |
+| s1_iso_during_call | CAKE-static (95% of pre-drop link, set and forget) | 57.0x | disjoint | NOT AVAILABLE | NOT AVAILABLE |
+| s1_iso_during_call | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 56.7x | disjoint | NOT AVAILABLE | NOT AVAILABLE |
 | s2_wan_drop | B0 (default router, pfifo) | +70.7 | disjoint | -9.1 | disjoint |
 | s2_wan_drop | CAKE-static (95% of pre-drop link, set and forget) | -4.7 | overlap | +0.1 | disjoint |
 | s2_wan_drop | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 31.6x | disjoint | +7.7 | disjoint |
-| s3_tv_and_gaming | B0 (default router, pfifo) | NOT AVAILABLE |  | NOT AVAILABLE |  |
-| s3_tv_and_gaming | CAKE-static (95% of pre-drop link, set and forget) | NOT AVAILABLE |  | NOT AVAILABLE |  |
-| s3_tv_and_gaming | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | NOT AVAILABLE |  | NOT AVAILABLE |  |
+| s3_tv_and_gaming | B0 (default router, pfifo) | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE |
+| s3_tv_and_gaming | CAKE-static (95% of pre-drop link, set and forget) | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE |
+| s3_tv_and_gaming | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE |
 | s4_capacity_recovery | B0 (default router, pfifo) | +61.8 | disjoint | -3.5 | disjoint |
 | s4_capacity_recovery | CAKE-static (95% of pre-drop link, set and forget) | -6.7 | disjoint | -0.5 | disjoint |
 | s4_capacity_recovery | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | 35.0x | disjoint | +6.2 | disjoint |
-| s6_intent_expire | B0 (default router, pfifo) | +94.2 | disjoint | NOT AVAILABLE |  |
-| s6_intent_expire | CAKE-static (95% of pre-drop link, set and forget) | -916.3 | disjoint | NOT AVAILABLE |  |
+| s6_intent_expire | B0 (default router, pfifo) | +94.2 | disjoint | NOT AVAILABLE | NOT AVAILABLE |
+| s6_intent_expire | CAKE-static (95% of pre-drop link, set and forget) | -916.3 | disjoint | NOT AVAILABLE | NOT AVAILABLE |
 
 ## Where ACIQ is worse (the honest column)
 
@@ -181,11 +282,15 @@ Every row above where ACIQ's signed delta is negative, collected so a CAKE win c
 
 | scenario | vs arm | metric where ACIQ is worse |
 | --- | --- | --- |
-| s2_wan_drop | B0 (default router, pfifo) | post-drop bulk Mbps |
-| s2_wan_drop | CAKE-static (95% of pre-drop link, set and forget) | call p95 |
-| s4_capacity_recovery | B0 (default router, pfifo) | post-drop bulk Mbps |
-| s4_capacity_recovery | CAKE-static (95% of pre-drop link, set and forget) | call p95 and post-drop bulk Mbps |
-| s6_intent_expire | CAKE-static (95% of pre-drop link, set and forget) | call p95 |
+| s1_iso_during_call | CAKE-static (95% of pre-drop link, set and forget) | call p95 57.0x |
+| s1_iso_during_call | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | call p95 56.7x |
+| s2_wan_drop | B0 (default router, pfifo) | post-drop bulk Mbps -9.1 |
+| s2_wan_drop | CAKE-static (95% of pre-drop link, set and forget) | call p95 -4.7 |
+| s2_wan_drop | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | call p95 31.6x |
+| s4_capacity_recovery | B0 (default router, pfifo) | post-drop bulk Mbps -3.5 |
+| s4_capacity_recovery | CAKE-static (95% of pre-drop link, set and forget) | call p95 -6.7 and post-drop bulk Mbps -0.5 |
+| s4_capacity_recovery | CAKE-oracle (post-drop rate from t=0; an oracle an operator cannot have) | call p95 35.0x |
+| s6_intent_expire | CAKE-static (95% of pre-drop link, set and forget) | call p95 -916.3 |
 
 ## Where CAKE-static wins
 
@@ -193,9 +298,10 @@ The honest column above lists every rival; this one isolates the set-and-forget 
 
 | scenario | metric where CAKE-static beats ACIQ | see column in the ACIQ-vs-every table |
 | --- | --- | --- |
-| s2_wan_drop | CAKE-static (95% of pre-drop link, set and forget) | call p95 |
-| s4_capacity_recovery | CAKE-static (95% of pre-drop link, set and forget) | call p95 and post-drop bulk Mbps |
-| s6_intent_expire | CAKE-static (95% of pre-drop link, set and forget) | call p95 |
+| s1_iso_during_call | CAKE-static (95% of pre-drop link, set and forget) | call p95 57.0x |
+| s2_wan_drop | CAKE-static (95% of pre-drop link, set and forget) | call p95 -4.7 |
+| s4_capacity_recovery | CAKE-static (95% of pre-drop link, set and forget) | call p95 -6.7 and post-drop bulk Mbps -0.5 |
+| s6_intent_expire | CAKE-static (95% of pre-drop link, set and forget) | call p95 -916.3 |
 
 ## ACIQ adaptation and capacity accuracy (from the same runs above)
 
@@ -375,7 +481,11 @@ One intent is requested at the run's declared --intent-at on the operator's real
 
 ## Classifier (router-vantage corpus, thresholds fixed before held-out)
 
-- HEADLINE (fresh held-out, tuple-split by flow, no threshold tuned on this half): strict accuracy 0.65 on n=120 (78 correct, 0 abstained). The FULL-corpus figures below are context, not the verdict: the held-out half is the one the classifier never shaped.
+- HEADLINE (fresh held-out, tuple-split by flow, no threshold tuned on this half): broad-taxonomy accuracy 0.75 on n=120 (90 correct, 0 abstained); narrow-taxonomy accuracy 0.65 on the same rows (78 correct, 0 abstained). The FULL-corpus figures below are context, not the verdict: the held-out half is the one the classifier never shaped.
+- broad_heldout: `{"n": 120, "correct": 90, "abstained": 0, "confident_or_wrong": 30, "accuracy_strict": 0.75, "accuracy_excl_abstain": 0.75}`
+- broad_accept_abstain_heldout: `{"n": 120, "correct": 90, "abstained": 0, "confident_or_wrong": 30, "accuracy_strict": 0.75, "accuracy_excl_abstain": 0.75}`
+- calibration_heldout: `[{"lo": 0.0, "hi": 0.2, "n": 0, "correct": 0, "empirical_accuracy": null, "mean_predicted": null}, {"lo": 0.2, "hi": 0.4, "n": 0, "correct": 0, "empirical_accuracy": null, "mean_predicted": null}, {"lo": 0.4, "hi": 0.6, "n": 27, "correct": 15, "empirical_accuracy": 0.5556, "mean_predicted": 0.55}, {"lo": 0.6, "hi": 0.8, "n": 93, "correct": 63, "empirical_accuracy": 0.6774, "mean_predicted": 0.629}, {"lo": 0.8, "hi": 1.0, "n": 0, "correct": 0, "empirical_accuracy": null, "mean_predicted": null}]`
+- confidently_wrong_heldout: `[]`
 - strict: `{"n": 228, "correct": 139, "abstained": 0, "confident_or_wrong": 89, "accuracy_strict": 0.6096491228070176, "accuracy_excl_abstain": 0.6096491228070176}`
 - strict_fixed: `{"n": 108, "correct": 61, "abstained": 0, "confident_or_wrong": 47, "accuracy_strict": 0.5648148148148148, "accuracy_excl_abstain": 0.5648148148148148}`
 - strict_heldout: `{"n": 120, "correct": 78, "abstained": 0, "confident_or_wrong": 42, "accuracy_strict": 0.65, "accuracy_excl_abstain": 0.65}`
@@ -387,7 +497,7 @@ One intent is requested at the run's declared --intent-at on the operator's real
 - n_heldout: `120`
 - per-class floor 30: met (counts: `{"video_call_voice": 30, "interactive_gaming": 30, "adaptive_video_streaming": 49, "bulk_download": 40, "software_update": 49, "cloud_backup": 30}`)
 
-Source: `/home/mekarz/Desktop/Full-projects/TATA-ELXSI/data/experiments/classifier_corpus_fresh/eval.json` (written by the corpus evaluator, whose failure table is copied verbatim).
+Source: `data/experiments/classifier_corpus_fresh/eval.json` (written by the corpus evaluator, whose failure table is copied verbatim).
 
 ## Safe-state and failure injection (S5)
 

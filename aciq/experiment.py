@@ -891,6 +891,12 @@ class ExperimentRunner:
                 # that was asked for.
                 "bottleneck": self.harness.capture_bottleneck(),
                 "estimator_saturated": self.harness._estimator.current.saturated,
+                # The confidence number is the estimator's own honesty signal
+                # (decays when unsaturated). Recorded per tick so the report's
+                # "unsaturated => low-confidence" claim is checkable from the
+                # artefact, not just from unit tests.
+                "estimator_confidence":
+                    round(self.harness._estimator.current.confidence, 3),
                 "fairness": frame.fairness,
                 "cpu_fraction": frame.cpu_fraction,
                 # Peak RSS of the controller process this tick. CPU alone does
