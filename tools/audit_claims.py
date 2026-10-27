@@ -326,6 +326,10 @@ def scan_path_citations() -> list[dict]:
                         "testbed/logs/corpus-",
                         # Shell globs over run dirs: a family, not a file.
                         "data/runs/s2_wan_drop__aciq__adaptive__seed",
+                        # The repair's rm globs over the S2b oracle dirs:
+                        # same family semantics.
+                        "data/runs_s2b/s2b_step_up_20to100__b1_cake_oracle__",
+                        "data/runs_s2b/s2b_ramp_100to30__b1_cake_oracle__",
                         # The resume markers the live script reads and rewrites
                         # are runtime state, not published evidence.
                         "data/live_status/")
