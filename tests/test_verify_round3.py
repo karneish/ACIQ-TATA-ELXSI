@@ -59,15 +59,38 @@ class TestRound3Gate(unittest.TestCase):
             d = write_run(Path(tmp), "s2b_step_10__aciq__seed1102",
                           {"scenario": "s2b_step_10", "link_mbps": 100.0,
                            "drop_at_s": 10.0, "drop_mbps": 10.0},
-                          {"governor": {"decisions": [{"t": 3.0}]},
+                          {"governor": {"decisions": [
+                              {"t": 3.0},
+                              {"t": 14.0, "changed": True,
+                               "delay_emergency": True}]},
                            "samples": [{"t": 39.0, "capacity_mbps": 95.0}],
                            "policy_change_log": [
                                {"committed": True, "ok": True, "t": 14.0,
-                                "delay_emergency": True,
+                                "delay_emergency": None,
                                 "applied_state": {"classes": {
                                     "1:1": {"rate": 13.9}}}}]})
             verdict = check_run(d)
             self.assertEqual(verdict["down_emergency_landing"], 1.0)
+
+    def test_down_emergency_decision_without_a_commit_fails(self):
+        """The clearance must LIVE on a blog that ends in a real kernel
+        change: a delay_emergency decision with no committed change in the
+        same tick is a refused proposal, not a landing."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = write_run(Path(tmp), "s2b_step_10__aciq__seed1105",
+                          {"scenario": "s2b_step_10", "link_mbps": 100.0,
+                           "drop_at_s": 10.0, "drop_mbps": 10.0},
+                          {"governor": {"decisions": [
+                              {"t": 3.0},
+                              {"t": 14.0, "changed": False,
+                               "delay_emergency": True}]},
+                           "policy_change_log": [
+                               {"committed": True, "ok": True, "t": 17.0,
+                                "delay_emergency": None,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 55.0}}}}]})
+            verdict = check_run(d)
+            self.assertIn("FAILED", verdict["down_emergency_landing"])
 
     def test_down_run_fails_without_any_post_drop_commit(self):
         with tempfile.TemporaryDirectory() as tmp:

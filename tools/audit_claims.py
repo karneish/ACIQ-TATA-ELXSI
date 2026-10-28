@@ -239,6 +239,15 @@ PLANNED_OUTPUTS: dict[str, str] = {
         "data/runs_final3)"),
     "data/experiments/RESULTS.md": (
         "batch step merged_report (rounds regen the merged report too)"),
+    "data/experiments/bands_merge_r3": (
+        "batch step bands_merge_r3 (round-3 symlink farm over the "
+        "round-3 band roots; testbed/run_round3_batch.sh final)"),
+    "data/live_status_round3/band_": (
+        "testbed/run_round3_batch.sh resume markers "
+        "(data/live_status_round3/band_<id>.done)"),
+    "data/experiments/RESULTS_": (
+        "testbed/run_round3_batch.sh build_report --out "
+        "(data/experiments/RESULTS_<BAND>3.md line 114)"),
 }
 
 

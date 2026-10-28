@@ -161,11 +161,27 @@ def check_down(cfg: dict, result: dict) -> dict:
     post = [c for c in commits if float(c.get("t", 0)) - drop_at > 0.0]
     if not post:
         return {DOWN_KEY: "FAILED: no committed change after the drop"}
-    emerg = [c for c in post if c.get("delay_emergency")]
-    first = emerg[0] if emerg else None
+    # The emergency clearance lives on the governor's DECISION rows (the
+    # policy_change_log snapshots never carried `delay_emergency`), so the
+    # commit is bridged: the first post-drop decision that both fired the
+    # clearance AND produced a committed kernel change within the tick.
+    # Decision stamps are rebased by the same base as the commits.
+    em_decs = []
+    for d in decs:
+        if not (d.get("changed") and d.get("delay_emergency")):
+            continue
+        dt_d = float(d.get("t", 0.0)) - base
+        if dt_d - drop_at > 0.0:
+            em_decs.append((dt_d, d))
+    first = None
+    for dt_d, _d in em_decs:
+        if any(abs(float(c.get("t", 0.0)) - dt_d) <= 0.5
+               for c in post):
+            first = dt_d
+            break
     if first is None:
         return {DOWN_KEY: "FAILED: no delay-emergency commit after the drop"}
-    dt = float(first["t"]) - drop_at
+    dt = first - drop_at
     out[DOWN_KEY] = round(dt, 1)
     if dt > EMERGENCY_COMMIT_LIMIT_S:
         out[DOWN_KEY] = f"FAILED: emergency commit {dt:.1f}s after drop"

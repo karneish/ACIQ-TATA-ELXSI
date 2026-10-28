@@ -53,16 +53,25 @@ tests, all run before the dev band).
   `probe_hold_s` window, a **30 s** back after any piercing probe, and
   an overshoot landing `min(known_good, delivered)` in ONE commit when
   the pierced step inflates the wire. A rise that survives its full
-  window clear promotes itself to known_good and lifts the cap; ceiling
-  staleness (`no saturated refresh in probe_hold_s AND applied >=
-  ceiling x 0.995`) is the pierce precondition, so the ceiling "climbs
-  as high as evidence carries it" rather than lying the tree at the old
-  plateau.
+  window clear promotes itself to known_good and lifts the cap; the
+  pierce precondition (DEV-band retune, round3-params.md) is the
+  **overlimit witness**: the probe fires only while the tree is seen
+  overlimiting at >= `PROBE_OVERLIMIT_MIN` (50.0/s), so the ceiling
+  "climbs as high as evidence carries it" rather than lying the tree at
+  the old plateau. (The first landing of this fix used ceiling
+  staleness — no saturated refresh within `probe_hold_s` — but the DEV
+  band showed a saturated sample refreshes the ceiling AT the pinned
+  applied rate forever, so the staleness gate could never lapse and
+  the pierce never started; the tree's overlimit counter separates a
+  tree pin from a real link plateau.)
 
 ### Fix for FAILURE B — the severe-drop landing
-- The veto is gone. A confident ceiling (`conf >= 0.6`) below **60% of
-  applied** — or any collapse/delay shock as before — commits ONE
-  landing at `max(ceiling, floor)` with `delay_emergency=True`,
+- The veto is gone. A confident ceiling (`conf >= 0.6`) below
+  **90% of applied** (`SEVERE_DROP_FRAC`, DEV-band retune: 0.6 fired
+  too rarely — a 2x drop like s2b_step_50 reads ceiling ~0.89x applied
+  one tick in, so the harness kept the 25%-walk and overshot the legal
+  band 21% downward) — or any collapse/delay shock as before — commits
+  ONE landing at `max(ceiling, floor)` with `delay_emergency=True`,
   bypassing the dwell + step envelope for that single DOWN commit.
   The floor stays respected: when the plan floor (14.0) legally
   exceeds the new link (10), the drop lands on the FLOOR instead of

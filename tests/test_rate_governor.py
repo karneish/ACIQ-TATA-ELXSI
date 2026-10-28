@@ -395,29 +395,36 @@ class TestEvidence(unittest.TestCase):
 
 
 class TestDemandProbe(unittest.TestCase):
-    """Round 3: upward probing into a black box past the stale ceiling.
+    """Round 3: upward probing into a black box past the pinned ceiling.
 
     The measured failure (round3-diagnosis.md section 1, seed 800): applied
     pins at ceiling == 0.9 x last-saturated belief because no saturated
     observation can exist while the tree is the limiting pipe, and the old
     demand gate `offered > 1.05 x applied` is unsatisfiable for exactly the
-    same reason: offered rides at the applied rate.
+    same reason: offered rides at the applied rate. The DEV-band retune
+    (round3-params.md) replaces ceiling freshness with the overlimit
+    witness: the probe may fire only while the tree is seen overlimiting.
     """
 
     def _pipecase(self, now: float, applied: float = 16.52,
-                  offered: float | None = None) -> object:
+                  offered: float | None = None,
+                  overlimit: float | None = 200.0,
+                  saturated: bool | None = None) -> object:
         """One tick of the seed-800 post-recovery regime: delay clear,
-        bulk saturating the pipe (offered ~= applied), belief frozen at
-        its last saturated value."""
+        bulk saturating the pipe (offered ~= applied), the tree
+        overlimiting because it is the binder (overlimit witness on by
+        default), belief frozen at its last saturated value."""
         g = getattr(self, "_gov", None)
         if g is None:
             g = self._gov = gov()
         offered = 15.7 if offered is None else offered
+        saturated = bool(saturated)
         return g.observe(belief=18.36, belief_conf=0.0,
-                         belief_saturated=False,
+                         belief_saturated=saturated,
                          applied=applied, delivered=16.0,
                          backlog_bytes=0, offered=offered, now=now,
-                         min_rate=14.0)
+                         min_rate=14.0,
+                         tree_overlimit_per_s=overlimit)
 
     def test_inside_the_window_no_probe(self):
         self._pipecase(0.0)
@@ -440,6 +447,33 @@ class TestDemandProbe(unittest.TestCase):
         self._pipecase(7.0)
         d = self._pipecase(13.0)
         self.assertAlmostEqual(d.rate, 16.52 * (1.0 + GovernorConfig.probe_up_frac))
+
+    def test_saturated_refresh_no_longer_blocks_the_pierce(self):
+        """DEV-band root cause: a saturated sample refreshes the ceiling AT
+        the pinned applied rate (dev seed 1004: sat ticks at rel 22.1-32.6
+        all at applied 15.25 on a 100 Mbps link), so ceiling freshness
+        could never lapse. The overlimit witness now decides; saturation
+        must be irrelevant to the pierce."""
+        self._pipecase(0.0, saturated=True)
+        self._pipecase(6.0, saturated=True)
+        d = self._pipecase(13.0, saturated=True)
+        self.assertIn("demand-probe up", d.reason)
+
+    def test_no_overlimit_witness_blocks_the_pierce(self):
+        """The demand holding with a quiet overlimit counter is a bulk riding
+        the LINK through the tree, not through a bottleneck under our tree;
+        the counters are missing. Both refuse a step in the dark."""
+        self._pipecase(0.0, overlimit=0.0)
+        self._pipecase(6.0, overlimit=0.0)
+        d = self._pipecase(13.0, overlimit=0.0)
+        self.assertEqual(d.rate, 16.52)
+        self.assertIn("drop demand", d.reason)
+        # and with the counters entirely absent
+        self._gov = gov()
+        self._pipecase(0.0, overlimit=None)
+        self._pipecase(6.0, overlimit=None)
+        d = self._pipecase(13.0, overlimit=None)
+        self.assertIn("drop demand", d.reason)
 
     def test_a_finished_source_never_probes(self):
         """Offered decaying below DEMAND_FRAC x applied (past the gap
@@ -464,10 +498,13 @@ class TestDemandProbe(unittest.TestCase):
         self.assertFalse(d0.changed)
         # demand window holds; the probe pierces (ceiling absent offline).
         d = None
-        for t in (2.0, 6.0, 10.0, 13.0):
+        for t in (2.0, 6.0, 10.0):
             d = g.observe(belief=None, applied=16.52, delivered=16.0,
                           backlog_bytes=0, offered=15.7, now=t,
                           min_rate=14.0)
+        d = g.observe(belief=None, applied=16.52, delivered=16.0,
+                      backlog_bytes=0, offered=15.7, now=13.0,
+                      min_rate=14.0, tree_overlimit_per_s=200.0)
         self.assertTrue(d.reason.startswith("demand-probe up"))
         probe_want = d.rate
         # the probe committed: the tree rises to the want; queue grows past

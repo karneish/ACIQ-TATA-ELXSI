@@ -78,3 +78,27 @@ descent; the probe's climbs obey ordinary bounds.
 ~700 runs x ~50 s ≈ 9-10 h sudo wall time; resume-safe `.done` markers like
 round 2 (delete the marker to re-run one piece). One script per phase, never
 run twice automatically.
+
+## DEV-band retune (declared BEFORE the band rerun; from partial runs, seeds 1000-1009)
+
+The first partial DEV pass (commit `f8cd46f`, 213 run dirs, 21 full cells
+of 30) exposed two engine defects. Both are fixed as tunable declarations
+here so the rerun judges the declared values, not the legacy seed:
+
+| Parameter | Old | New (tune) | Rationale (dev evidence) |
+|-----------|-----|------------|--------------------------|
+| pierce gate | ceiling freshness: a saturated observation refreshed the ceiling and blocked the pierce for PROBE_HOLD_S | overlimit witness `PROBE_OVERLIMIT_MIN = 50.0 /s` (tune): the demand window pierces only while the tree is seen overlimiting | a saturated sample refreshes the ceiling AT the pinned applied rate forever — dev seed 1004 s2b_step_up had saturated ticks at rel 22.1/25.2/27.3/32.6, all at applied 15.25 against a 100 Mbps link, so the pierce never started (util 0.15–0.26, 3 seeds with zero post-recovery commits). The tree's own overlimit counter separates the cases the freshness gate could not: >= 940/s while the tree pins and drops demand; ~0 when the LINK carries what the bulk asks for. Plumbed as `observe(..., tree_overlimit_per_s=...)` from the harness class-sum overlimit rate; a counters-less tick (None) refuses to pierce |
+| severe_drop_frac | 0.6 | 0.9 | a 2x step (s2b_step_50: ceiling 65.03 against applied 73.51 one tick after the drop as ratcheted at 74.51) never pierced 0.6, so the harness ran the law's 25%-walk (6 commits, final applied 39.72 — 21% under the 50 Mbps truth). At 0.9 the same tick fires the confidence-gated emergency and lands at max(ceiling, MIN_RATE_MBPS) that tick (~1.4 s after the drop). The confidence gate (>= 0.6) still excludes staleness; collapse (< 0.5) unchanged |
+
+Verification-contract note: `down_emergency_landing` (gate limit
+`EMERGENCY_COMMIT_LIMIT_S = 8.0 s`) reads the clearance from the governor
+DECISION ledger (`changed=True` + `delay_emergency=True` post-drop,
+bridged to a committed kernel change within 0.5 s); the
+`policy_change_log` row never carried the flag. The tool check is part of
+the frozen gate (same rules, corrected data source).
+
+Declared-live constants left untouched from the task-2a seeding:
+PROBE_HOLD_S 12.0, PROBE_UP_FRAC 0.25, PROBE_DEMAND_FRAC 0.85,
+PROBE_DEMAND_GAP_S 3.0, PROBE_BACKOFF_S 30.0, probe step envelope
+(0.25 multiplicative, verifier-clamped), known-good/overshoot landings,
+rise budget 6/min.

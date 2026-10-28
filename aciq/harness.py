@@ -1205,7 +1205,8 @@ class Harness:
             now=now,
             min_rate=self._governor_floor(cap.mbps),
             belief_conf=cap.confidence,
-            belief_saturated=cap.saturated)
+            belief_saturated=cap.saturated,
+            tree_overlimit_per_s=orate)
         self.last_governor = gov
         want = gov.rate
         if want is None:

@@ -199,6 +199,18 @@ PROBE_DEMAND_GAP_S = 3.0
 #: blocked this long: back-offs are prioritized, rises are cheap.
 PROBE_BACKOFF_S = 30.0
 
+#: Round 3 (DEV-band retune, declared in round3-params.md). The pierce
+#: witness. The ceiling-freshness gate could not tell a tree pin (a
+#: saturated sample refreshes the ceiling AT the applied rate forever,
+#: seed 1004 s2b_step_up: sat refreshes at rel 22.1-32.6 all at applied
+#: 15.25, pierce never fired) from a real pin. The tree's own overlimit
+#: counter does: overlimiting is the TREE dropping offered demand (dev
+#: plateau: >= 940 overlimits/s on the pinned classes), and the rate
+#: settles near zero when the LINK is the binder. A probe may fire only
+#: while the tree is seen overlimiting at this rate for one decision
+#: tick, alongside the demand window.
+PROBE_OVERLIMIT_MIN = 50.0
+
 #: Round 3. Overshoot signature: the wire still carries at least this
 #: fraction of the applied rate while delay inflates. That is what the
 #: tree sitting above the TRUE link looks like (delivered ~= link). A
@@ -208,12 +220,17 @@ PROBE_BACKOFF_S = 30.0
 PROBE_RUNNING_FRAC = 0.6
 
 #: Round 3. Severe-drop trigger: ceiling < SEVERE_DROP_FRAC x applied
-#: with estimator confidence >= SEVERE_DROP_CONF. The seeded values read
-#: straight off the seed-800 step_10 ledger (ceiling 9.95 against
-#: applied 60.03 at conf 1.00) and are tuned ONLY on the DEV band.
-#: Below CAPACITY_EMERGENCY_COLLAPSE_FRAC the old conf-less emergency
-#: still rules; between the two fractions the confidence gate decides.
-SEVERE_DROP_FRAC = 0.6
+#: with estimator confidence >= SEVERE_DROP_CONF. Initial seed 0.6 was
+#: read off the seed-800 step_10 ledger (ceiling 9.95 against applied
+#: 60.03 at conf 1.00); DEV band retune to 0.9: a 2x step (s2b_step_50,
+#: ceiling 65.03 against applied 73.51 one tick after the drop) never
+#: pierced 0.6, so the harness ran the law's 25%-walk and overshot the
+#: legal band downward. 0.9 keeps the gate below the ordinary ratchet
+#: spacing (a ceiling-binds branch walks INTO the emergency one tick
+#: later anyway) while the confidence gate still rules out staleness.
+#: Tuned ONLY on the DEV band. Below CAPACITY_EMERGENCY_COLLAPSE_FRAC
+#: the old conf-less emergency still rules.
+SEVERE_DROP_FRAC = 0.9
 SEVERE_DROP_CONF = 0.6
 
 _EPS = 1e-9
@@ -239,6 +256,7 @@ class GovernorConfig:
     probe_demand_frac: float = PROBE_DEMAND_FRAC
     probe_demand_gap_s: float = PROBE_DEMAND_GAP_S
     probe_backoff_s: float = PROBE_BACKOFF_S
+    probe_overlimit_min: float = PROBE_OVERLIMIT_MIN
     probe_running_frac: float = PROBE_RUNNING_FRAC
     severe_drop_frac: float = SEVERE_DROP_FRAC
     severe_drop_conf: float = SEVERE_DROP_CONF
@@ -263,7 +281,8 @@ class GovernorConfig:
                        ("delay_alpha", self.delay_alpha),
                        ("probe_hold_s", self.probe_hold_s),
                        ("probe_demand_gap_s", self.probe_demand_gap_s),
-                       ("probe_backoff_s", self.probe_backoff_s)):
+                       ("probe_backoff_s", self.probe_backoff_s),
+                       ("probe_overlimit_min", self.probe_overlimit_min)):
             if _v <= 0.0:
                 raise ValueError(f"{_n} must be positive")
         if not (0.0 < self.probe_up_frac <= 1.0):
@@ -307,6 +326,7 @@ class GovernorDecision:
     probe_known_good: float | None = None  # highest rate that survived its window
     probe_block_remaining_s: float = 0.0   # >0 while new probes are blocked
     demand_window_s: float = 0.0           # seconds the demand signature has held
+    overlimit_per_s: float | None = None   # tree overlimits this tick
 
 
 class RateGovernor:
@@ -343,11 +363,7 @@ class RateGovernor:
         self._rise_cap: float | None = None
         self._last_rise: tuple[float, float] | None = None
         self._probe_block_until: float | None = None
-        # Freshness of the ceiling: saturated observations keep refreshing
-        # it even while the tree pins at the ceiling. Piercing is only for
-        # ceilings no saturated sample has refreshed inside the window.
-        self._last_saturated_t: float | None = None
-        #: Full decision log for the run artefact. One small dict per tick.
+        # Full decision log for the run artefact. One small dict per tick.
         self.log: list[dict] = []
 
     # ------------------------------------------------------------------
@@ -375,7 +391,8 @@ class RateGovernor:
                 offered: float | None, now: float,
                 min_rate: float | None = None,
                 belief_conf: float | None = None,
-                belief_saturated: bool | None = None) -> GovernorDecision:
+                belief_saturated: bool | None = None,
+                tree_overlimit_per_s: float | None = None) -> GovernorDecision:
         """One decision. Pure with respect to the tree; see the class doc.
 
         `belief`  -- the estimator's current number (None possible offline).
@@ -386,8 +403,11 @@ class RateGovernor:
         `min_rate` -- the plan's total floor; never proposed below it.
         `belief_conf` / `belief_saturated` -- the estimator's confidence and
         saturation flag this tick; the severe-drop trigger gates on
-        confidence, and the probe's pierce permission goes STALE whenever a
-        saturated observation has refreshed the ceiling inside the window.
+        confidence, and the demand probe pierces only while the tree's own
+        overlimit counter (see `tree_overlimit_per_s`) says the TREE, not
+        the link, is the limiting pipe.
+        `tree_overlimit_per_s` -- sum of per-class overlimits/s this tick;
+        None disables the overlimit witness (the probe then cannot fire).
         """
         cfg = self.cfg
         changed = False
@@ -395,8 +415,9 @@ class RateGovernor:
         ceiling = None
         if belief is not None and belief > 0.0:
             ceiling = cfg.cap_fraction * belief
-        if belief_saturated:
-            self._last_saturated_t = now
+        # A saturated observation refreshes the ceiling below only via the
+        # belief value itself; the demand probe now gates on the overlimit
+        # witness instead of ceiling staleness (round3-params.md retune).
 
         # ------------------------------------------------ delay probe
         delay_ms = None
@@ -491,7 +512,8 @@ class RateGovernor:
             delivered=delivered,
             offered=offered, min_rate=min_rate, budget_left=budget_left,
             delay_ema=self._delay_ema, emerg_free=emerg_free, now=now,
-            belief_conf=belief_conf)
+            belief_conf=belief_conf,
+            tree_overlimit_per_s=tree_overlimit_per_s)
 
         if emerg:
             self._delay_emergency_last = now
@@ -523,7 +545,8 @@ class RateGovernor:
                                      if self._probe_block_until is not None
                                      else 0.0),
             demand_window_s=((now - self._demand_since)
-                             if self._demand_since is not None else 0.0))
+                             if self._demand_since is not None else 0.0),
+            overlimit_per_s=tree_overlimit_per_s)
         self.log.append(vars(dec).copy())
         return dec
 
@@ -531,7 +554,8 @@ class RateGovernor:
                 inflating, held_clear, held_demand, demand_ok, delivered,
                 offered, min_rate, budget_left, delay_ema,
                 emerg_free: bool, now: float = 0.0,
-                belief_conf: float | None = None):
+                belief_conf: float | None = None,
+                tree_overlimit_per_s: float | None = None):
         """The rule table, in one place so the reasons stay readable."""
         if ceiling is None and applied is None:
             return None, "no estimate and nothing applied yet", False
@@ -639,31 +663,29 @@ class RateGovernor:
                           f"{cfg.inflation_threshold_ms:.0f} ms: "
                           f"ratchet down one step"), False
 
-        # Round 3: the DEMAND PROBE. Pipe-limited demand evidence held for
-        # a full window (delay clear, offered >= DEMAND_FRAC x applied),
-        # no probe block, budget left, and the ceiling either absent or
-        # already pierced (a ceiling no saturated sample refreshed -- see
-        # _last_saturated_t) — then the ambiguity between "bulk wants
-        # more" and "bulk has finished" is resolved by seeing: one
-        # bounded multiplicative step, the delay response is the verdict,
-        # and any inflation lands the tree back at known-good.
+        # Round 3 (DEV-band retune, round3-params.md): the DEMAND PROBE.
+        # Pipe-limited demand evidence held for a full window (delay clear,
+        # offered >= DEMAND_FRAC x applied), no probe block, budget left,
+        # and the tree DROPPING demand on site: the first post-ceiling
+        # freshness gate used `_last_saturated_t`, but a saturated sample
+        # refreshes the ceiling at exactly the pinned applied rate forever
+        # (dev seed 1004 s2b_step_up: saturated ticks at rel 22.1-32.6 all
+        # at applied 15.25 against a 100 Mbps link), so the probe never
+        # started. The overlimit witness separates the two cases the
+        # freshness gate could not: overlimiting means the TREE drops
+        # offered demand (the tree is the binder -- pierce); a quiet
+        # overlimit counter alongside held demand means the LINK carries
+        # what the bulk actually asks for (do not climb).
         block_expired = (self._probe_block_until is None
                          or now >= self._probe_block_until)
-        # Ceiling freshness: a saturated observation refreshes the ceiling
-        # even while the tree pins at it; a ceiling untouched for a full
-        # window is stale and may be pierced. The 0.5% floor on the gap
-        # keeps ordinary numerical drift from registering headroom: with
-        # real headroom the old 2%-toward-ceiling climb below rules.
-        ceiling_stale = (ceiling is None
-                         or (self._last_saturated_t is None
-                             or now - self._last_saturated_t
-                             >= cfg.probe_hold_s)
-                             and applied >= ceiling * (1.0 - 0.005))
+        ol = tree_overlimit_per_s
+        witness = (ol is not None
+                   and ol >= cfg.probe_overlimit_min)
         # The window must be held AND this tick must still carry the
         # signature: the probe's own reason quotes THIS tick's offered
         # figure, so the action cannot rest on evidence that just lapsed.
         pierce_ok = (held_demand and demand_ok and block_expired
-                     and budget_left > 0 and ceiling_stale)
+                     and budget_left > 0 and witness)
         if pierce_ok:
             if self._probe_block_until is not None:
                 # the block expired: a new full demand window has held, so
@@ -686,6 +708,20 @@ class RateGovernor:
                     f"{cfg.probe_demand_frac:.2f}x applied {applied:.1f} "
                     f"for {cfg.probe_hold_s:.0f} s; step "
                     f"{cfg.probe_up_frac:.2f}){note}", False)
+        if (held_demand and demand_ok and block_expired and budget_left > 0
+                and offered is not None
+                and applied is not None and applied > 0.0
+                and offered <= applied * cfg.probe_ratio
+                and not witness):
+            # The signature held but the tree is not overlimiting: either
+            # the bulk genuinely rides the link through the tree, or the
+            # counters are missing. Both refuse a step in the dark. A
+            # DIRECT demand excess (offered > PROBE_RATIO x applied) skips
+            # this hold so the ceiling-bounded climb below may still fire.
+            return applied, (f"demand window held but the tree does not "
+                             f"drop demand (overlimit {ol or 0.0:.0f}/s "
+                             f"below witness floor "
+                             f"{cfg.probe_overlimit_min:.0f})"), False
 
         if held_clear and offered is not None and offered > 0.0:
             if offered <= applied * cfg.probe_ratio:
