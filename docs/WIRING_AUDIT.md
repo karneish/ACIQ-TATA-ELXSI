@@ -505,6 +505,14 @@ its era, not a current-state claim:
   above described the wiring as it stood when this audit was written.
 - IPv6: the residual gap stands still — an IPv6 `flower` filter is emitted,
   but there is still **no IPv6 classification path** (M1 is IPv4-only).
-- Test counts quoted above are stale; the current suite is 1498 tests
-  (10 kernel-gated skips) at `210bd09f` — run the suite, do not trust the
+  (2026-10-30 update, HEAD `ae2d797b`: the classification half above is now
+  disproved as stated — `classify()` never mentions an address, and the v6
+  parse → `FlowFeatures` → `classify` → per-flow `protocol ipv6` `flower`
+  join is unit-proved: `tests/test_classify.py::TestIPv6Classification`,
+  `TestIPv6TrackedFlowClassifies`, `tests/test_closed_loop.py`
+  `test_ipv6_gets_its_own_priority`. What REMAINS IPv6-missing is the run
+  side: no IPv6 scenario in any band matrix, and no live IPv6 steer in the
+  privileged gate — both host-privileged tests, not code gaps.)
+- Test counts quoted above are stale; the current suite is 1522 tests
+  (10 kernel-gated skips) at `ae2d797b` — run the suite, do not trust the
   headers.
