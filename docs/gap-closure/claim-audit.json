@@ -88,35 +88,46 @@
         "docs/gap-closure/round2-closeout.md"
       ],
       "reason": "exists but is NOT committed"
-    },
-    {
-      "path": "docs/FIX_REPORT_archive_2026-10-24.md",
-      "cited_in": [
-        "docs/FIX_REPORT.md"
-      ],
-      "reason": "exists but is NOT committed"
-    },
-    {
-      "path": "testbed/run_round3_batch.sh",
-      "cited_in": [
-        "docs/FIX_REPORT.md",
-        "tools/audit_claims.py"
-      ],
-      "reason": "exists but is NOT committed"
-    },
-    {
-      "path": "tools/verify_round3.py",
-      "cited_in": [
-        "docs/FIX_REPORT.md"
-      ],
-      "reason": "exists but is NOT committed"
     }
   ],
   "planned_path_citations": [
     {
+      "path": "data/experiments/RESULTS_",
+      "cited_in": [
+        "testbed/run_round3_batch.sh",
+        "tools/audit_claims.py"
+      ],
+      "reason": "planned output: testbed/run_round3_batch.sh build_report --out (data/experiments/RESULTS_<BAND>3.md line 114)"
+    },
+    {
+      "path": "data/experiments/RESULTS_FINAL3.md",
+      "cited_in": [
+        "testbed/run_round3_batch.sh",
+        "tools/audit_claims.py"
+      ],
+      "reason": "planned output: batch step report_band (round 3, build_report over data/runs_final3)"
+    },
+    {
+      "path": "data/experiments/bands_merge_r3",
+      "cited_in": [
+        "testbed/run_round3_batch.sh",
+        "tools/audit_claims.py"
+      ],
+      "reason": "planned output: batch step bands_merge_r3 (round-3 symlink farm over the round-3 band roots; testbed/run_round3_batch.sh final)"
+    },
+    {
+      "path": "data/live_status_round3/band_",
+      "cited_in": [
+        "testbed/run_round3_batch.sh",
+        "tools/audit_claims.py"
+      ],
+      "reason": "planned output: testbed/run_round3_batch.sh resume markers (data/live_status_round3/band_<id>.done)"
+    },
+    {
       "path": "data/runs_final3",
       "cited_in": [
         "docs/FIX_REPORT.md",
+        "testbed/run_round3_batch.sh",
         "tools/audit_claims.py"
       ],
       "reason": "planned output: batch steps cell_* (round-3 FROZEN band, seeds 1100-1109; testbed/run_round3_batch.sh final)"
@@ -124,7 +135,7 @@
   ],
   "red_flags": [],
   "tests": {
-    "ran": 1495,
+    "ran": 1498,
     "ok": true,
     "skipped": 10,
     "failures": 0,
