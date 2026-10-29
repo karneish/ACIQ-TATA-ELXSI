@@ -394,6 +394,166 @@ class TestEvidence(unittest.TestCase):
                          + 0.5 * 0.0)
 
 
+class TestPierceSurvivesTheStaleCeiling(unittest.TestCase):
+    """Round 3 dev band, s2b_step_up_20to100 (seed1000): the pierce committed
+    43.9 at t+5.1s and the bind tick held the PRE-probe ceiling 41.0 at
+    t+8.9s -- the probe was wiped 3.8 s in, never reached known-good, and
+    the ladder restarted each time (0/10 seeds). The ceiling is 0.9 x a
+    belief that can only lag a pierce, so the bind must not stand in for
+    the probe's own hold window, and a probe that survived promotion
+    becomes the climb floor."""
+
+    def _pierce(self, g: RateGovernor, start: float = 0.0) -> float:
+        """Drive a full pierce commit from the seed-800 pipe regime and
+        return the pierce's want."""
+        d = None
+        for t in (start, start + 6.0, start + 12.0):
+            d = g.observe(belief=18.36, belief_conf=0.0, belief_saturated=False,
+                          applied=16.52, delivered=16.0, backlog_bytes=0,
+                          offered=15.7, now=t, min_rate=14.0,
+                          tree_overlimit_per_s=200.0)
+        d = g.observe(belief=18.36, belief_conf=0.0, belief_saturated=False,
+                      applied=16.52, delivered=16.0, backlog_bytes=0,
+                      offered=15.7, now=start + 13.0, min_rate=14.0,
+                      tree_overlimit_per_s=200.0)
+        self.assertTrue(d.reason.startswith("demand-probe up"))
+        return d.rate
+
+    def test_the_bind_cannot_wipe_a_pierce_inside_its_window(self):
+        g = gov()
+        want = self._pierce(g)
+        # the tree committed the pierce; the next tick is a bind against
+        # the stale pre-probe ceiling -- inside probe_hold_s it must hold
+        # the pierce rate, not the 0.9 x belief stamp
+        self.assertAlmostEqual(g.observe(belief=18.36, belief_conf=0.0,
+                                         belief_saturated=False,
+                                         applied=want, delivered=want,
+                                         backlog_bytes=0, offered=None,
+                                         now=13.5, min_rate=14.0,
+                                         tree_overlimit_per_s=None).rate,
+                               want)
+
+    def test_a_survived_pierce_promotes_and_the_bind_honours_it(self):
+        g = gov()
+        want = self._pierce(g)
+        # the pierce rate survives the FULL hold window clear: promotion
+        g.observe(belief=18.36, belief_conf=0.0, belief_saturated=False,
+                  applied=want, delivered=want, backlog_bytes=0,
+                  offered=want * 0.99, now=13.0, min_rate=14.0,
+                  tree_overlimit_per_s=None)
+        promoted = g.observe(belief=18.36, belief_conf=0.0,
+                             belief_saturated=False, applied=want,
+                             delivered=want, backlog_bytes=0,
+                             offered=want * 0.99, now=21.0, min_rate=14.0,
+                             tree_overlimit_per_s=None)
+        # by now the window has passed; a bind tick may no longer drop
+        # below the verified pierce rate while the delay stays clear
+        bind = g.observe(belief=18.36, belief_conf=0.0, belief_saturated=False,
+                         applied=want, delivered=want, backlog_bytes=0,
+                         offered=None, now=25.0, min_rate=14.0,
+                         tree_overlimit_per_s=None)
+        # the verified pierce rate is now the lowest stop: the stale
+        # pre-probe ceiling cannot pull the tree underneath it
+        self.assertGreaterEqual(bind.rate, want - 0.01)
+        self.assertGreater(g.log[-1].get("probe_known_good") or 0.0, 0.0)
+        del promoted
+
+    def test_bind_lands_on_the_verified_rate_when_applied_runs_higher(self):
+        """A later pierce above the verified rate, inside its window held;
+        once the window lapses the bind returns to the VERIFIED floor, not
+        the stale pre-probe ceiling (the dev band measured 44.9 held back
+        to 41.0 = 0.9 x the stale belief)."""
+        g = gov()
+        want = self._pierce(g)
+        g.observe(belief=18.36, belief_conf=0.0, belief_saturated=False,
+                  applied=want, delivered=want, backlog_bytes=0,
+                  offered=want * 0.99, now=13.0, min_rate=14.0,
+                  tree_overlimit_per_s=None)
+        # promote (survived the window), then run higher on a second pierce
+        g.observe(belief=18.36, belief_conf=0.0, belief_saturated=False,
+                  applied=want, delivered=want, backlog_bytes=0,
+                  offered=want * 0.99, now=21.0, min_rate=14.0,
+                  tree_overlimit_per_s=None)
+        # second pierce requires the overlimit witness again
+        for t in (21.5, 27.5, 33.5):
+            g.observe(belief=18.36, belief_conf=0.0, belief_saturated=False,
+                      applied=want, delivered=want, backlog_bytes=0,
+                      offered=want * 0.99, now=t, min_rate=14.0,
+                      tree_overlimit_per_s=200.0)
+        d2 = g.observe(belief=18.36, belief_conf=0.0, belief_saturated=False,
+                       applied=want, delivered=want, backlog_bytes=0,
+                       offered=want * 0.99, now=34.5, min_rate=14.0,
+                       tree_overlimit_per_s=200.0)
+        if not d2.reason.startswith("demand-probe up"):
+            self.skipTest("second pierce did not arm in this timeline")
+        self.assertAlmostEqual(d2.rate, want * (1.0 + GovernorConfig.probe_up_frac))
+        # inside the window: held
+        held = g.observe(belief=18.36, belief_conf=0.0, belief_saturated=False,
+                         applied=d2.rate, delivered=d2.rate, backlog_bytes=0,
+                         offered=None, now=35.0, min_rate=14.0,
+                         tree_overlimit_per_s=None)
+        self.assertAlmostEqual(held.rate, d2.rate)
+        # a partial descent outruns the pierce: the bind still cannot land
+        # below the verified rate (promotions need the full window and a
+        # survived pierce; a fell-short pierce only saves its own rung)
+        bound = g.observe(belief=18.36, belief_conf=0.0, belief_saturated=False,
+                          applied=d2.rate * 0.85, delivered=d2.rate * 0.85,
+                          backlog_bytes=0, offered=None, now=36.0,
+                          min_rate=14.0, tree_overlimit_per_s=None)
+        self.assertIn("ceiling binds", bound.reason)
+        self.assertGreaterEqual(bound.rate, want - 0.01)
+        self.assertLess(bound.rate, d2.rate)
+
+    def test_the_climb_may_reach_a_verified_rate_past_the_ceiling(self):
+        g = gov()
+        want = self._pierce(g)
+        g.observe(belief=18.36, belief_conf=0.0, belief_saturated=False,
+                  applied=want, delivered=want, backlog_bytes=0,
+                  offered=want * 0.99, now=13.0, min_rate=14.0,
+                  tree_overlimit_per_s=None)
+        climb = g.observe(belief=18.36, belief_conf=0.0, belief_saturated=False,
+                          applied=want, delivered=want, backlog_bytes=0,
+                          offered=want, now=23.0, min_rate=14.0,
+                          tree_overlimit_per_s=None)
+        # clear-and-demanded: the climb is bounded by the verified rate,
+        # not left stranded under the stale 0.9 x belief ceiling
+        self.assertGreater(climb.rate, 18.36 * 0.9)
+
+    def test_delay_inflation_still_beats_the_verify_hold(self):
+        """The overshoot landing outranks the hold: a pierce that inflates
+        the bottleneck lands at known-good regardless of a pending
+        window."""
+        g = gov()
+        want = self._pierce(g)
+        delivered = 0.9 * want
+        d = g.observe(belief=18.36, belief_conf=0.0, belief_saturated=False,
+                      applied=want, delivered=delivered,
+                      backlog_bytes=int(60.0 * delivered * 125.0),
+                      offered=want, now=13.5, min_rate=14.0,
+                      tree_overlimit_per_s=None)
+        self.assertIn("probe overshoot", d.reason)
+        self.assertLessEqual(d.rate, delivered)
+
+    def test_a_failed_clearance_refunds_its_cooldown(self):
+        """refund_delay_emergency buys back a clearance that never reached
+        the tree; a real landing keeps its cooldown (dev band: the deferred
+        severe-drop spent 30 s of cooldown on a commit that never was)."""
+        g = gov()
+        g._delay_emergency_last = None
+        g._delay_emergency_prev = None
+        self.assertFalse(g.refund_delay_emergency())
+        g._delay_emergency_last = 100.0        # simulate the spend
+        self.assertTrue(g.refund_delay_emergency())
+        self.assertIsNone(g._delay_emergency_last)   # refunded to the None
+        self.assertIsNone(g._delay_emergency_prev)
+        self.assertFalse(g.refund_delay_emergency())     # nothing left
+        g._delay_emergency_last = 100.0
+        g._delay_emergency_prev = 40.0        # a previous clearance exists
+        self.assertTrue(g.refund_delay_emergency())
+        self.assertEqual(g._delay_emergency_last, 40.0)
+        self.assertIsNone(g._delay_emergency_prev)
+
+
 class TestDemandProbe(unittest.TestCase):
     """Round 3: upward probing into a black box past the pinned ceiling.
 

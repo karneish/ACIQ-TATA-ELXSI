@@ -80,3 +80,39 @@ not a fixed-fraction walk.
    bind in 8/10 seeds.
 3. **Receipts:** the tables above are reproducible from committed artifacts;
    no new privileged execution was used for this diagnosis.
+
+## Appendix (2026-10-30): the last two DOWN/UP defect traces
+
+### DOWN: the landing deferred, not the decision late (s2b_step_50 seed1005)
+
+Rebased tick ledger (drop at 10.0, truth 50.0, old-constants run):
+
+```
+  10.59 CMT ok parent=84.724 within step      (last commit before the drop)
+  13.80 DEC rate 63.13 ratchet (delay EMA 23.3ms)
+  14.84 DEC rate 63.13 SEVERE DROP (mark=True)  <-- want max(ceiling,floor)=63.13
+  14.84 CMT ok=FALSE  bound="delay emergency: descent lands at want"
+        violations: rate_limited "4.25s since last change, minimum 5.0s"
+        reason: deferred by change window; tree still at 84.723
+  15.89 CMT ok parent=53.49 (5s dwell finally open, non-emergency ladder)
+```
+
+Three consequences: the landing cost 36 s of anneal instead of one commit;
+the emergency flag spent its cooldown (next clearance 30 s out); and the
+ledger advanced to 63.13 while the tree stayed at 84.72 (the next commit's
+"within step bound" priced its envelope off the phantom rate).
+
+### UP: the pierce wiped, not the pierce late (s2b_step_up_20to100 seed1000)
+
+```
+   5.10 CMT parent=43.9  "demand-probe up" (pierce +25%)
+   8.90 CMT parent=41.0  "belief fell below applied: ceiling binds"
+                        (0.9x the stale pre-pierce belief 45.6)
+   ... ladder restarts from 41; promotion never ran (applied never
+       stayed >= the pierce rate for a full probe_hold_s window)
+```
+
+The ceiling is 0.9 x a belief that definitionally lags a pierce, so the
+bind tick immediately after a pierce is structurally guaranteed to
+short-circuit the probe's own promotion path. Fixed by the `_probe_verified`
+guard (retune #3, round3-params.md).

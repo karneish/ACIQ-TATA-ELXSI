@@ -117,8 +117,18 @@ class Shield:
                     f"{'scaled' if plan.degraded else 'required'} floor={scaled:.3f}"))
         return out
 
-    def veto_rate(self, now: float) -> list[Violation]:
-        if self.state.last_change_t is None:
+    def veto_rate(self, now: float, emergency: bool = False) -> list[Violation]:
+        # Round 3 (dev band, s2b_step_50 / s7_down_100to15): a
+        # delay-emergency descent must not deferrable by the change
+        # window. bound_rate_change already skips the dwell for it, but
+        # this second window (4.25s since last change, minimum 5.0s)
+        # stood in the way at the transaction layer and the one-commit
+        # landing never reached the tree -- the clearance burnt its 30 s
+        # cooldown on nothing and the next emergency cleared only 29.5 s
+        # after the drop, twice past the gate. A descent lands below the
+        # current rate, so it cannot grow a queue; the window exists to
+        # pace churn, and an emergency is churn spending itself.
+        if emergency or self.state.last_change_t is None:
             return []
         if (now - self.state.last_change_t) < MIN_CHANGE_WINDOW_S:
             return [Violation(

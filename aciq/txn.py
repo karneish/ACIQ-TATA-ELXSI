@@ -387,6 +387,7 @@ class TransactionManager:
         overlimit_rate: float = 0.0,
         leaf: tuple[str, ...] | str = "fq_codel",
         now: float | None = None,
+        emergency: bool = False,
     ) -> Outcome:
         """`now` must come from the caller's timeline, not this object's clock.
 
@@ -394,12 +395,18 @@ class TransactionManager:
         the transaction consulted its own clock instead, the dwell window would
         be measured against a different timeline from the estimator's and a
         legitimate change would be vetoed as rate-limited.
+
+        `emergency` marks a delay-emergency descent (round 3): one DOWN commit
+        that the governor cleared for a one-commit landing. The shield's change
+        window must not defer what the law already fast-tracked, or the
+        clearance is spent on nothing (dev band: s2b_step_50 seed1005).
         """
         now = self.clock() if now is None else now
         with self._lock:
             out = self._apply_locked(plan, drop_rate=drop_rate,
                                      overlimit_rate=overlimit_rate,
-                                     leaf=leaf, now=now)
+                                     leaf=leaf, now=now,
+                                     emergency=emergency)
             # Exposed so callers holding their own shadow of kernel state can
             # react to `kernel_touched` even when the apply failed -- a failed
             # apply that rebuilt and rolled back still destroyed per-flow
@@ -414,6 +421,7 @@ class TransactionManager:
         overlimit_rate: float,
         leaf: tuple[str, ...] | str,
         now: float,
+        emergency: bool = False,
     ) -> Outcome:
         if self.shield.state.in_fault and not self.shield.may_retry(now):
             self.last_reason = (f"shield {self.shield.state.mode.value}: "
@@ -421,7 +429,7 @@ class TransactionManager:
             return Outcome(False, False, False, reason=self.last_reason)
 
         v = list(self.shield.veto_plan(plan))
-        v += self.shield.veto_rate(now)
+        v += self.shield.veto_rate(now, emergency=emergency)
         v += self.shield.veto_load(drop_rate, overlimit_rate)
         if v:
             deferred = [x for x in v if x.severity == "defer"]

@@ -353,6 +353,14 @@ class RateGovernor:
         # Last tick a delay emergency clearance was spent; the cooldown keeps
         # a shrinking episode from becoming a rapid-fire series of full jumps.
         self._delay_emergency_last: float | None = None
+        # The clearance stamp this cooldown replaced. A clearance whose
+        # commit never happened is refunded to this (refund_delay_emergency):
+        # the round-3 dev band measured the shield's 5 s change window
+        # deferring a severe-drop landing (4.25s since last change), which
+        # otherwise burnt the 30 s cooldown on a descent that never reached
+        # the tree -- the next emergency could then only fire 30 s after
+        # the drop, twice past the 8 s gate.
+        self._delay_emergency_prev: float | None = None
         # Round 3 demand-probe state. The demand window is the pipe-limited
         # signature (delay clear, offered >= DEMAND_FRAC x applied); the gap
         # tracker lets one light tick through without restarting the hold.
@@ -365,6 +373,12 @@ class RateGovernor:
         self._rise_cap: float | None = None
         self._last_rise: tuple[float, float] | None = None
         self._probe_block_until: float | None = None
+        # The highest probe rate that survived a full window (promoted).
+        # A verified pierce is the engineered exception to applied <=
+        # cap_fraction x belief: the belief can only lag a probe, so
+        # binding to the pre-probe ceiling after promotion would undo a
+        # result the window itself certified. Descents never consult it.
+        self._probe_verified: float | None = None
         # Full decision log for the run artefact. One small dict per tick.
         self.log: list[dict] = []
 
@@ -387,6 +401,25 @@ class RateGovernor:
             self._change_ts.pop()
             return True
         return False
+
+    # ------------------------------------------------------------------
+    def refund_delay_emergency(self) -> bool:
+        """Restock a delay-emergency clearance whose commit did not happen.
+
+        The cooldown stamp is taken the tick the clearance FIRES, but the
+        round-3 dev band measured the landing itself deferred downstream
+        (the shield's 5 s change window, `rate_limited: 4.25s since last
+        change`): the decision log then showed the emergency spent, the
+        tree unchanged, and the next clearance barred for the full
+        cooldown past the drop. If the apply did not commit, the clearance
+        buys back its previous value; only a landed emergency may cost
+        cooldown. Returns True when a stamp was restored.
+        """
+        if self._delay_emergency_last is None:
+            return False
+        self._delay_emergency_last = self._delay_emergency_prev
+        self._delay_emergency_prev = None
+        return True
 
     def observe(self, belief: float | None, applied: float | None,
                 delivered: float | None, backlog_bytes: int | None,
@@ -486,6 +519,8 @@ class RateGovernor:
                 and applied >= self._last_rise[1] - 0.5):
             self._known_good = max(self._known_good or 0.0,
                                    self._last_rise[1])
+            self._probe_verified = max(self._probe_verified or 0.0,
+                                       self._last_rise[1])
             self._rise_cap = None
             self._last_rise = None
 
@@ -518,6 +553,7 @@ class RateGovernor:
             tree_overlimit_per_s=tree_overlimit_per_s)
 
         if emerg:
+            self._delay_emergency_prev = self._delay_emergency_last
             self._delay_emergency_last = now
 
         if applied is not None and rate is not None and rate > applied:
@@ -729,23 +765,62 @@ class RateGovernor:
             if offered <= applied * cfg.probe_ratio:
                 return applied, (f"clear for {cfg.hold_clear_s:.0f} s but "
                                  f"offered {offered:.1f} does not demand it"), False
-            if ceiling is None:
+            # The climb target is the ceiling OR a probe-verified rate,
+            # whichever is higher: after a verified pierce the estimator's
+            # belief lags the tree, and binding this branch to the stale
+            # ceiling would strand the ladder below its own known-good.
+            climb_to = max(ceiling or 0.0, self._probe_verified or 0.0)
+            if climb_to <= 0.0:
                 return applied, "clear but no ceiling to probe toward", False
-            if applied >= ceiling * (1.0 - _EPS):
-                return applied, "clear and demanded, already at ceiling", False
-            if min_rate is not None and min_rate >= ceiling:
+            if applied >= climb_to * (1.0 - _EPS):
+                return applied, ("clear and demanded, already at climb "
+                                 "bound"), False
+            if min_rate is not None and min_rate >= climb_to:
                 return applied, "floor already at ceiling", False
             if budget_left <= 0:
                 return applied, (f"rise budget exhausted "
                                  f"({cfg.max_changes_per_min}/min)"), False
-            rate = min(ceiling, applied * (1.0 + cfg.up_step_frac))
+            rate = min(climb_to, applied * (1.0 + cfg.up_step_frac))
             return rate, (f"clear for {cfg.hold_clear_s:.0f} s and demanded "
-                          f"{offered:.1f} Mbps: probe up, bounded by ceiling"), False
+                          f"{offered:.1f} Mbps: probe up, bounded by "
+                          f"ceiling"), False
 
-        hold = min(applied, ceiling) if ceiling is not None else applied
+        # Round 3 (dev band, task: probe climbs wiped by the stale
+        # ceiling): a probing commit outruns the estimator by design --
+        # the ceiling is 0.9x a belief that can only lag the pierce -- so
+        # the bind tick right after a pierce would hold the OLD ceiling
+        # and wipes the experiment 3-4 s in, before the probe's own
+        # hold window (probe_hold_s) can promote it to known-good.
+        # Dev-side trace, seed1000 s2b_step_up_20to100: pierce commit
+        # 43.9 at t+5.1s, "ceiling binds" 41.0 at t+8.9s, and the ladder
+        # never re-promoted. Two guards, both only on NON-inflating
+        # ticks (every descent branch keeps its true-ceiling priority
+        # above this block):
+        # 1) still inside the pierce's hold window AND the delay is
+        #    clear: hold the probe rate (the overshoot landing further
+        #    up still consumes the pierce if delay inflates).
+        # 2) a probe that SURVIVED its full window promoted itself to
+        #    known-good; that verified rate is the lowest stop the
+        #    bind may reach while the delay stays clear. Severe/capacity
+        #    emergencies and the overshoot landing keep max(ceiling,
+        #    floor) semantics and so can drop below it.
+        eff_hold = max((ceiling if ceiling is not None else 0.0),
+                       self._probe_verified or 0.0)
+        if held_clear and self._last_rise is not None \
+                and applied is not None \
+                and (now - self._last_rise[0]) < cfg.probe_hold_s \
+                and applied >= self._last_rise[1] * (1.0 - _EPS):
+            return applied, (f"pierce probe verifying: hold at probe "
+                             f"rate until the window concludes "
+                             f"({cfg.probe_hold_s - (now - self._last_rise[0]):.1f}s left)"), False
+        hold = min(applied, eff_hold) if (self._probe_verified is not None
+                                          or ceiling is not None) else applied
         if hold < applied:
             # The belief fell underneath the applied rate; the ceiling binds.
-            return ceiling, "belief fell below applied: ceiling binds", False
+            land = (eff_hold if self._probe_verified is not None
+                    and self._probe_verified > (ceiling or 0.0)
+                    else ceiling)
+            return land, "belief fell below applied: ceiling binds", False
         if delay_ema is not None:
             return hold, (f"delay {delay_ema:.1f} ms between clear and "
                           f"inflation thresholds: hold"), False

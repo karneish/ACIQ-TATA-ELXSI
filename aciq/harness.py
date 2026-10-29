@@ -940,7 +940,8 @@ class Harness:
 
     # ---------------- system setup ----------------
     def apply_system(self, system: SystemSpec, capacity_mbps: float,
-                     launch: bool = False) -> bool:
+                     launch: bool = False,
+                     emergency: bool = False) -> bool:
         """Build the full tree for a system. Required for every apply because
         HTB's default class cannot be changed on a live qdisc.
 
@@ -956,6 +957,14 @@ class Harness:
         # that applies a capacity passes through here, which is what makes it
         # safe for a later lease rebuild to trust this rather than the value the
         # run started at.
+        # Round 3 (dev band, s2b_step_50 seed1005): the stamp below is taken
+        # BEFORE the transaction decides. On a deferred/emergency vetoed
+        # apply the tree keeps the old rate while this recorded 63.1 for a
+        # tree still carrying 84.7 -- the next tick's step bound then priced
+        # its envelope off a rate the kernel never had. Anything an apply
+        # touches is restored when the apply does not commit.
+        prev_capacity = self._capacity_mbps
+        prev_plan = self._current_plan
         self._capacity_mbps = capacity_mbps
         # Which system this tree belongs to. The ADAPTIVE loop needs to know:
         # the B1_AUTO arm reuses the estimator/governor/law machinery but
@@ -989,7 +998,14 @@ class Harness:
             self._current_plan = plan
             self.txn.remember_capacity(applied)
             self._capacity_mbps = applied
-            ok = self.txn.apply(plan).ok
+            ok = self.txn.apply(plan, emergency=emergency).ok
+            if not ok:
+                # Nothing committed, so nothing advanced: the tree still
+                # carries prev_capacity and the ledger must say the same
+                # (the step bound reads these next tick).
+                self._current_plan = prev_plan
+                self._capacity_mbps = prev_capacity
+                self.txn.remember_capacity(prev_capacity)
             # Any apply that reaches the kernel rebuilds the qdisc and destroys
             # every per-flow filter; the bridge must be told whether or not the
             # commit succeeded (a rollback replays last-good, which has none).
@@ -1229,6 +1245,15 @@ class Harness:
         # entry below records BOTH, so an evidence file can show a clamped
         # step as clamped, never as the estimator's own figure.
         applied = bound.rate
+        # Round 3: the descent-emergency that bought a one-commit landing
+        # (drop-rate emergency, or the delay/collapse/severe descents) gets
+        # the same fast track at the shield's change window. Refused only
+        # for UP moves: the dwell exists to pace upward churn, and this
+        # flag may not extend an upward step's privileges.
+        emergency_apply = (want is not None and prev_rate is not None
+                           and want < prev_rate
+                           and (bool(bound.emergency)
+                                or bool(gov.delay_emergency)))
         # Round 3 (docs/evidence/round3-params.md, arm B1_AUTO): the
         # adaptive-CAKE baseline runs the IDENTICAL estimator/governor/law
         # chain; only what carries the rate differs. Instead of a four-class
@@ -1237,7 +1262,8 @@ class Harness:
         # change (decided/allowed/reason fields verbatim), an S5-style failed
         # rebuild leaves the tree as it was and is recorded as not-committed.
         if self._system is SystemSpec.B1_AUTO:
-            ok = self.apply_system(SystemSpec.B1_AUTO, applied)
+            ok = self.apply_system(SystemSpec.B1_AUTO, applied,
+                                   emergency=emergency_apply)
             self._bound_reason = bound.reason
             if bound.emergency:
                 self.law_events.append({
@@ -1248,6 +1274,18 @@ class Harness:
                 self._last_policy_change_t = now
                 if self._controller is not None:
                     self._controller.notify_change(now)
+            elif gov.delay_emergency:
+                # A deferred/vetoed rebuild spent the delay-emergency
+                # clearance on nothing (dev band: the landing never reached
+                # the tree, the next clearance cleared 30 s of cooldown
+                # later, twice past the gate). Only a landed emergency
+                # costs its cooldown.
+                if self._governor.refund_delay_emergency():
+                    self.law_events.append({
+                        "t": round(now, 2), "wanted": round(want, 3),
+                        "allowed": round(prev_rate, 3),
+                        "note": "emergency not committed: clearance "
+                                "refunded"})
             self.policy_change_log.append({
                 "t": round(now, 2),
                 "intended_capacity_mbps": round(cap.mbps, 3),
@@ -1293,7 +1331,7 @@ class Harness:
         # ratchet that produced it.
         self.txn.remember_capacity(applied)
         # same timeline as the estimator, or the dwell window is measured wrong
-        txr = self.txn.apply(plan, now=now)
+        txr = self.txn.apply(plan, now=now, emergency=emergency_apply)
         if not txr.ok:
             # the budget's currency is real kernel change; an apply that the
             # transaction did not commit left the tree as it was, so the
@@ -1307,6 +1345,11 @@ class Harness:
                     "t": round(now, 2), "wanted": round(want, 3),
                     "allowed": round(prev_rate, 3),
                     "note": "apply not committed: change budget refunded"})
+            if gov.delay_emergency and self._governor.refund_delay_emergency():
+                self.law_events.append({
+                    "t": round(now, 2), "wanted": round(want, 3),
+                    "allowed": round(prev_rate, 3),
+                    "note": "emergency not committed: clearance refunded"})
         # Record what the KERNEL actually has, not just what was asked for.
         #
         # The Option A acceptance criteria require the recovery evidence to show

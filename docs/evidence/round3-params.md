@@ -125,3 +125,25 @@ declared-live constants.
 Validation gates unchanged (frozen): dev up-util >=0.60, down emergency
 <=8.0 s, fairness/starvation readouts. The retuned band will be judged by
 the SAME gate constants (tools/verify_round3.py:42-46).
+
+## Retune #3 (declared 2026-10-30, BEFORE any re-run of the dev band)
+
+No threshold moved this round. The dev band's DOWN failures (13 of 14:
+"no delay-emergency commit after the drop") and the UP wipes
+(s2b_step_up_20to100 0/10) traced to two implementation defects and one
+guard the probe ladder never had; all three are structurally fixed and
+proven by unit tests, with the tuned constants exactly as retune #2 left
+them (probe_hold 7/backoff 18/sev-conf 0.45; run-wide: everything else).
+
+| Defect (evidence) | Fix |
+|-------------------|-----|
+| `Shield.veto_rate` deferred a delay-emergency descent across the 5 s change window ("rate_limited: 4.25s since last change", s2b_step_50 seed1005): the one-commit landing never reached the tree, the clearance burnt its 30 s cooldown, and the next emergency cleared only at drop+29.5 s, twice past the 8 s gate. | `veto_rate(now, emergency=)`: descents the law already fast-tracked bypass the change window; the flag is set only for want<prev (down) descents (`aciq/shield.py`, threaded through `txn.apply`). |
+| The ACIQ `apply_system` branch advanced `_capacity_mbps`/`_current_plan`/`txn._last_capacity` BEFORE the apply, so a deferred emergency left the ledger at the landing rate while the tree still carried the pre-drop rate; the next tick's step bound priced its envelope off a rate the kernel never had (seed1005: ledger 63.13, tree 84.72). | Snapshot before the apply, restore when `txn.apply` did not commit (`aciq/harness.py` `apply_system`). |
+| After the ceiling-bind wipe the demand-probe ladder could never promote (the pierce committed 43.9 at t+5.1s, "ceiling binds" held it back to 41.0 = 0.9x the stale belief at t+8.9s, and the estimator's belief can only lag a pierce), so every pierce burnt budget and restarted from below. | Inside a pierce's hold window the bind cannot wipe the probe; a pierce that SURVIVED its window promotes to known-good AND `_probe_verified`, and while the delay stays clear the bind and the clear-and-demanded branch treat the verified rate as the climb floor (`aciq/ratecap.py`). Every descent branch (ratchet, overshoot landing, delay/severe/capacity emergencies) keeps the true ceiling and outranks the guard. `refund_delay_emergency` restocks a clearance whose apply did not commit. |
+
+Why no constant moved: max_changes_per_min was never exhausted in any dev
+trace (checks: `rg "rise budget exhausted" data/runs_dev3`), and the up
+shapes that passed under retune #2 (s7_up_20to60 10/10, rampup/up cells
+20/20) set no cadence deficit. The affected cells re-run under the SAME
+constants so the artifacts alone can say whether the structural fixes
+close the gate; any further tuning must quote the new run's defect line.

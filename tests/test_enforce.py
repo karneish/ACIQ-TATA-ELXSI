@@ -211,6 +211,19 @@ class TestShieldVetoes(unittest.TestCase):
         self.assertTrue(s.veto_rate(100.0 + MIN_CHANGE_WINDOW_S - 0.1))
         self.assertEqual(s.veto_rate(100.0 + MIN_CHANGE_WINDOW_S + 0.1), [])
 
+    def test_emergency_descent_bypasses_the_change_window(self):
+        """Round 3 (dev band, s2b_step_50 seed1005): the delay-emergency
+        one-commit landing was deferred at this window (4.25s since last
+        change), the clearance spent 30 s of cooldown on nothing, and the
+        next emergency cleared 29.5 s after the drop -- twice past the
+        gate. A descent lands below the current rate and cannot grow a
+        queue; the window must not defer it."""
+        s = Shield()
+        s.note_change(100.0)
+        self.assertEqual(
+            s.veto_rate(100.0 + MIN_CHANGE_WINDOW_S - 4.25, emergency=True),
+            [])
+
     def test_drop_rate_limit(self):
         codes = [v.code for v in Shield().veto_load(drop_rate=99999, overlimit_rate=0)]
         self.assertIn("drop_rate_limit", codes)
