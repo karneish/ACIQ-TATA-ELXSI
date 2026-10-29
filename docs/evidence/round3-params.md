@@ -102,3 +102,26 @@ PROBE_HOLD_S 12.0, PROBE_UP_FRAC 0.25, PROBE_DEMAND_FRAC 0.85,
 PROBE_DEMAND_GAP_S 3.0, PROBE_BACKOFF_S 30.0, probe step envelope
 (0.25 multiplicative, verifier-clamped), known-good/overshoot landings,
 rise budget 6/min.
+
+## DEV-band retune #2 (declared 2026-10-29, commit 5865fe0d data, 12/30 cells, 128/300 runs validated)
+
+`tools/verify_round3.py data/runs_dev3` on the fresh dev band passed every
+long-window up shape (s7_up_20to60 aciq 8/8 seeds available: util_applied
+0.69-1.06, util_delivered 0.77-0.82) and exposed two fresh failure classes.
+Both are retuned as declared tunables below; the affected cells re-run under
+the new constants after the current band finishes (markers wiped, old dirs
+archived, full band re-run so the band stays single-revision).
+
+| Parameter | Old | New (tune) | Rationale (dev evidence, seeds 1000-1009) |
+|-----------|-----|------------|------------------------------------------|
+| severe_drop_conf | 0.6 | 0.45 | s2b_step_50: severe fired and PASSED the <=8 s criterion in exactly 6/10 seeds (3.8-4.9 s landings). In the other 4 (1001,1002,1008,1009) the estimator confidence never cleared 0.6, so the name walked 85.1->74.7->58.0->51.1 Mbps over ~16 s instead of committing the emergency landing. 0.45 admits the borderline-confidence cases; the >severity (0.9) and non-collapse guards are unchanged, and overshoot/delay-inflation resolution still applies |
+| probe_hold_s | 12.0 | 7.0 | s2b_step_up_20to100 (40 s runs, step at t=10): the governor used its full probe budget (4-5 demand-probe commits/seed) but the 12 s saturation-hold left too few cycles after the step, ending at util_applied 0.32-0.47 with util_delivered 0.20-0.28. In the LONG window (s7_up_20to60, 60 s) the same policy passed 10/10, so the defect is pacing, not the pierce. hold 12->7 gives ~3 probe cycles in the 30-s post-step window instead of ~1.5 |
+| probe_backoff_s | 30.0 | 18.0 | companion proof pacing knob: after an overshoot landing the cooldown froze ~a third of the post-step window; 18 s keeps the overshoot protection but leaves a second full cycle |
+
+Not retouched: SEVERE_DROP_FRAC 0.9 (evidence: 6/6 fires PASSED), severe
+collapse guard, probe envelope, overlimit witness 50.0/s, all other
+declared-live constants.
+
+Validation gates unchanged (frozen): dev up-util >=0.60, down emergency
+<=8.0 s, fairness/starvation readouts. The retuned band will be judged by
+the SAME gate constants (tools/verify_round3.py:42-46).

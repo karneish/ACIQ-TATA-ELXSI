@@ -176,7 +176,7 @@ DELAY_ALPHA = 0.5
 #: offered >= PROBE_DEMAND_FRAC x applied -- before a ceiling-piercing
 #: probe may fire. A step in the dark needs a sustained window; this is
 #: seeded from HOLD_CLEAR_S and tuned ONLY on the s7_* DEV band.
-PROBE_HOLD_S = 12.0
+PROBE_HOLD_S = 7.0
 
 #: Round 3. Multiplicative probe step above the (stale) ceiling.
 #: 0.25 matches the law's up envelope exactly, so a probe commit need
@@ -197,7 +197,7 @@ PROBE_DEMAND_GAP_S = 3.0
 
 #: Round 3. After a probe overshoot lands its backoff, new probes are
 #: blocked this long: back-offs are prioritized, rises are cheap.
-PROBE_BACKOFF_S = 30.0
+PROBE_BACKOFF_S = 18.0
 
 #: Round 3 (DEV-band retune, declared in round3-params.md). The pierce
 #: witness. The ceiling-freshness gate could not tell a tree pin (a
@@ -231,7 +231,9 @@ PROBE_RUNNING_FRAC = 0.6
 #: Tuned ONLY on the DEV band. Below CAPACITY_EMERGENCY_COLLAPSE_FRAC
 #: the old conf-less emergency still rules.
 SEVERE_DROP_FRAC = 0.9
-SEVERE_DROP_CONF = 0.6
+#: DEV-band retune #2 (round3-params.md): 0.6 blocked 4/10 s2b_step_50 seeds
+#: whose estimator confidence could not clear the gate; 0.45 admits them.
+SEVERE_DROP_CONF = 0.45
 
 _EPS = 1e-9
 
