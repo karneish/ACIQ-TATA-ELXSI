@@ -24,7 +24,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -150,7 +152,30 @@ def evaluate(corpus_path: Path, seed: int = 7) -> dict:
         # out of honesty.
         conf[target_name] = _confusion(part, plan_labels)
     out.update(conf)
+    # Provenance (stamped, 2026-10-30): an eval.json that cannot say WHICH
+    # rule revision and WHICH corpus bytes produced it is not reproducible.
+    # The stamp is generated, never hand-edited: a number that disagrees with
+    # the file it is quoted from is an audit failure, same as the constants
+    # stamp in audit_claims.py.
+    out["corpus_sha256"] = hashlib.sha256(corpus_path.read_bytes()).hexdigest()
+    out["split_seed"] = seed
+    out["revision"] = _git_revision()
+    out["evaluated_at"] = time.strftime(
+        "%Y-%m-%dT%H:%M:%S+00:00", time.gmtime())
     return out
+
+
+def _git_revision() -> str | None:
+    """HEAD of the tree this evaluation ran against. None (recorded as null)
+    when git is unavailable: the field must exist, and its absence of value
+    must be visible, not silently missing."""
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=5, cwd=ROOT)
+        return r.stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        return None
 
 
 def _rows(records: list[dict]) -> list[dict]:

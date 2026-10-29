@@ -701,3 +701,73 @@ class TestTrustStoreIsBounded(unittest.TestCase):
         for i in range(100):
             t.record_miss(f"s{i}")
         self.assertLessEqual(len(t), 1)
+
+
+class TestIPv6Classification(unittest.TestCase):
+    """The classify half of the IPv6 path: an address family the reader was
+    fixed to parse (conntrack -f ipv6, test_flowtrack) must also DECIDE. The
+    rule base never mentions an address, so these tests prove no branch
+    accidentally assumes an IPv4 literal."""
+
+    V6_CALL = Flow("fd00:2::2", 50000, "fd00:1::2", 3478, "udp")
+    V6_TCP = Flow("fd00:2::2", 1, "fd00:1::2", 443, "tcp")
+
+    def test_a_mature_v6_flow_classifies(self):
+        self.assertEqual(
+            classify(mature(flow=Flow("fd00:2::2", 1, "fd00:1::2", 443, "tcp"),
+                            mbps=4.69), capacity_mbps=CAP).cls,
+            TrafficClass.STREAMING)
+
+    def test_a_marked_v6_flow_keeps_same_rules_as_v4(self):
+        # Mirror of test_large_packet_video_call_is_interactive_when_marked
+        # on an IPv6 tuple: same inputs, same verdict.
+        self.assertEqual(
+            classify(mature(dscp=DSCP_EF, avg_packet_bytes=1400, mbps=2.0,
+                            flow=self.V6_CALL)).cls,
+            TrafficClass.VIDEO_CALL)
+
+    def test_a_provisional_ef_claim_works_on_v6(self):
+        c = classify(mature(flow=self.V6_CALL, dscp=DSCP_EF, mbps=2.0,
+                            avg_packet_bytes=1400))
+        self.assertEqual(c.cls, TrafficClass.VIDEO_CALL)
+
+    def test_trust_keys_do_not_merge_across_families(self):
+        """The trust store keys on the address string; a v4 and a v6 source are
+        separate keys, so a v6 mislabeller cannot borrow a v4 source's trust"""
+        t = TrustStore()
+        t.record_miss("10.0.1.2")
+        self.assertLess(t.trust("10.0.1.2"), 1.0)
+        self.assertEqual(t.trust("fd00:2::2"), 1.0)
+
+
+class TestIPv6TrackedFlowClassifies(unittest.TestCase):
+    """The full non-privileged join: a RECORDED `conntrack -L -f ipv6` line
+    (the same bytes the traffic gate's check 13 produced) is parsed, tracked,
+    projected, and classified -- with no address-family branch anywhere."""
+
+    LINE = ("udp      17 29 src=fd00:2::2 dst=fd00:1::2 sport=52217 "
+            "dport=7004 packets=4490 bytes=1113520 [UNREPLIED] "
+            "src=fd00:1::2 dst=fd00:2::2 sport=7004 dport=52217 "
+            "packets=0 bytes=0 mark=0 use=1")
+
+    def test_line_to_features_to_classify(self):
+        from aciq.flowtrack import FlowTracker, parse_conntrack_line
+        flow = parse_conntrack_line(self.LINE)
+        t = FlowTracker()
+        t.observe(self.LINE, 0.0)
+        # One increment later: 1_100_000 bytes in a 1.0 s window => ~8.8 Mbps.
+        bigger = self.LINE.replace("1113520", "2213520").replace(
+            "4490", "5490")
+        t.observe(bigger, 1.0)
+        f = t.features(flow.identity)
+        self.assertIsNotNone(f)
+        # Rate is the lifetime average the tracker projects: total projected
+        # bytes / age, both directions summed by parse_conntrack.
+        self.assertAlmostEqual(2213520 * 8 / 1.0 / 1e6, f.rate_mbps,
+                               places=6)
+        c = classify(f, capacity_mbps=CAP)
+        # One-second-old flow: below the maturity floor, so the classifier
+        # declines honestly (marks the flow C/None, no classed verdict) --
+        # the assertion is that the v6 features reached the rule base at all.
+        self.assertIsNone(c.cls)
+        self.assertEqual(c.tier, "C")

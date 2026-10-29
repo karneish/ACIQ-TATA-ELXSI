@@ -21,7 +21,9 @@ import json
 import math
 import os
 import re
+import subprocess
 import sys
+import time as _time
 from collections import defaultdict
 
 DIR_RE = re.compile(r"^(?P<sc>.+)__(?P<arm>.+)__(?P<mode>.+)__seed(?P<seed>\d+)$")
@@ -33,6 +35,7 @@ def finite(x):
 
 def check_run(run_dir):
     """Return (stage, checks) — stage in artifact/valid/passing/missing/invalid."""
+    run_dir = str(run_dir)
     checks = {}
     rp = os.path.join(run_dir, "result.json")
     cp = os.path.join(run_dir, "config.json")
@@ -145,6 +148,17 @@ def check_run(run_dir):
     return "passing", {"failures": []}
 
 
+def _head():
+    """Short HEAD of the tree this validation ran against (None when git is
+    unavailable; the field must exist, not silently vanish)."""
+    try:
+        r = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"],
+                                    text=True, timeout=5)
+        return r.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("roots", nargs="*", default=["data/runs_dev3"])
@@ -179,7 +193,14 @@ def main(argv=None):
         "artifact_incomplete_runs": stats["artifact-missing"],
         "unknown_runs": stats["artifact-invalid"],
     }
-    out = {"summary": summary, "per_cell": {f"{s}__{a}": dict(v) for (s, a), v in sorted(per.items())}, "problem_runs": details}
+    out = {
+        "generated_at": _time.strftime("%Y-%m-%dT%H:%M:%S+00:00",
+                                      _time.gmtime()),
+        "revision": _head(),
+        "summary": summary,
+        "per_cell": {f"{s}__{a}": dict(v) for (s, a), v in sorted(per.items())},
+        "problem_runs": details,
+    }
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     json.dump(out, open(args.out + ".json", "w"), indent=2, sort_keys=True)
 

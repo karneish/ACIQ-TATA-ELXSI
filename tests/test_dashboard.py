@@ -4,7 +4,7 @@ import re
 import unittest
 from pathlib import Path
 
-from aciq.dashboard import build_from_samples
+from aciq.dashboard import build_from_samples, panels_from_samples
 
 
 class TestTheDashboardFollowsARunInProgress(unittest.TestCase):
@@ -299,3 +299,38 @@ class TestTheChartsAreHonest(unittest.TestCase):
         html = build_from_samples(_real_rows(), refresh_s=5)
         self.assertNotIn("<script", html.lower())
         self.assertIsNone(re.search(r'(src|href)="https?:', html))
+
+
+class TestPanelEdgeCases(unittest.TestCase):
+    """The metrics a run may fail to report must leave 'no data'/'not
+    measured' panels, not exceptions -- a run whose collector hiccups for a
+    tick (None fields) or tells the truth about a whole panel (unmeasured
+    capacity) still renders."""
+
+    def test_rows_whose_metrics_are_all_none_render_no_data(self):
+        rows = [{"t": float(i),
+                 "per_class": {"adaptive_video": {
+                     "jitter_ms": None, "loss_ratio": None,
+                     "backlog_bytes": None, "goodput_mbps": None,
+                     "rtt_p50": None, "rtt_p95": None, "rtt_p99": None}},
+                 "fairness": None, "link": None}
+                for i in range(4)]
+        html = build_from_samples(rows, subtitle="edge", refresh_s=2)
+        self.assertIn("no data", html)
+        # and every axis/panels structure still builds: nothing is missing
+        self.assertIn("<svg", html)
+
+    def test_rows_missing_the_per_class_dict_render_no_data(self):
+        rows = [{"t": float(i), "per_class": None} for i in range(3)]
+        html = build_from_samples(rows, subtitle="edge", refresh_s=2)
+        self.assertIn("no data", html)
+
+    def test_a_metric_missing_for_one_class_drops_only_that_series(self):
+        rows = [{"t": 0.0,
+                 "per_class": {"adaptive_video": {"goodput_mbps": 5.0},
+                               "adaptive_game": {"goodput_mbps": None}},
+                 "fairness": None}]
+        panels = panels_from_samples(rows, ["adaptive_video", "adaptive_game"])
+        labels = [s.label for s in panels.get("throughput", [])]
+        self.assertIn("adaptive_video", labels)
+        self.assertNotIn("adaptive_game", labels)

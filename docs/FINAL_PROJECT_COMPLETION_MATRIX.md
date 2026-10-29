@@ -27,7 +27,7 @@ report. Every status change from history has a reason column.
 | 018 | confidence exposure | per-class conf | unit | per sample | classify.py:117 | unit | VERIFIED | — | confidence exposed (not calibrated — documented) |
 | 019 | correction support | corrections.py | unit | corpus | kiosk mapping | unit | VERIFIED | — | correction path tested |
 | 020 | licences | LICENSE/licenses.md | — | — | files | static | VERIFIED | — | documented |
-| 021 | data+impairment settings included | data/committed config | — | band | config.json+SHA256SUMS | validator | VERIFIED | — | config+data reproducible |
+| 021 | data+impairment settings included | data/baselines/v0/SHA256SUMS | — | band | config.json+SHA256SUMS | validator | VERIFIED | — | config+data reproducible |
 | 022 | emulation labelling | report banner | — | — | generator | unit | VERIFIED | — | every report labelled |
 | 023 | no real secrets | guard scan | guard suite | — | scan clean | static | VERIFIED | — | no credentials committed |
 | 024 | bounded remediation/safe state | FAULT ladder | txn suite | live-once | txn.py | unit+live | VERIFIED | — | failure → known-safe scratch state |
