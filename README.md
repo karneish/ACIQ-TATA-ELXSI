@@ -5,9 +5,12 @@
 >
 > **Status: substantially complete, and this README says exactly where it
 > falls short.** Per-flow enforcement, the capacity drop and the lease mechanism
-> are **verified on a real kernel**. Three things are not done: capacity
-> *estimation* is verified only by replaying a recorded run, latency/jitter/loss
-> are not measured at all, and there is no device-identity layer.
+> are **verified on a real kernel**. Latency/jitter/loss are measured per run
+> (`call.json`: RTT p50/p95, jitter, loss ratio) and scenario-wise comparisons
+> are computed in `reports/FINAL_EVALUATION_REPORT.md`. Three things are not
+> done: capacity *estimation* is verified end-to-end only by replaying a
+> recorded run, the IPv6 path has no classifier wiring, and there is no
+> device-identity layer.
 > Read [`docs/PROJECT.md`](docs/PROJECT.md) for the complete reference, and
 > [Current state](#current-state) for the honest gap list.
 
@@ -34,8 +37,8 @@ to let a user grant a **time-boxed lease** to one device or flow.
 
 | | |
 |---|---|
-| Testbed gate | **20 PASS + 1 MEASURED**, 0 FAIL — re-run 2026-10-09 against current code |
-| Unit tests | **1006 passing** unprivileged · 1003 as root, 1 skip (the test that asserts the gate refuses unprivileged) |
+| Testbed gate | **21 PASS**, 0 FAIL — re-run 2026-10-29 at band start (dev band log) |
+| Unit tests | **1498 passing** / 10 skipped (kernel-gated) at `210bd09f` |
 | Lint | `ruff` clean, 0 findings (`./tools/lint.sh`, no root needed) |
 | Scenarios measured | all three from the brief (A, B, C), 7 paired seeds × 3 systems each |
 | Evidence | revision-stamped; `tools/compare.py` emits paired Wilcoxon statistics |
@@ -212,7 +215,7 @@ See [`docs/setup.md`](docs/setup.md) for prerequisites, exact versions, the
    traffic
       │
  ┌────▼────┐  classify: DSCP + behaviour → class, confidence, evidence
- │    M1   │  ⚠ built and tested, NOT connected to enforcement
+ │    M1   │  class→tree steering gate-verified live (gate log check 16)
  └────┬────┘
  ┌────▼────┐  estimate capacity from queue counters ONLY
  │    M2   │  never reads class 1:1's configured rate
@@ -271,8 +274,8 @@ aciq/            the system
   txn.py         M9   snapshot, apply, verify, rollback, safe state
   metrics.py     M5   counters → rates, percentiles, fairness, CPU
   qdisc.py            read-back readers, ordered by what was verified
-  classify.py    M1   ⚠ tested, NOT wired to enforcement
-  flowtrack.py   M1   ⚠ conntrack parsing + per-flow behaviour
+  classify.py    M1   steering live-verified (docs/evidence/gate-20261011-125321.log:134)
+  flowtrack.py   M1   conntrack parsing + per-flow behaviour
   harness.py     M6   closed loop, baselines, capacity variants
   experiment.py  M6   run sequencing, artefacts
   report.py      M10  Markdown report, honest verdicts per percentile

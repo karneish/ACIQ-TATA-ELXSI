@@ -493,3 +493,18 @@ A/B measurement, because it will also worsen video p99.
 
 **TELIPORT round dates are still unset.** Steps 4–7 cannot be prioritised
 against a real deadline until they are known.
+---
+## Dated addendum (2026-10-29, HEAD 210bd09f)
+
+The body of this audit predates the round-3 work; treat it as the record of
+its era, not a current-state claim:
+
+- M1 classification: the per-flow class→qdisc steering is **verified live** by
+  the kernel gate at `docs/evidence/gate-20261011-125321.log:126-135`
+  (check 16: steered IPv4 flow routed to 1:20). The "not connected" text
+  above described the wiring as it stood when this audit was written.
+- IPv6: the residual gap stands still — an IPv6 `flower` filter is emitted,
+  but there is still **no IPv6 classification path** (M1 is IPv4-only).
+- Test counts quoted above are stale; the current suite is 1498 tests
+  (10 kernel-gated skips) at `210bd09f` — run the suite, do not trust the
+  headers.

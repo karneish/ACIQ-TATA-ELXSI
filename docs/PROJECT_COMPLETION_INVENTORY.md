@@ -53,7 +53,7 @@ Resume mechanism: the batch script skips any cell with an existing `.done` marke
 
 ## 3. Documentation inventory
 
-Existing: `docs/architecture.md`, `docs/modules.md`, `docs/limitaions`→`limitations.md`, `docs/setup.md` (Python-version conflict :17 vs :180), `docs/TRACEABILITY.md` (stale counts), `docs/WIRING_AUDIT.md`, `docs/FIX_REPORT.md`, `docs/ACIQ_COMPLETE.md`, `docs/ACIQ_EXPLAINED.md`, `docs/CONCEPTS.md`, `docs/PROJECT*.md`, `docs/licenses.md`, PHASE*_AUDIT/PLAN supplements. Known contradictions: `README.md:9` vs `:130–163` (latency claim), `:37` (stale test count), `:215/:274`; `WIRING_AUDIT.md:33–34` vs `:388`; `demo.sh:21` header ("4 arms", loop = 3).
+Existing: `docs/architecture.md`, `docs/modules.md`, `docs/limitations.md`, `docs/setup.md` (Python-version conflict :17 vs :180), `docs/TRACEABILITY.md` (stale counts), `docs/WIRING_AUDIT.md`, `docs/FIX_REPORT.md`, `docs/ACIQ_COMPLETE.md`, `docs/ACIQ_EXPLAINED.md`, `docs/CONCEPTS.md`, `docs/PROJECT.md`, `docs/PROJECT_REPORT.md`, `docs/licenses.md`, PHASE*_AUDIT/PLAN supplements. Known contradictions: `README.md:9` vs `:130–163` (latency claim), `:37` (stale test count), `:215/:274`; `WIRING_AUDIT.md:33–34` vs `:388`; `demo.sh` header ("4 arms", loop = 3).
 
 ## 4. Known audit findings carried forward
 

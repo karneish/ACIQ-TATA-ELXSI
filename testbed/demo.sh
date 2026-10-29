@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # testbed/demo.sh — the 12-minute live demo. Everything from a clean testbed
-# to a rendered report for ONE scenario. 4 arms x 3 seeds, then evidence,
+# to a rendered report for ONE scenario. 3 arms x 3 seeds, then evidence,
 # corpus sampling at reduced length, and the offline report.
 #
 #   sudo env ACIQ_VENV=/home/mekarz/aciq-venv SCENARIO=s2_wan_drop SEEDS=3 \

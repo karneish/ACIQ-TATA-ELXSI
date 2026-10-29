@@ -4,10 +4,10 @@ Roots: data/runs_dev3
 
 | metric | count |
 |---|---|
-| planned_seed_runs | 129 |
-| artifact_complete_runs | 129 |
-| valid_runs | 128 |
-| passing_runs | 128 |
+| planned_seed_runs | 146 |
+| artifact_complete_runs | 146 |
+| valid_runs | 145 |
+| passing_runs | 145 |
 | failure_drill_runs | 0 |
 | invalid_runs | 0 |
 | artifact_incomplete_runs | 1 |
@@ -29,8 +29,10 @@ Roots: data/runs_dev3
 | s2b_step_up_20to100__aciq | {"passing": 10} |
 | s2b_step_up_20to100__b1_cake_auto | {"passing": 10} |
 | s2b_step_up_20to100__b1_cake_cons | {"passing": 10} |
-| s7_up_20to60__aciq | {"artifact-missing": 1, "passing": 8} |
+| s7_up_20to60__aciq | {"passing": 10} |
+| s7_up_20to60__b1_cake_auto | {"artifact-missing": 1, "passing": 5} |
+| s7_up_20to60__b1_cake_cons | {"passing": 10} |
 
 ## Problem runs
 
-- s7_up_20to60__aciq__adaptive__seed1008: artifact-missing — result.json absent
+- s7_up_20to60__b1_cake_auto__adaptive__seed1005: artifact-missing — result.json absent

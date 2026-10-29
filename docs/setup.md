@@ -177,7 +177,7 @@ Verified by the audit against the machine this repository was measured on:
 | `iproute2` | 6.1.0 | `tc -j` output is the contract of `parse_class_json` |
 | `nftables` | 1.0.9 | `runner` verification paths |
 | `iperf3` | 3.16 | unused by the shipped workloads; kept for manual ad-hoc measurement |
-| Python | 3.12.3 (host venv `~/aciq-venv`) | stdlib only; `pyroute2` 0.9.6 present |
+| Python | 3.13.15 (host venv `~/aciq-venv`) | stdlib only; `pyroute2` 0.9.6 present |
 
 `--system` accepts four values since the oracle arm landed:
 `b0_fifo`, `b1_cake95`, `b1_cake_oracle`, `aciq`. The oracle arm is an
