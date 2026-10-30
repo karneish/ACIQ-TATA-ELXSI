@@ -252,6 +252,8 @@ re-run measured 4 FAIL / 3 PASS of 7:
 | The pre-drop severe at 7.5 s spent the shared 20 s clearance, so at 12.8 s `emerg_free` was False and the drop landing was refused as an emergency; the law's 25 % step from 75.15 is 56.36, above the 55.0 band top, so the landing slipped to 8.13 s. This is the measured FAIL on seed1000 (and seed1002's 68.98). | A wire carrying `< 0.80 x applied` **and** `< ceiling` (demonstrated under-delivery: 52.18 of 75.15 on a 50 Mbps link) bypasses the clearance cooldown, the same way a capacity collapse already does. The cooldown exists to stop repeated moderate emergencies, not to refuse a landing on a link the bulk cannot fill. The landing is `min(ceiling, delivered)`, never below the plan floor. |
 | After the landing the probe re-pierced 41.3 -> 51.6 -> 64.5 -> 71.6 on the 50 Mbps link. The demand witness is tautological for a starved bulk: the harness derives `offered` from the applied (`= 0.85 x applied`), so `offered >= 0.85 x applied` holds every tick, and the shielded call's delay never sees the parent queue (the bulk is shaped at its leaf). | The probe is suppressed while the estimator is in a DROP REGIME: `belief < 0.8 x max(belief over the last 30 s)`. A probe is a bet that the ceiling is stale-LOW; it must not be placed while the estimator's own history says capacity FELL. The up shapes never enter the regime (their belief is flat/rising: 17.4 -> 19.5 -> 23.3 in the seed1000 run). |
 
+| A third hit on seed1002 (the first band re-run at b26d1670): the severe landed at **55.69**, 0.69 above the 55.0 top, because the 1 s `delivered` sample at the drop tick (12.79 s) still held the pre-drop queue draining -- the tick before (11.67 s) had carried 52.39. The follow-up bind reached 52.18, but the 5 s dwell pushed its commit to 18.09 s, 0.09 s past the 8.0 s budget (`landed 8.1s`, FAIL). | The severe landing targets the **lowest delivered over the last 4 s** (`SEVERE_LANDING_WINDOW_S`), still clamped by the ceiling and the plan floor: seed1002 lands 52.39 at drop+2.8 s, seed1000 52.38 and seed1001 52.33 (their drained minimums). The instantaneous sample is a transient, not the wire's carried rate. |
+
 #### DOWN: the stuck re-pierce chain, and the up-shape lost rung
 
 One more defect was visible across both shapes. A pierce is held by the round-4
@@ -277,9 +279,9 @@ Replayed on the recorded ticks in `TestRound6DownRegime` (new),
 round-4 guard test. Feeding the recorded ticks (belief, delivered, applied,
 delay, overlimit) back through the new governor reproduces the intended
 single commit: seed1000 lands **52.18 at rel 12.8 s (drop+2.8 s, inside the
-8.0 s budget)** with `delay_emergency` set, seed1002 lands 53.61 at
-drop+1.7 s and 52.27 on the next tick, seed1001 lands 52.24 at 13.8 s
-(drop+3.8 s). The post-landing tail is the *bind*, not a probe: in the drop
+8.0 s budget)** with `delay_emergency` set, seed1002 lands 52.39 at
+drop+2.8 s (the 55.69 transient is filtered by the drained-minimum window),
+seed1001 lands 52.33 at 1.7 s. The post-landing tail is the *bind*, not a probe: in the drop
 regime no pierce is placed and the bind never climbs above `applied`, so the
 bind/ceiling commits cannot lift the tree back above the band.
 

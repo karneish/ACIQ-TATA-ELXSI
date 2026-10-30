@@ -1027,6 +1027,28 @@ class TestRound6DownRegime(unittest.TestCase):
         self.assertIn("severe drop", d.reason)
         self.assertLess(d.rate, 56.36)  # not the law's 25% step from 75.15
 
+    def test_landing_uses_the_drained_rate_not_the_drain_transient(self):
+        """s2b_step_50 seed1002: at the drop tick the 1 s delivered sample was
+        55.69 (0.69 above the 55.0 band top) because the pre-drop queue was
+        still draining; the tick before had carried 52.39. Land on the
+        drained rate, or the follow-up bind misses the 8 s budget.
+        """
+        g = RateGovernor()
+        first = g.observe(belief=70.3, belief_conf=0.3,
+                          belief_saturated=False, applied=105.54,
+                          delivered=52.39, backlog_bytes=0, offered=89.7,
+                          now=11.67, min_rate=29.2,
+                          tree_overlimit_per_s=3700.0)
+        self.assertFalse(first.delay_emergency)
+        d = g.observe(belief=70.3, belief_conf=0.5, belief_saturated=False,
+                      applied=79.15, delivered=55.69,
+                      backlog_bytes=int(20.3 * 79.15 * 125.0),
+                      offered=67.3, now=12.79, min_rate=29.2,
+                      tree_overlimit_per_s=3700.0)
+        self.assertTrue(d.delay_emergency)
+        self.assertAlmostEqual(d.rate, 52.39, delta=0.1)
+        self.assertIn("severe drop", d.reason)
+
     def test_no_pierce_while_the_belief_is_in_a_drop_regime(self):
         """After the landing the belief sits at 41-46 while its recent
         maximum was 81.7: not a stale-low ceiling. The tree holds at the

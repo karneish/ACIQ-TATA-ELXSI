@@ -284,6 +284,13 @@ SEVERE_UNDERDELIVERY_FRAC = 0.8
 #: the parent queue. Look back this far for the fall.
 PIERCE_DROP_LOOKBACK_S = 30.0
 PIERCE_DROP_FRAC = 0.2
+#: Round 6: a severe landing targets the LOWEST rate the wire has actually
+#: carried over this window, not the instantaneous delivered. The 1 s
+#: delivered sample at the drop tick still contains the pre-drop queue
+#: draining: s2b_step_50 seed1002 measured 55.69 (0.69 above the 55.0 band
+#: top) while the tick before had carried 52.39, so the landing sat out of
+#: band and the follow-up bind missed the 8 s budget by 0.09 s.
+SEVERE_LANDING_WINDOW_S = 4.0
 
 _EPS = 1e-9
 
@@ -436,6 +443,9 @@ class RateGovernor:
         #: while the belief sits materially below its recent maximum (round 6:
         #: a drop regime, not a stale-low ceiling).
         self._belief_hist: deque = deque()
+        #: (t, delivered) over the severe-landing window: land at the lowest
+        #: rate the wire has demonstrably carried, not the drain transient.
+        self._delivered_hist: deque = deque()
         # Full decision log for the run artefact. One small dict per tick.
         self.log: list[dict] = []
 
@@ -614,6 +624,14 @@ class RateGovernor:
         # Round 6: the probe must not bet against an estimator that has just
         # seen capacity fall. Track the recent maximum so a normalized drop
         # regime (>= PIERCE_DROP_FRAC over the lookback) suppresses piercing.
+        recent_delivered_min = None
+        if delivered is not None and delivered > 0.0:
+            self._delivered_hist.append((now, delivered))
+            while (self._delivered_hist
+                   and now - self._delivered_hist[0][0]
+                   > SEVERE_LANDING_WINDOW_S):
+                self._delivered_hist.popleft()
+            recent_delivered_min = min(v for _, v in self._delivered_hist)
         belief_drop_regime = False
         if belief is not None and belief > 0.0:
             self._belief_hist.append((now, belief))
@@ -632,6 +650,7 @@ class RateGovernor:
             belief_conf=belief_conf,
             belief_saturated=belief_saturated, belief_falling=belief_falling,
             belief_drop_regime=belief_drop_regime,
+            recent_delivered_min=recent_delivered_min,
             tree_overlimit_per_s=tree_overlimit_per_s)
 
         if emerg:
@@ -687,6 +706,7 @@ class RateGovernor:
                 belief_saturated: bool | None = None,
                 belief_falling: bool = False,
                 belief_drop_regime: bool = False,
+                recent_delivered_min: float | None = None,
                 tree_overlimit_per_s: float | None = None):
         """The rule table, in one place so the reasons stay readable."""
         if ceiling is None and applied is None:
@@ -714,9 +734,13 @@ class RateGovernor:
         def land_target(base):
             # Never land above what the wire is actually carrying when it has
             # demonstrated it cannot carry our rate, and never below the plan
-            # floor (round 6).
+            # floor (round 6). The "actual" rate is the lowest one the wire
+            # has carried over the landing window: the instantaneous sample
+            # still holds the pre-drop queue draining.
             if wire_dropped and delivered is not None:
-                base = min(base, delivered)
+                carried = (recent_delivered_min
+                           if recent_delivered_min is not None else delivered)
+                base = min(base, delivered, carried)
             if min_rate is not None:
                 base = max(base, min_rate)
             return base
