@@ -291,3 +291,62 @@ ladder are decided by the real kernel and are the point of the re-smoke.
 Expected on the re-run: s2b_step_50 lands ~52.2 at drop+~2-4 s with the
 tail <= 55.0; s2b_step_up_20to100 util ~0.78, delivered ~0.57;
 s7_down_100to8 unchanged (PASS).
+
+## Retune #7 (declared 2026-10-30, after the dev band at fdfd2cf6)
+
+Band result: 6 judged FAIL / 74 PASS / 20 skipped (no controller claim)
+of 100 (`tools/verify_round3.py data/runs_dev3`). Gate constants do NOT
+move this round. One controller change, one withdrawn change.
+
+#### The up shapes landed at the stale-LOW ceiling
+
+`s7_rampup_30to100` seed1008 (rel 42.8) and `s7_up_20to60` seed1002
+(rel 43.1) committed a severe drop at the ceiling in one commit while the
+wire's own evidence said the link was fine:
+
+* seed1008: `ceiling 40.78 < 0.90x applied 121.33: land at 40.78 (wire
+  carries 104.58)` -- a carry of 0.86x applied.
+* seed1002: `ceiling 27.38 < 0.90x applied 82.10: land at 27.38 (wire
+  carries 63.00)` -- a carry of 0.77x applied.
+
+`wire_dropped` is FALSE in exactly those ticks (delivered sits ABOVE the
+stale ceiling), so retune #6's ceil-led `min()` kept the stale leg. The
+decision log shows the shared shape: the demand-probe ladder pushed the
+applied while the estimator -- a slow-increase with release dwell -- still
+held the pre-climb belief; the ladder's own overshoot lifted the delay EMA
+over the 20 ms inflation threshold (6.7 -> 16.1 -> 22.2 ms on seed1002),
+the severe block fired, and the landing took the belief's word.
+
+Fix: in `land_target` (aciq/ratecap.py), for a wire-dropped-NO landing the
+ceiling is dropped from the min ONLY when the wire demonstrably cannot
+hold the applied: carry < `SEVERE_WIRE_LED_CARRY_FRAC` = 0.9x applied.
+Rationale: the recorded anti-patterns carry 0.86x / 0.77x (the applied is
+the snake's own overshoot; the wire's rate IS the link); the genuine-drop
+smoke the ceil-led rule protects carries 1.00-1.09x applied while the
+320-500 ms of queued bytes drains (the task2 collapse fixtures), so its
+instantaneous carry proves nothing and the ceiling keeps owning the land.
+`TestRound7DevBand` replays both recorded landings (104.58 / 59.1) plus
+the round-6 anchor (52.18) under the new rule.
+
+#### The s2b_step_up stall: budget hypothesis examined and WITHDRAWN
+
+The failing quartet's recorded shape (`s2b_step_up_20to100` seeds
+1001/1002/1003/1008): the pierce ladder stops at rungs 6-8 (rates
+55.6-69.2) and the reason falls through to
+`clear for 10 s but offered X does not demand it` for the rest of the run
+at offered 57.3-58.1 of applied 64.88 (= 0.88x applied -- ABOVE the 0.85x
+demand threshold, with dw 36+ s and overlimit 4744/s).
+
+First hypothesis: `MAX_CHANGES_PER_MIN = 6` rations the 9 rungs a
+20 -> 100 recovery needs. A synthetic 25 %-step ladder confirmed the
+budget stalls the 7th rung under the code's `budget_left > 0` gate, and
+the fall-through text matches. It was then WITHDRAWN: the recorded runs
+contradict the gate -- seed1000's ladder committed NINE pierces inside
+~43 s under the same budget (decisions log: rungs at rel 6.3-48.9, each
+`demand-probe up`), which the gate cannot produce. The constant stays 6
+(the discipline this file holds: a constant moves only when the artefacts
+defend the move; here they defended its opposite). A faithful replay of
+the recorded decisions could not be built this round (offered/applied
+reconstruction diverges from the recorded flow), so the exact refusal
+path of the stall ticks stays OPEN; the four seeds re-run under the
+landing fix and the diagnosis resumes on their trace if they fail again.

@@ -291,6 +291,14 @@ PIERCE_DROP_FRAC = 0.2
 #: top) while the tick before had carried 52.39, so the landing sat out of
 #: band and the follow-up bind missed the 8 s budget by 0.09 s.
 SEVERE_LANDING_WINDOW_S = 4.0
+#: Round 7.1: the carry ratio at or above which the wire's own sample is
+#: still the applied rate the tree was told to push (a real drop keeps that
+#: window: the recorded s2 2.57x walk's carries rode 1.00-1.09x applied
+#: while the backlog drained), and below which the carry is the WIRE'S own
+#: rate the applied has overshot (retune-7 cells: 0.86x, 0.77x). At the
+#: former the estimator's ceiling keeps owning the severe landing; at the
+#: latter it must not (the stale-low leg of wire_dropped, round 7).
+SEVERE_WIRE_LED_CARRY_FRAC = 0.9
 
 _EPS = 1e-9
 
@@ -737,10 +745,42 @@ class RateGovernor:
             # floor (round 6). The "actual" rate is the lowest one the wire
             # has carried over the landing window: the instantaneous sample
             # still holds the pre-drop queue draining.
-            if wire_dropped and delivered is not None:
+            #
+            # Round 7 (dev band at fdfd2cf6): the ceiling can also be the
+            # STALE-LOW leg. The up shapes measured landings at the ceiling
+            # while the wire's own evidence said the link was fine -- s7_
+            # rampup seed1008 landed 40.78 of a wire carrying 104.58 (0.86x
+            # applied), s7_up seed1002 landed 27.38 of a wire carrying 63.00.
+            # wire_dropped is false in exactly those ticks, so the ceiling
+            # must not own the landing there -- but neither may the wire's
+            # instantaneous sample veto a genuine drop: the task2 collapse
+            # smoke's recorded carries ride AT the applied (1.00-1.09x)
+            # while the backlog drains. The separator is the carry ratio,
+            # declared in round 7.1 comment below.
+            if delivered is not None and delivered > 0.0:
                 carried = (recent_delivered_min
                            if recent_delivered_min is not None else delivered)
-                base = min(base, delivered, carried)
+                if wire_dropped:
+                    base = min(base, delivered, carried)
+                elif applied is not None and applied > 0.0 \
+                        and delivered < SEVERE_WIRE_LED_CARRY_FRAC * applied:
+                    # Round 7.1: the ceiling may own the land only while the
+                    # wire is still holding the applied itself. The dev band
+                    # at fdfd2cf6 measured the anti-pattern both ways: a
+                    # probe-overshoot landing whose wire sat at 0.86x
+                    # applied (s7_rampup seed1008, wire 104.58 of 121.33,
+                    # ceiling 40.78) and at 0.77x applied (s7_up seed1002,
+                    # wire 63.00 of 82.10, ceiling 27.38) must land at the
+                    # wire's drained rate -- the tree demonstrably cannot
+                    # hold the applied, so the applied is the probe's own
+                    # overshoot and the stale-LOW ceiling is the belief's
+                    # lag, while the landing value is what the wire says.
+                    # A genuine drop (task2 smoke, the collapse band) keeps
+                    # the ceiling: its recorded carries ride AT the applied
+                    # (1.00-1.09x) while the 320-500 ms body of queued bytes
+                    # drains, so the wire's transient says nothing yet --
+                    # delivered >= 0.9x applied stays ceil-led.
+                    base = min(delivered, carried)
             if min_rate is not None:
                 base = max(base, min_rate)
             return base

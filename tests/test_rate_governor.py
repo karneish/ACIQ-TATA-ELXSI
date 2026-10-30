@@ -1097,3 +1097,95 @@ class TestRound6DownRegime(unittest.TestCase):
                       tree_overlimit_per_s=0.0)
         self.assertGreaterEqual(d.rate, probe)
         self.assertIn("verifying", d.reason)
+
+
+
+class TestRound7DevBand(unittest.TestCase):
+    """Round 7 (real dev band at fdfd2cf6, data/runs_dev3).
+
+    Two defects the up shapes still carried after retune #6 -- six judged
+    FAILs. The one fixed here: s7_rampup_30to100 seed1008 and s7_up_20to60
+    seed1002 committed a severe drop at the STALE-LOW ceiling in one commit
+    while the wire's own evidence said the link was healthy: ceiling
+    40.78 < 0.90x applied 121.33 with the wire carrying 104.58 (0.86x
+    applied), and ceiling 27.38 < 0.90x applied 82.10 with the wire
+    carrying 63.00. wire_dropped is false in exactly those ticks (the
+    carried 63.00 sits ABOVE the stale 27.38 ceiling), so the round-6 min()
+    left the stale ceiling owning the landing and the final-third
+    utilization failed.
+
+    The second family (s2b_step_up_20to100 seeds 1001/1002/1003/1008
+    stalling at the top of the recovery shape) was diagnosed to a
+    change-budget starvation during this round's analysis, but the
+    recording contradicts the hypothesis: the budget was left at 6 (see
+    docs/evidence/round3-params.md round 7). Those seeds re-run in the next
+    dev band with the landing fixed; the diagnosis resumes if they fail
+    again.
+
+    The fixtures reproduce the recorded ticks with SUSTAINED state: the
+    delay EMA seeds at the first observation's raw delay (DELAY_ALPHA=0.5)
+    and 20 ms must be crossed by the land tick itself, so every fixture
+    primes with a mid-band (10-20 ms, breaks clear, not inflating) tick
+    whose ceiling sits above the applied rate (no bind), then lands.
+    """
+
+    def test_stale_low_ceiling_lands_at_the_wire_rate(self):
+        """s7_rampup seed1008, rel 42.8: a rising ladder (121.33 applied,
+        wire 104.58, estimate still 45.31 because the release dwell feeds
+        the estimate once per MIN_DWELL_S) must land at the wire's drained
+        rate, not at the 40.78 ceiling the stale estimate produced."""
+        g = gov()
+        g.observe(belief=140.0, belief_conf=0.5, belief_saturated=True,
+                  applied=121.33, delivered=104.58,
+                  backlog_bytes=int(15.0 * 104.58 * 125.0),
+                  offered=104.58, now=39.0, min_rate=14.0,
+                  tree_overlimit_per_s=4700.0)
+        d = g.observe(belief=45.31, belief_conf=0.5, belief_saturated=True,
+                      applied=121.33, delivered=104.58,
+                      backlog_bytes=int(40.0 * 104.58 * 125.0),
+                      offered=104.58, now=42.5, min_rate=14.0,
+                      tree_overlimit_per_s=4800.0)
+        self.assertTrue(d.delay_emergency)
+        self.assertIn("severe drop", d.reason)
+        self.assertAlmostEqual(d.rate, 104.58, msg=d.reason)
+
+    def test_drained_carried_rate_not_the_transient_owns_the_floor(self):
+        """s7_up seed1002, rel 43.1: ceiling 27.38 below a wire carrying
+        63.00 of 82.10. The landing window still holds the earlier
+        delivered sample (59.1), so the drained carried rate -- not the
+        stale ceiling -- is the landing."""
+        g = gov()
+        g.observe(belief=95.0, belief_conf=0.5, belief_saturated=True,
+                  applied=82.10, delivered=59.1,
+                  backlog_bytes=int(15.0 * 59.1 * 125.0),
+                  offered=63.0, now=38.3, min_rate=14.0,
+                  tree_overlimit_per_s=3300.0)
+        d = g.observe(belief=30.42, belief_conf=0.5, belief_saturated=True,
+                      applied=82.10, delivered=63.0,
+                      backlog_bytes=int(40.0 * 63.0 * 125.0),
+                      offered=63.0, now=42.0, min_rate=14.0,
+                      tree_overlimit_per_s=3400.0)
+        self.assertTrue(d.delay_emergency)
+        self.assertIn("severe drop", d.reason)
+        self.assertAlmostEqual(d.rate, 59.1, msg=d.reason)
+
+    def test_wire_dropped_landing_is_unchanged(self):
+        """The round-6 anchor: a stale-HIGH ceiling over a collapsed wire
+        still lands at min(ceiling, delivered, drained) -- 52.18 of 75.15,
+        delivered below both the 0.8x bound and the ceiling. The prime
+        keeps the EMA mid-band so the land tick itself crosses the 20 ms
+        threshold (the recorded run's delay rose through the same path)."""
+        g = gov()
+        g.observe(belief=83.5, belief_conf=0.0, belief_saturated=False,
+                  applied=75.15, delivered=67.2,
+                  backlog_bytes=int(12.0 * 67.2 * 125.0),
+                  offered=67.2, now=6.0, min_rate=14.0,
+                  tree_overlimit_per_s=5000.0)
+        d = g.observe(belief=64.7, belief_conf=0.3, belief_saturated=False,
+                      applied=75.15,                       delivered=52.18,
+                      backlog_bytes=int(32.0 * 52.18 * 125.0),
+                      offered=52.0, now=10.0, min_rate=14.0,
+                      tree_overlimit_per_s=3886.0)
+        self.assertTrue(d.delay_emergency)
+        self.assertIn("severe drop", d.reason)
+        self.assertAlmostEqual(d.rate, 52.18)
