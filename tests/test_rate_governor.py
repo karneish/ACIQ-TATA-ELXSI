@@ -905,7 +905,10 @@ class TestRound5SevereLanding(unittest.TestCase):
                       offered=55.6, now=2.0, min_rate=25.3,
                       tree_overlimit_per_s=0.0)
         self.assertTrue(d.delay_emergency)
-        self.assertAlmostEqual(d.rate, 58.14)
+        # Round 6: the landing is clamped to what the wire actually carries
+        # (52.4), never the stale ceiling (58.14) -- on a 50 Mbps link the
+        # ceiling alone would sit above the gate band (top 55.0).
+        self.assertAlmostEqual(d.rate, 52.4)
         self.assertIn("severe drop", d.reason)
 
     def test_collapse_bypasses_the_clearance_cooldown(self):
@@ -945,3 +948,130 @@ class TestRound5SevereLanding(unittest.TestCase):
                       offered=50.0, now=1.0, min_rate=14.0,
                       tree_overlimit_per_s=200.0)
         self.assertFalse(d.delay_emergency)
+
+
+class TestRound6DownRegime(unittest.TestCase):
+    """Round 6 (real 1-seed smoke at ed34fa3e, data/runs_smoke_r5).
+
+    Two defects the down family still carried after retune #5:
+
+    * s2b_step_50 seed1000/1002 landed 8.1/8.0 s after the drop, because the
+      first post-drop bind proposed the stale ceiling (58.2) which the law
+      clamped to a 56.4/69.0 step -- still above the 55.0 band top -- and the
+      landing only arrived via the belief's slow decay. The wire was already
+      carrying 52.2 of the tree's 75-92 (0.69-0.57), i.e. the ceiling is
+      stale-HIGH, not low.
+    * after landing, the demand probe kept re-piercing 41.3 -> 51.6 -> 64.5
+      -> 71.6 on a 50 Mbps link: the derived offered (= 0.85 x applied)
+      always satisfies the demand test and the shielded call's delay never
+      sees the parent queue, so the probe ran every window.
+    """
+
+    def _prime(self, g, applied: float) -> None:
+        g.observe(belief=83.5, belief_conf=0.0, belief_saturated=False,
+                  applied=applied, delivered=67.2, backlog_bytes=0,
+                  offered=67.2, now=0.0, min_rate=14.0,
+                  tree_overlimit_per_s=5000.0)
+
+    def test_falling_belief_above_a_stale_ceiling_lands_at_the_delivered(self):
+        g = gov()
+        self._prime(g, applied=75.15)
+        # drop at t=10: belief 83.5 -> 64.7, ceiling 58.24 (stale-high: the
+        # wire carries 52.18), confidence 0.3, bottleneck not flagged
+        # saturated -- the falling belief + under-delivery is the signal
+        # A 32 ms raw queue (the measured 15.9-24 ms EMA band) is not clear,
+        # so the bind branch -- where the drop landing lives -- is reached.
+        d = g.observe(belief=64.7, belief_conf=0.3, belief_saturated=False,
+                      applied=75.15, delivered=52.18,
+                      backlog_bytes=int(32.0 * 52.18 * 125.0),
+                      offered=52.0, now=10.0, min_rate=14.0,
+                      tree_overlimit_per_s=3886.0)
+        self.assertTrue(d.delay_emergency)
+        self.assertAlmostEqual(d.rate, 52.18)
+        self.assertIn("severe drop", d.reason)
+
+    def test_a_pierce_that_overshot_a_healthy_link_is_not_a_drop(self):
+        """The pre-drop tick of the same smoke: applied 105.74 (a pierce) on
+        the still-100 Mbps link, delivered 75.6 -- above the ceiling (74.7),
+        so the wire is carrying what the estimate says it can: no landing."""
+        g = gov()
+        g.observe(belief=94.0, belief_conf=0.0, belief_saturated=False,
+                  applied=105.74, delivered=95.0, backlog_bytes=0,
+                  offered=75.2, now=0.0, min_rate=14.0,
+                  tree_overlimit_per_s=200.0)
+        d = g.observe(belief=83.0, belief_conf=0.0, belief_saturated=False,
+                      applied=105.74, delivered=75.6, backlog_bytes=5_000,
+                      offered=75.6, now=1.0, min_rate=14.0,
+                      tree_overlimit_per_s=200.0)
+        self.assertFalse(d.delay_emergency)
+
+    def test_drop_lands_in_one_commit_inside_the_emergency_cooldown(self):
+        """The real seed1000 sequence: a pre-drop severe at t=7.5 spent the
+        20 s clearance, so the 12.8 s drop bind was law-clamped to 56.36
+        (band top 55.0) and the gate only passed at 8.13 s. A wire carrying
+        52.18 of 75.15 is under-delivery evidence strong enough to land now.
+        """
+        g = RateGovernor()
+        pre = g.observe(belief=83.5, belief_conf=0.5, belief_saturated=True,
+                        applied=105.92, delivered=83.5, backlog_bytes=0,
+                        offered=90.0, now=7.5, min_rate=29.2,
+                        tree_overlimit_per_s=3600.0)
+        self.assertTrue(pre.delay_emergency)
+        d = g.observe(belief=64.7, belief_conf=0.3, belief_saturated=False,
+                      applied=75.15, delivered=52.18,
+                      backlog_bytes=int(21.7 * 75.15 * 125.0),
+                      offered=63.9, now=12.83, min_rate=29.2,
+                      tree_overlimit_per_s=3700.0)
+        self.assertTrue(d.delay_emergency)
+        self.assertAlmostEqual(d.rate, 52.18, delta=0.1)
+        self.assertIn("severe drop", d.reason)
+        self.assertLess(d.rate, 56.36)  # not the law's 25% step from 75.15
+
+    def test_no_pierce_while_the_belief_is_in_a_drop_regime(self):
+        """After the landing the belief sits at 41-46 while its recent
+        maximum was 81.7: not a stale-low ceiling. The tree holds at the
+        ceiling instead of re-piercing above the dropped link."""
+        g = gov()
+        g.observe(belief=81.7, belief_conf=0.0, belief_saturated=False,
+                  applied=91.97, delivered=52.2, backlog_bytes=0,
+                  offered=52.0, now=0.0, min_rate=14.0,
+                  tree_overlimit_per_s=3000.0)
+        applied = 41.29
+        g.observe(belief=41.3, belief_conf=0.0, belief_saturated=False,
+                  applied=applied, delivered=36.85, backlog_bytes=0,
+                  offered=36.8, now=6.0, min_rate=14.0,
+                  tree_overlimit_per_s=3400.0)
+        d = g.observe(belief=40.6, belief_conf=0.0, belief_saturated=False,
+                      applied=applied, delivered=36.85, backlog_bytes=0,
+                      offered=36.8, now=12.0, min_rate=14.0,
+                      tree_overlimit_per_s=3400.0)
+        self.assertNotIn("demand-probe up", d.reason)
+        self.assertEqual(d.rate, applied)
+
+    def test_a_pending_pierce_is_held_on_a_clear_wire(self):
+        """The first-up-shape rung: the pierce 17.14 -> 21.42 at t+1.1 s was
+        undone by the bind branch because the 10 s climb clock had not
+        matured. One rung of a budget-bound ladder is not expendable."""
+        g = gov()
+        g.observe(belief=19.04, belief_conf=0.0, belief_saturated=False,
+                  applied=None, delivered=16.4, backlog_bytes=0,
+                  offered=15.4, now=0.0, min_rate=14.0,
+                  tree_overlimit_per_s=0.0)
+        g.observe(belief=17.45, belief_conf=0.0, belief_saturated=False,
+                  applied=17.14, delivered=16.4, backlog_bytes=0,
+                  offered=15.4, now=3.0, min_rate=14.0,
+                  tree_overlimit_per_s=0.0)
+        d = g.observe(belief=17.45, belief_conf=0.0, belief_saturated=False,
+                      applied=17.14, delivered=16.4, backlog_bytes=0,
+                      offered=15.4, now=8.0, min_rate=14.0,
+                      tree_overlimit_per_s=1250.0)
+        self.assertIn("demand-probe up", d.reason)
+        probe = d.rate
+        # 1.1 s later: delay clear, belief flat (17.45), ceiling 15.7 below
+        # the applied probe. The stale ceiling must NOT undo the pierce.
+        d = g.observe(belief=17.45, belief_conf=0.0, belief_saturated=False,
+                      applied=probe, delivered=16.4, backlog_bytes=0,
+                      offered=15.4, now=9.1, min_rate=14.0,
+                      tree_overlimit_per_s=0.0)
+        self.assertGreaterEqual(d.rate, probe)
+        self.assertIn("verifying", d.reason)

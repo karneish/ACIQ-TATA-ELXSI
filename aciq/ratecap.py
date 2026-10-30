@@ -267,6 +267,24 @@ BELIEF_FALL_FRAC = 0.02
 #: whose estimator confidence could not clear the gate; 0.45 admits them.
 SEVERE_DROP_CONF = 0.45
 
+#: Round 6 (round3-params.md retune #6), measured on the real 1-seed smoke at
+#: ed34fa3e (data/runs_smoke_r5). `delivered < this x applied` is the wire
+#: cannot-carry-what-we-send signature: a healthy bulk rides at ~0.89 x
+#: applied, every up-shape tick measured 0.88-0.96. A severe drop whose
+#: ceiling is still stale-high must not land ABOVE that rate: s2b_step_50
+#: seed1000 had applied 75.15, delivered 52.18, ceiling 58.24 on a 50 Mbps
+#: link (band top 55.0), so a ceiling landing was out of band and the gate
+#: only passed through the belief's slow decay 8.1 s after the drop.
+SEVERE_UNDERDELIVERY_FRAC = 0.8
+#: Round 6: a probe is a bet that the ceiling is stale-LOW. It must not be
+#: placed while the estimator's own recent history says capacity FELL --
+#: after the s2b_step_50 landing the probe re-pierced 41.3 -> 51.6 -> 64.5
+#: -> 71.6 on a 50 Mbps link, because the derived offered (= 0.85 x applied)
+#: always satisfies the demand test and the shielded call's delay never sees
+#: the parent queue. Look back this far for the fall.
+PIERCE_DROP_LOOKBACK_S = 30.0
+PIERCE_DROP_FRAC = 0.2
+
 _EPS = 1e-9
 
 
@@ -414,6 +432,10 @@ class RateGovernor:
         #: Previous tick's belief; a fall over one tick is the drop signal
         #: that admits a confidence-less severe landing (round 5).
         self._prev_belief: float | None = None
+        #: (t, belief) over the probe lookback: the demand probe may not fire
+        #: while the belief sits materially below its recent maximum (round 6:
+        #: a drop regime, not a stale-low ceiling).
+        self._belief_hist: deque = deque()
         # Full decision log for the run artefact. One small dict per tick.
         self.log: list[dict] = []
 
@@ -589,15 +611,27 @@ class RateGovernor:
                           * (1.0 - BELIEF_FALL_FRAC))
         if belief is not None:
             self._prev_belief = belief
+        # Round 6: the probe must not bet against an estimator that has just
+        # seen capacity fall. Track the recent maximum so a normalized drop
+        # regime (>= PIERCE_DROP_FRAC over the lookback) suppresses piercing.
+        belief_drop_regime = False
+        if belief is not None and belief > 0.0:
+            self._belief_hist.append((now, belief))
+            while (self._belief_hist
+                   and now - self._belief_hist[0][0] > PIERCE_DROP_LOOKBACK_S):
+                self._belief_hist.popleft()
+            recent_max = max(b for _, b in self._belief_hist)
+            belief_drop_regime = belief < recent_max * (1.0 - PIERCE_DROP_FRAC)
         rate, reason, emerg = self._decide(
             cfg, applied=applied, ceiling=ceiling,
-            inflating=inflating, held_clear=held_clear,
+            inflating=inflating, held_clear=held_clear, clear=clear,
             held_demand=held_demand, demand_ok=demand_ok,
             delivered=delivered,
             offered=offered, min_rate=min_rate, budget_left=budget_left,
             delay_ema=self._delay_ema, emerg_free=emerg_free, now=now,
             belief_conf=belief_conf,
             belief_saturated=belief_saturated, belief_falling=belief_falling,
+            belief_drop_regime=belief_drop_regime,
             tree_overlimit_per_s=tree_overlimit_per_s)
 
         if emerg:
@@ -646,12 +680,13 @@ class RateGovernor:
         return dec
 
     def _decide(self, cfg: GovernorConfig, *, applied, ceiling,
-                inflating, held_clear, held_demand, demand_ok, delivered,
-                offered, min_rate, budget_left, delay_ema,
+                inflating, held_clear, clear, held_demand, demand_ok,
+                delivered, offered, min_rate, budget_left, delay_ema,
                 emerg_free: bool, now: float = 0.0,
                 belief_conf: float | None = None,
                 belief_saturated: bool | None = None,
                 belief_falling: bool = False,
+                belief_drop_regime: bool = False,
                 tree_overlimit_per_s: float | None = None):
         """The rule table, in one place so the reasons stay readable."""
         if ceiling is None and applied is None:
@@ -664,6 +699,28 @@ class RateGovernor:
                 return None, "no estimate and no ceiling yet", False
             return ceiling, f"first rate: ceiling ({cfg.cap_fraction} x belief)", False
 
+        # Round 6: the wire is carrying materially less than BOTH what the
+        # tree sends (a healthy bulk rides at ~0.89x applied; every up-shape
+        # tick measured 0.88-0.96) and what the estimator says the link can
+        # carry. The second half separates a real drop (delivered below the
+        # CEILING: the belief is stale-high) from a pierce that merely
+        # overshot a healthy link (delivered above the ceiling: the belief is
+        # stale-low and right, the overshoot branch's own signature).
+        wire_dropped = (delivered is not None and ceiling is not None
+                        and applied > 0.0
+                        and delivered < SEVERE_UNDERDELIVERY_FRAC * applied
+                        and delivered < ceiling)
+
+        def land_target(base):
+            # Never land above what the wire is actually carrying when it has
+            # demonstrated it cannot carry our rate, and never below the plan
+            # floor (round 6).
+            if wire_dropped and delivered is not None:
+                base = min(base, delivered)
+            if min_rate is not None:
+                base = max(base, min_rate)
+            return base
+
         if inflating:
             # Round 3 probe overshoot: the tree climbed above the TRUE link
             # through a piercing probe. The signature is a pierce in play
@@ -675,7 +732,13 @@ class RateGovernor:
             overshoot = ((self._rise_cap is not None
                           or self._last_rise is not None)
                          and delivered is not None
-                         and delivered >= cfg.probe_running_frac * applied)
+                         and delivered >= cfg.probe_running_frac * applied
+                         # Round 6: a wire carrying LESS than the belief
+                         # says it can is a drop, not an overshoot, even
+                         # when it still carries 0.6-0.8x applied (measured
+                         # 0.70 on s2b_step_50 seed1000). Falling through
+                         # lets the severe branch land at the wire's rate.
+                         and not wire_dropped)
             if overshoot:
                 land = (self._known_good
                         if self._known_good is not None
@@ -746,11 +809,12 @@ class RateGovernor:
                       and ceiling < applied * cfg.severe_drop_frac
                       and ((belief_conf is not None
                             and belief_conf >= cfg.severe_drop_conf)
-                           or (bool(belief_saturated) and belief_falling)))
+                           or (bool(belief_saturated) and belief_falling)
+                           or (belief_falling and wire_dropped)))
             if ((delay_shock or collapse or severe)
-                    and (emerg_free or collapse) and ceiling < applied):
-                land = (max(ceiling, min_rate)
-                        if min_rate is not None else ceiling)
+                    and (emerg_free or collapse or wire_dropped)
+                    and ceiling < applied):
+                land = land_target(ceiling)
                 if not emerg_free:
                     why = (f"capacity collapse: ceiling {ceiling:.2f} < "
                            f"{CAPACITY_EMERGENCY_COLLAPSE_FRAC:.2f}x "
@@ -763,9 +827,8 @@ class RateGovernor:
                 elif severe:
                     why = (f"severe drop: ceiling {ceiling:.2f} < "
                            f"{cfg.severe_drop_frac:.2f}x applied "
-                           f"{applied:.2f} at confidence {belief_conf:.2f}: "
-                           f"land at max(ceiling {ceiling:.2f}, floor "
-                           f"{min_rate:.1f}) in one commit")
+                           f"{applied:.2f}: land at {land:.2f} (wire "
+                           f"carries {delivered:.2f}) in one commit")
                 else:
                     why = (f"capacity emergency: ceiling {ceiling:.2f} < "
                            f"{CAPACITY_EMERGENCY_COLLAPSE_FRAC:.2f}x "
@@ -798,7 +861,8 @@ class RateGovernor:
         # signature: the probe's own reason quotes THIS tick's offered
         # figure, so the action cannot rest on evidence that just lapsed.
         pierce_ok = (held_demand and demand_ok and block_expired
-                     and budget_left > 0 and witness)
+                     and budget_left > 0 and witness
+                     and not belief_drop_regime)
         if pierce_ok:
             if self._probe_block_until is not None:
                 # the block expired: a new full demand window has held, so
@@ -881,8 +945,15 @@ class RateGovernor:
         #    floor) semantics and so can drop below it.
         eff_hold = max((ceiling if ceiling is not None else 0.0),
                        self._probe_verified or 0.0)
-        if held_clear and self._last_rise is not None \
+        # Round 6: a pending pierce is held while the delay is CLEAR, not
+        # only after the 10 s climb clock has matured. The real smoke at
+        # ed34fa3e measured the very first pierce (17.14 -> 21.42 at t+1.1 s)
+        # undone by the bind branch the next second because `held_clear` was
+        # still false, which cost one rung of a budget-bound ladder. A
+        # genuine drop is exempt: a FALLING belief keeps the descent path.
+        if clear and self._last_rise is not None \
                 and applied is not None \
+                and not belief_falling \
                 and (now - self._last_rise[0]) < cfg.probe_hold_s \
                 and applied >= self._last_rise[1] * (1.0 - _EPS):
             return applied, (f"pierce probe verifying: hold at probe "
@@ -929,19 +1000,18 @@ class RateGovernor:
                    and ceiling < applied * cfg.severe_drop_frac
                    and ((belief_conf is not None
                          and belief_conf >= cfg.severe_drop_conf)
-                        or (bool(belief_saturated) and belief_falling)))
+                        or (bool(belief_saturated) and belief_falling)
+                        or (belief_falling and wire_dropped)))
             collapse_now = (ceiling is not None
                             and ceiling < applied
                             * CAPACITY_EMERGENCY_COLLAPSE_FRAC)
-            if svd and (emerg_free or collapse_now):
-                target = max(land, min_rate) if min_rate is not None else land
+            if svd and (emerg_free or collapse_now or wire_dropped):
+                target = land_target(land)
                 how = ("severe drop" if not collapse_now
                        else "capacity collapse")
                 return target, (
                     f"belief fell below applied: {how} landing "
-                    f"max(ceiling {land:.2f}, floor "
-                    f"{min_rate if min_rate is not None else 0.0:.1f}) in "
-                    f"one commit"), True
+                    f"{target:.2f} in one commit"), True
             return land, "belief fell below applied: ceiling binds", False
         if delay_ema is not None:
             return hold, (f"delay {delay_ema:.1f} ms between clear and "

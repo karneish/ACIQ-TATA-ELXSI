@@ -228,3 +228,64 @@ capacity, and every gate constant stay frozen. The step stays at t=10, so
 the run gives the ladder 50 s post-step instead of 30 s; the archived
 60 s 30->100 evidence (final-third delivered 66.7-68.1 Mbps) is the
 expected outcome, re-measured on the re-run, not assumed.
+
+### Retune #6 -- the real 1-seed smoke at ed34fa3e (data/runs_smoke_r5)
+
+The operator-approved 60 s duration was necessary but NOT sufficient. The
+re-run measured 4 FAIL / 3 PASS of 7:
+
+* `s7_down_100to8` 3/3 **PASS** (1.8 / 0.6 / 1.7 s, landing 14.0): the
+  collapse bypass works on the real kernel.
+* `s2b_step_up_20to100` seed1000: util 0.65 (PASS) but delivered 0.48
+  (gate 0.50) -- one rung short, for a reason the recorded ticks name
+  exactly (see UP below).
+* `s2b_step_50` seed1000/1001/1002: the landing now happens, but (a) two
+  seeds landed at 8.1 / 8.0 s (budget 8.0) and (b) after the landing the
+  tree **re-pierced upward** and the final commit sat at 64.5-71.6 on a
+  50 Mbps link (band top 55.0).
+
+#### DOWN: land at the delivered rate, and do not probe a link that just fell
+
+| Defect (measured tick, seed1000/1002) | Fix |
+|---|---|
+| The first post-drop tick was classified as a PROBE OVERSHOOT (delivered 52.5 of applied 75.15 = 0.70, above the 0.6 discriminant) and returned a non-emergency landing 52.55; the law then step-clamped it to **56.36** (see the cooldown row) and the in-band commit only arrived at 50.57 / 52.22 via the belief's slow decay **8.1 / 8.0 s** after the drop. | The overshoot branch now refuses to claim a wire carrying less than the belief says it can (`not wire_dropped`), so the tick falls through to the severe path; the landing is `min(ceiling, delivered)` -- the same "never land above what the wire carries" rule the overshoot branch already uses -- 52.18 / 52.27, in ONE commit. |
+| The pre-drop severe at 7.5 s spent the shared 20 s clearance, so at 12.8 s `emerg_free` was False and the drop landing was refused as an emergency; the law's 25 % step from 75.15 is 56.36, above the 55.0 band top, so the landing slipped to 8.13 s. This is the measured FAIL on seed1000 (and seed1002's 68.98). | A wire carrying `< 0.80 x applied` **and** `< ceiling` (demonstrated under-delivery: 52.18 of 75.15 on a 50 Mbps link) bypasses the clearance cooldown, the same way a capacity collapse already does. The cooldown exists to stop repeated moderate emergencies, not to refuse a landing on a link the bulk cannot fill. The landing is `min(ceiling, delivered)`, never below the plan floor. |
+| After the landing the probe re-pierced 41.3 -> 51.6 -> 64.5 -> 71.6 on the 50 Mbps link. The demand witness is tautological for a starved bulk: the harness derives `offered` from the applied (`= 0.85 x applied`), so `offered >= 0.85 x applied` holds every tick, and the shielded call's delay never sees the parent queue (the bulk is shaped at its leaf). | The probe is suppressed while the estimator is in a DROP REGIME: `belief < 0.8 x max(belief over the last 30 s)`. A probe is a bet that the ceiling is stale-LOW; it must not be placed while the estimator's own history says capacity FELL. The up shapes never enter the regime (their belief is flat/rising: 17.4 -> 19.5 -> 23.3 in the seed1000 run). |
+
+#### DOWN: the stuck re-pierce chain, and the up-shape lost rung
+
+One more defect was visible across both shapes. A pierce is held by the round-4
+guard only after `held_clear` (10 s of clear delay); the first up pierce
+(17.14 -> 21.42 at t+1.1 s) was therefore undone by the bind branch the next
+second ("belief fell below applied: ceiling binds"), costing ONE rung of a
+ladder that is budget-bound at ~7 rises per rolling minute. The guard now
+holds a pending pierce while the delay is CLEAR **and the belief is not
+falling** (a genuine drop keeps the descent path).
+
+#### UP: 60 s is enough once the lost rung is recovered
+
+The 60 s seed1000 run reached applied 65.4 at 39.2 s and then sat there;
+the 7 rises were spent, but one of them re-achieved the 17.1 -> 21.4 rung
+the bind had undone. With the guard fixed the same 7 rises each land one
+rung higher (21.4, 26.8, 33.5, 41.8, 52.3, 65.4, **81.8**), so the final
+third applies ~0.78-0.82 and the delivered (0.85 x applied x the ~0.85
+idle-tail factor) is ~0.56-0.59 -- above the 0.50 gate. No duration,
+budget, step or gate constant changes for this.
+
+Replayed on the recorded ticks in `TestRound6DownRegime` (new),
+`TestRound5SevereLanding` (landing updated to the delivered clamp) and the
+round-4 guard test. Feeding the recorded ticks (belief, delivered, applied,
+delay, overlimit) back through the new governor reproduces the intended
+single commit: seed1000 lands **52.18 at rel 12.8 s (drop+2.8 s, inside the
+8.0 s budget)** with `delay_emergency` set, seed1002 lands 53.61 at
+drop+1.7 s and 52.27 on the next tick, seed1001 lands 52.24 at 13.8 s
+(drop+3.8 s). The post-landing tail is the *bind*, not a probe: in the drop
+regime no pierce is placed and the bind never climbs above `applied`, so the
+bind/ceiling commits cannot lift the tree back above the band.
+
+The replay is open-loop (the kernel's response is not modelled), so it
+corroborates the FIRST post-drop decision only -- the tail and the up
+ladder are decided by the real kernel and are the point of the re-smoke.
+Expected on the re-run: s2b_step_50 lands ~52.2 at drop+~2-4 s with the
+tail <= 55.0; s2b_step_up_20to100 util ~0.78, delivered ~0.57;
+s7_down_100to8 unchanged (PASS).
