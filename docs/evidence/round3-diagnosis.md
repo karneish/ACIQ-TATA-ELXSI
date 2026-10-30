@@ -116,3 +116,96 @@ The ceiling is 0.9 x a belief that definitionally lags a pierce, so the
 bind tick immediately after a pierce is structurally guaranteed to
 short-circuit the probe's own promotion path. Fixed by the `_probe_verified`
 guard (retune #3, round3-params.md).
+
+## Retune #4: what the 6917bd32 smoke proved about retune #3 (2026-10-30)
+
+Retune #3's guards were structurally right but unreachable at the cadence
+they observe, and two more defects only show at tick level.
+
+### The survival window could never elapse (seed1000, s2b_step_up)
+
+```
+  7.38 DEC 21.19 "demand-probe up"        commit 7.38
+  9.56 DEC 26.49 "demand-probe up"  *(same target re-proposed: kernel lag)*
+ 10.61 DEC 26.49 "demand-probe up"  *(re-stamp)*
+ 11.68 DEC 26.49 "demand-probe up"  *(re-stamp)*
+ 12.73 DEC 26.49 "demand-probe up"  *(re-stamp; apply lands here)*
+ 13.89 DEC 26.49 "pierce probe verifying: hold at probe rate"
+```
+
+`_last_rise` was reset on every re-proposal, so `now - _last_rise[0]` never
+reached the 7 s window and `_probe_verified` stayed None for the whole run.
+The ladder therefore ended at 64.67 and the terminal bind proposed 19.4
+(kernel clamp 48.5). Both the re-stamp rule and the window length are fixed
+in retune #4.
+
+### The shutdown descent contaminated the measured final third
+
+The bulk flow stops at ~39 s (samples: bulk goodput 54.8 at 37.2, 46.1 at
+39.3, 0.0 at 40.3). The belief then decays, and the bind committed
+`parent=48.503` at 39.28 -- exactly 64.671 x 0.75, a law-clamped descent.
+That commit sits in the last third of the applied series and alone moves
+util_applied from 0.65 to 0.566 (the published 0.57). An idle wire has no
+queue to protect: the bind now holds (or keeps a pending pierce) when both
+`offered` and `delivered` are at idle levels.
+
+### DOWN: the flag never fires because the bind gets there first
+
+s2b_step_50 seed1000: 11.66 "belief fell below applied: ceiling binds" ->
+58.02, 16.97 -> 51.03 (legal 50, band 55, drop at 10). The landing is
+legal at 6.97 s with `delay_emergency=False` on every decision; the delay
+never crossed DELAY_EMERGENCY_MS because the tree was never far enough
+above the link to build the queue the delay path needs. seed1001 shows the
+cost when the estimator converges slowly: 105.55 -> 79.16 -> 59.37 -> 52.16
+enters the band only at 23.28 (13.3 s), a genuine FAIL that retune #4 does
+not excuse. The gate now judges the landing outcome (retune #4) and reports
+`delay_emergency_s` as evidence.
+
+## Round 5: the 1-seed real smoke (data/runs_smoke_r4a, 6917bd32)
+
+### DOWN: confidence decayed BEFORE the drop, so the severe gate was shut
+
+s2b_step_50 seed1000 (100 -> 50 at t=10), decision/commit trace:
+
+```
+ 5.3  pierce 105.74  (link 100; ceiling 84.6)          -> commit 6.4
+ 7.5  belief 83.0, ceiling 74.67 (delay 0.9 ms)
+11.7  belief 64.6 (conf 0.3), applied 105.74           -> wish 58.15
+                                                          law clamp 79.31
+16.7  -> 59.48
+21.7  -> 52.16   (inside band 55, but at drop+11.7 s)
+```
+
+The pre-drop link was 100 and the tree 84-105, so `saturated` was mostly
+False and the estimator's confidence decayed to 0. At the drop the belief
+fell correctly (94 -> 83 -> 64.6) but conf was still 0.3. The fix keys on
+"belief falling while saturated now", not on confidence.
+
+### The pre-drop pierce above the link is what cost the extra step
+
+The pierce is +25 % of the applied and deliberately passes the stale
+ceiling; at 84.59 it lands on 105.74 (>100) because the demand witness
+(offered >= 0.85 x applied) is exactly what the policy's 0.85 bulk ceiling
+produces. The tree then sits ~5 % above the link for 4 s. With the severe
+landing admitted at 11.7 the descent is 105.74 -> 58.14 (one commit) ->
+band, instead of three 25 % steps.
+
+### s7 DOWN 100->8: the second, larger collapse arrived inside the cooldown
+
+```
+10.6  severe  92.12 -> 65.02  (conf 1.00)   emergency #1
+12.8  belief 8.3, ceiling 7.47, applied 58.52 -> RATCHET (cooldown)
+16.4  -> 48.77 / 36.57 / 27.43 ... 16.6 s to the band
+```
+
+The first severe target (65) was the stale ceiling, not the true 8 Mbps.
+The collapse at 12.8 is unambiguous (7.47 < 0.5 x 58.52) and now bypasses
+the cooldown.
+
+### UP: 40 s is the wall, not the controller
+
+`bulk.sink.log` peak 39.0 Mbps, final-third 0.30-0.35 x 100. The archived
+60 s s7_up_30to100 runs on the same build deliver 66.7-68.1 Mbps in their
+final third with the last applied at only 73-76. The 40 s ladder reaches
+69.41 at 37.8 s, so the TCP has ~2 s at the terminal rate. See
+round3-params.md retune #5.

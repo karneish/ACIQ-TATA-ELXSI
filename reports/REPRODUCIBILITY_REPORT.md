@@ -4,7 +4,7 @@
 
 | Layer | Evidence |
 |---|---|
-| Revision stamp per band | `data/runs_dev3/REVISION` = `5865fe0d0dc6…` (band of origin); the retuned band will stamp `210bd09f`; commit chain: `fa9f27f9` → `5865fe0d` → `210bd09f` |
+| Revision stamp per band | `data/runs_dev3_prev404f/REVISION` = `5865fe0d0dc6…` (band of origin; archived when the provenance-mixed band was set aside); the retuned band will stamp `210bd09f`; commit chain: `fa9f27f9` → `5865fe0d` → `210bd09f` |
 | Revision stamp per run | every `result.json` carries `commit_hash` (validated on 128 runs — the earlier UNKNOWN is closed); `config.json` also carries `commit_hash` |
 | Config identity | `config.json` per run stores the full scenario/system/mode/seed/ports/dscp/floors/lease/inject-fail configuration; validator asserts result↔config↔dir identity |
 | Seeds | dev 1000–1009, planned final 1100–1109 (disjoint from all historical bands); fixed start offsets are seeded (visible in `result.notes`) |

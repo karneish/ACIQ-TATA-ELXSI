@@ -314,8 +314,23 @@ class TestChangeBudget(unittest.TestCase):
         self.assertIn("capacity emergency", d.reason)
         self.assertAlmostEqual(d.rate, 19.4322, places=3)
         # cooldown shared with the delay emergency: inside it, no clearance
+        # round 5: a COLLAPSE (ceiling <= 0.5x applied) bypasses the shared
+        # cooldown -- the first clearance may already be spent when the
+        # belief later snaps to the true link (s7 100->8 smoke: the first
+        # severe landing at 65 was stale, and the collapse to 7.5 arrived
+        # 2 s later inside the cooldown, otherwise walked out past 8 s).
+        # keep the delay EMA under 100 ms so this is the COLLAPSE path, not
+        # the delay-shock path
         d = g.observe(belief=21.5914, applied=48.0, delivered=100.0,
-                      backlog_bytes=2_000_000, offered=99.0, now=15.0,
+                      backlog_bytes=750_000, offered=99.0, now=15.0,
+                      min_rate=16.0)
+        self.assertTrue(d.delay_emergency)
+        self.assertIn("capacity", d.reason)
+        # ...but a plain severe drop (above the collapse line) still obeys
+        # the cooldown: ceiling 27 > 0.5x48 and the belief is RISING, so it
+        # is neither a collapse nor a falling-belief severe landing.
+        d = g.observe(belief=30.0, applied=48.0, delivered=100.0,
+                      backlog_bytes=750_000, offered=99.0, now=16.0,
                       min_rate=16.0)
         self.assertFalse(d.delay_emergency)
         self.assertIn("ratchet down one step", d.reason)
@@ -588,7 +603,7 @@ class TestDemandProbe(unittest.TestCase):
 
     def test_inside_the_window_no_probe(self):
         self._pipecase(0.0)
-        d = self._pipecase(6.0)
+        d = self._pipecase(4.0)   # round 4: the window is one law slot (5 s)
         self.assertEqual(d.rate, 16.52)
         self.assertIn("hold", d.reason)
 
@@ -722,28 +737,211 @@ class TestSevereDrop(unittest.TestCase):
         self.assertTrue(d.delay_emergency)
         self.assertIn("severe drop", d.reason)
 
-    def test_severe_drop_needs_confidence(self):
-        """In the (0.5x, 0.6x) band below the confidence threshold the
-        trigger has no say: the ordinary ratchet (and its law bounds)
-        decides, and no delay emergency fires."""
+    def test_a_stale_low_belief_never_clears_a_severe_landing(self):
+        """The confidence-less severe branch needs a FALLING belief on a
+        saturated link. A belief that merely SITS low (the up shapes park
+        it below the applied rate because a sub-link tree never saturates
+        the external link) must not be read as a drop."""
         g = gov()
-        g.observe(belief=97.63, belief_conf=0.3, belief_saturated=True,
-                  applied=87.87, delivered=95.0, backlog_bytes=10_000,
-                  offered=90.0, now=0.0, min_rate=35.0)
+        g.observe(belief=11.056144, belief_conf=0.2, belief_saturated=True,
+                  applied=18.0, delivered=11.0,
+                  backlog_bytes=int(60.0 * 11.0 * 125.0),
+                  offered=11.0, now=0.0, min_rate=14.0)
         d = g.observe(belief=11.056144, belief_conf=0.2,
                       belief_saturated=True,
                       applied=18.0, delivered=11.0,
                       backlog_bytes=int(60.0 * 11.0 * 125.0),
-                      offered=11.0, now=5.0, min_rate=14.0)
-        # ceiling 9.95 < 0.6x18 = 10.8, but above the 0.5x collapse line;
-        # confidence 0.2 blocks the severe trigger. The plain ratchet is
-        # the decision (whose floor clamp still yields 14.0), but NO
-        # emergency: the law then step-clamps this move instead of
-        # landing it in one commit.
-        self.assertAlmostEqual(d.rate, 14.0)
+                      offered=11.0, now=1.0, min_rate=14.0)
+        # ceiling 9.95 < 0.9x18, but the belief did not FALL and the
+        # confidence is below the declared 0.45 threshold: no clearance.
         self.assertFalse(d.delay_emergency)
         self.assertIn("ratchet down one step", d.reason)
 
 
+class TestRound4SurvivalWindowAndIdleWire(unittest.TestCase):
+    """Round 4 (docs/evidence/round3-params.md retune #4), measured on the
+    dev smoke at 6917bd32:
+
+    * the survival window was 7 s while the ladder's minimum spacing is the
+      law's 5 s dwell, so a pierce was ALWAYS superseded before its window
+      could conclude (seed1000: pierces at 7.4/12.7/18.1/23.4/28.7/34.0,
+      promotions 0, terminal bind wiped the ladder to 0.57 utilization);
+    * while the kernel apply lagged a pierce the governor re-proposed the
+      SAME target for several ticks, and each re-proposal restarted the
+      survival clock;
+    * after the load stopped (an IDLE wire, not a shrinking link) the
+      belief decayed and the bind committed a 25% descent inside the
+      measured final third, costing ~0.08 utilization for nothing.
+    """
+
+    def _pierce(self, g, now):
+        d = g.observe(belief=18.36, belief_conf=0.0, belief_saturated=False,
+                      applied=16.52, delivered=16.0, backlog_bytes=0,
+                      offered=15.7, now=now, min_rate=14.0,
+                      tree_overlimit_per_s=200.0)
+        self.assertTrue(d.reason.startswith("demand-probe up"))
+        return d.rate
+
+    def test_the_survival_window_fits_one_lawful_slot(self):
+        """The structural guard: a survival window longer than the law's
+        minimum dwell is unreachable at the pierce cadence it observes."""
+        from aciq.ratecap import PROBE_HOLD_S
+        from aciq.verifier import MIN_DWELL_S
+        self.assertLessEqual(PROBE_HOLD_S, MIN_DWELL_S)
+
+    def test_reproposing_a_pending_pierce_keeps_the_survival_clock(self):
+        g = gov(hold_clear_s=2.0)
+        g.observe(belief=18.36, belief_conf=0.0, belief_saturated=False,
+                  applied=16.52, delivered=16.0, backlog_bytes=0,
+                  offered=15.7, now=0.0, min_rate=14.0,
+                  tree_overlimit_per_s=200.0)
+        want = self._pierce(g, 6.0)
+        # the kernel apply lags: the tree still reads the pre-pierce rate
+        # and the governor re-proposes the SAME target for three ticks
+        for t in (7.0, 8.0, 9.0):
+            d = g.observe(belief=18.36, belief_conf=0.0,
+                          belief_saturated=False, applied=16.52,
+                          delivered=16.0, backlog_bytes=0, offered=15.7,
+                          now=t, min_rate=14.0,
+                          tree_overlimit_per_s=200.0)
+            self.assertAlmostEqual(d.rate, want)
+        # the apply lands one lawful slot after the pierce: the window has
+        # run from the ORIGINAL stamp, so the pierce promotes
+        d = g.observe(belief=18.36, belief_conf=0.0, belief_saturated=False,
+                      applied=want, delivered=want, backlog_bytes=0,
+                      offered=want, now=11.1, min_rate=14.0,
+                      tree_overlimit_per_s=200.0)
+        self.assertGreaterEqual(d.probe_known_good or 0.0, want - 0.01)
+
+    def test_an_idle_wire_does_not_shrink_the_tree_on_a_decayed_belief(self):
+        g = gov(hold_clear_s=2.0)
+        g.observe(belief=66.0, belief_conf=0.7, belief_saturated=False,
+                  applied=60.0, delivered=66.0, backlog_bytes=0,
+                  offered=66.0, now=0.0, min_rate=14.0,
+                  tree_overlimit_per_s=0.0)
+        # the load stopped: nothing offered, nothing delivered, delay clear;
+        # the belief decayed to 20 (ceiling 18). There is nothing to protect
+        # and no evidence to shrink: hold the applied rate.
+        d = g.observe(belief=20.0, belief_conf=0.7, belief_saturated=False,
+                      applied=60.0, delivered=0.0, backlog_bytes=0,
+                      offered=0.0, now=3.0, min_rate=14.0,
+                      tree_overlimit_per_s=0.0)
+        self.assertAlmostEqual(d.rate, 60.0)
+        self.assertIn("idle wire", d.reason)
+
+    def test_a_busy_wire_keeps_the_full_descent_on_a_decayed_belief(self):
+        g = gov(hold_clear_s=2.0)
+        g.observe(belief=93.0, belief_conf=0.7, belief_saturated=False,
+                  applied=84.0, delivered=84.0, backlog_bytes=0,
+                  offered=90.0, now=0.0, min_rate=35.0,
+                  tree_overlimit_per_s=2000.0)
+        # a small belief fall (93 -> 88.5, under the 10% severe line): the
+        # wire still carries the flow, the delay sits between clear and
+        # inflation, so the plain bind lands on the ceiling 79.65.
+        d = g.observe(belief=88.5, belief_conf=0.7, belief_saturated=False,
+                      applied=84.0, delivered=50.0, backlog_bytes=187_500,
+                      offered=54.0, now=3.0, min_rate=35.0,
+                      tree_overlimit_per_s=2000.0)
+        self.assertAlmostEqual(d.rate, 79.65)
+        self.assertIn("ceiling binds", d.reason)
+        self.assertFalse(d.delay_emergency)
+
+    def test_a_pending_pierce_survives_an_idle_wire(self):
+        g = gov(hold_clear_s=2.0)
+        g.observe(belief=18.36, belief_conf=0.0, belief_saturated=False,
+                  applied=16.52, delivered=16.0, backlog_bytes=0,
+                  offered=15.7, now=0.0, min_rate=14.0,
+                  tree_overlimit_per_s=200.0)
+        want = self._pierce(g, 6.0)
+        # the load ended before the apply landed: the bind must keep the
+        # pending probe alive, not cancel it to the decayed ceiling
+        d = g.observe(belief=12.0, belief_conf=0.0, belief_saturated=False,
+                      applied=16.52, delivered=0.0, backlog_bytes=0,
+                      offered=0.0, now=7.0, min_rate=14.0,
+                      tree_overlimit_per_s=0.0)
+        self.assertAlmostEqual(d.rate, want)
+        self.assertIn("pending on an idle wire", d.reason)
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRound5SevereLanding(unittest.TestCase):
+    """Round 5 (the 1-seed real smoke at 6917bd32, data/runs_smoke_r4a):
+
+    * s2b_step_50 seed1000: pre-drop pierce 105.74 on a 100 link; at 1.7 s
+      post-drop the belief had fallen 83 -> 64.6 but confidence had decayed
+      on a link the pre-drop tree never saturated, so the severe gate
+      refused and the law walked 79.3/59.5/52.2 = 11.7 s;
+    * s7_down_100to8 seed1000: the first severe landing at 65 was stale,
+      the belief then snapped to 8.3 two seconds later inside the emergency
+      cooldown, and the 25 % walk needed 16.6 s.
+
+    Both are a falling belief on a saturated bottleneck. Retune #5 admits
+    that signature without the confidence gate and lets a COLLAPSE bypass
+    the shared clearance cooldown.
+    """
+
+    def test_falling_saturated_belief_lands_in_one_commit(self):
+        g = gov()
+        # pre-drop: belief 94, tree 84.59, clear delay
+        g.observe(belief=94.0, belief_conf=0.0, belief_saturated=False,
+                  applied=84.59, delivered=94.0, backlog_bytes=0,
+                  offered=75.2, now=0.0, min_rate=25.3,
+                  tree_overlimit_per_s=200.0)
+        # the pierce sits at 105.74 and the belief falls 94 -> 83 while the
+        # delay is still clear (the link is 100, so the bottleneck is not
+        # saturated yet): no clearance may fire pre-drop
+        g.observe(belief=83.0, belief_conf=0.0, belief_saturated=False,
+                  applied=105.74, delivered=75.6, backlog_bytes=5_000,
+                  offered=75.6, now=1.0, min_rate=25.3,
+                  tree_overlimit_per_s=200.0)
+        # 1.7 s post-drop: belief 64.6, delay 15.9 ms (below the ratchet),
+        # confidence 0.3 (< 0.45) -> must still land in ONE commit
+        d = g.observe(belief=64.6, belief_conf=0.3, belief_saturated=True,
+                      applied=105.74, delivered=52.4,
+                      backlog_bytes=int(15.9 * 52.4 * 125.0),
+                      offered=55.6, now=2.0, min_rate=25.3,
+                      tree_overlimit_per_s=0.0)
+        self.assertTrue(d.delay_emergency)
+        self.assertAlmostEqual(d.rate, 58.14)
+        self.assertIn("severe drop", d.reason)
+
+    def test_collapse_bypasses_the_clearance_cooldown(self):
+        g = gov(delay_emergency_cooldown_s=30.0)
+        g.observe(belief=92.0, belief_conf=1.0, belief_saturated=True,
+                  applied=92.0, delivered=92.0, backlog_bytes=0,
+                  offered=90.0, now=0.0, min_rate=14.0,
+                  tree_overlimit_per_s=200.0)
+        # first severe landing at 65: spends the one clearance
+        d = g.observe(belief=72.2, belief_conf=1.0, belief_saturated=True,
+                      applied=92.12, delivered=11.0,
+                      backlog_bytes=int(25.4 * 11.0 * 125.0),
+                      offered=11.0, now=1.0, min_rate=14.0,
+                      tree_overlimit_per_s=200.0)
+        self.assertTrue(d.delay_emergency)
+        # 2 s later the belief snaps to the true 8.3 while the cooldown is
+        # still running: the COLLAPSE (7.47 < 0.5 x 58.52) must still land
+        d = g.observe(belief=8.3, belief_conf=1.0, belief_saturated=True,
+                      applied=58.52, delivered=8.3,
+                      backlog_bytes=int(42.9 * 8.3 * 125.0),
+                      offered=8.3, now=3.0, min_rate=14.0,
+                      tree_overlimit_per_s=200.0)
+        self.assertTrue(d.delay_emergency)
+        self.assertAlmostEqual(d.rate, 14.0)
+        self.assertIn("cooldown bypassed", d.reason)
+
+    def test_a_stale_low_belief_does_not_clear_on_a_busy_up_tree(self):
+        """The up shapes must keep climbing: a constant low belief under a
+        sub-link tree is not a drop and never clears a landing."""
+        g = gov()
+        g.observe(belief=18.5, belief_conf=0.0, belief_saturated=False,
+                  applied=55.53, delivered=39.5, backlog_bytes=0,
+                  offered=50.0, now=0.0, min_rate=14.0,
+                  tree_overlimit_per_s=200.0)
+        d = g.observe(belief=18.5, belief_conf=0.0, belief_saturated=False,
+                      applied=55.53, delivered=39.5, backlog_bytes=0,
+                      offered=50.0, now=1.0, min_rate=14.0,
+                      tree_overlimit_per_s=200.0)
+        self.assertFalse(d.delay_emergency)

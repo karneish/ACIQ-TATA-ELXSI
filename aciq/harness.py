@@ -226,13 +226,21 @@ SCENARIOS: dict[str, Scenario] = {
         duration_s=40.0,
         settle_s=4.0,
     ),
+    # Retune #5 (docs/evidence/round3-params.md, operator-approved): an
+    # up-shape gets 60 s, the same rule the round-3 s7 block below declares
+    # and the same duration s2b_ramp_100to30 already uses. At 40 s the
+    # 25 %/5 s climb from the 20 Mbps pre-step reaches 69 Mbps only at
+    # 37.8 s, so the single bulk TCP never reaches steady state inside the
+    # measured final third (1-seed smoke: sink peak 39.0 Mbps, delivered
+    # 0.30-0.35 of the 100 Mbps truth). The 60 s 30->100 shape on the same
+    # build delivers 66.7-68.1 Mbps in its final third.
     "s2b_step_up_20to100": Scenario(
         name="s2b_step_up_20to100",
         workloads=(
             Workload("call", "call", 1, dscp=46),
             Workload("bulk", "bulk", 1),
         ),
-        duration_s=40.0,
+        duration_s=60.0,
         settle_s=4.0,
     ),
     "s2b_ramp_100to30": Scenario(

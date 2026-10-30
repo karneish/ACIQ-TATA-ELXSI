@@ -147,3 +147,84 @@ shapes that passed under retune #2 (s7_up_20to60 10/10, rampup/up cells
 20/20) set no cadence deficit. The affected cells re-run under the SAME
 constants so the artifacts alone can say whether the structural fixes
 close the gate; any further tuning must quote the new run's defect line.
+
+## Retune #4 (declared 2026-10-30, BEFORE any re-run of the dev band)
+
+Gate constants do NOT move this round: up-util 0.60 / delivered 0.50 and
+the down landing budget 8.0 s (with its 10% band) are exactly as frozen
+above; seeds 1000-1009 / 1100-1109, the scenario durations (40 s), and the
+protocol capacities are untouched. What moves is one controller constant
+and one measurement instrument, both because the 6917bd32 smoke showed the
+previous form could not be satisfied by ANY lawful controller.
+
+Smoke evidence at 6917bd32 (the two 3-seed chunks re-run after retune #3):
+s2b_step_up_20to100 0/3 (util_applied 0.57/0.53/0.52, delv 0.34/0.24/0.24);
+s2b_step_50 0/3 with `delay_emergency` NEVER set (`emerg decisions: []`)
+although the tree landed legally (11.66->58.02, 16.97->51.03 on a 50 Mbps
+link: inside the 55 band at drop+6.97 s).
+
+| Change | Old | New (declared) | Evidence |
+|--------|-----|----------------|----------|
+| probe_hold_s | 7.0 | 5.0 | The SAME number is the survival window that promotes a pierce to `_probe_verified` and the bind guard that keeps it alive. A survival window longer than the minimum spacing of the pierces it observes can never elapse: the ladder is law-paced at one change per 5 s (`MIN_DWELL_S`), so every new pierce re-stamped `_last_rise` first. seed1000 trace: piers at 7.4/12.7/18.1/23.4/28.7/34.0, promotions 0, terminal bind to the stale ceiling 19.4 (law-clamped 48.5) = "publishable" 0.57. 5 s is the largest reachable window; the demand window it also governs becomes exactly one law slot of sustained evidence |
+| re-stamped pending pierce | every `demand-probe up` decision | only a NEW higher target | Between a pierce decision and its kernel apply the governor re-proposes the SAME target each tick (seed1000: 9.56/10.61/11.68/12.73 all 26.49). Each re-proposal restarted the survival clock, so even the 5 s window could not conclude. Re-proposing the pending rate is not a new rise |
+| idle-wire bind | descent to the decayed ceiling | hold the applied rate; keep a pending pierce while the wire is idle | Load shutdown is not a link shrink. seed1000: the bulk stopped at ~39 s (`offered 0`, `delivered 0`), the belief decayed, and the final commit fell to 48.50 (25% law clamp from 64.67) inside the measured final third, costing ~0.08 utilization for no protection (`IDLE_WIRE_MBPS=5.0`; measured idle: 0.0-0.12, any real bulk flow: tens). A BUSY wire keeps the full descent priority (that is the real drop path) |
+| down gate instrument (`tools/verify_round3.py`) | a `delay_emergency`-flagged decision bridged to a commit | FIRST committed rate inside the legal band within 8.0 s AND the final commit inside it; the flag is reported (`delay_emergency_s`), not required | The case-study requirement is "recalculates shaping rather than building a large queue", an OUTCOME. Retune #3 made law-cleared descents legal, so the belief-fall bind now lands in-band in ~7 s with no delay flag (seed1000/1002 smoke, 13.3 s walk in seed1001 = a real miss, still FAIL). Deep drops still cannot pass on a walk: from ~90 Mbps two 25% steps cannot reach a 15.4 band in 8 s |
+
+Structural guard added to the suite: `PROBE_HOLD_S <= MIN_DWELL_S`
+(tests/test_rate_governor.py::TestRound4SurvivalWindowAndIdleWire), so the
+survival window can never again drift above the cadence it observes.
+
+Open risk stated honestly: the up shape's DELIVERED criterion is bounded by
+the bulk class ceiling (BULK_CEIL_FRACTION 0.85 x capacity) and the single
+TCP flow's ramp; at 40 s the measured sink tops out at ~0.53 of a 100 Mbps
+truth in the best seed (52.6 Mbps), so util_applied must land >=0.64 for
+delivered >=0.50. The retune maximizes the lawful climb (one rung earlier,
+no wipe, no shutdown descent) and the smoke re-run must show whether that
+is enough on seeds 1000-1002 before the full band is committed.
+
+## Retune #5 (declared 2026-10-30, AFTER the 1-seed real smoke at 6917bd32)
+
+No gate constant moved. Two DOWN defects and one measurement fact were
+measured on `data/runs_smoke_r4a` (1 seed per shape, same build the band
+will run), and only the DOWN controller changed.
+
+### DOWN: a falling belief on a saturated link is a drop, not a stale ceiling
+
+| Defect (measured tick) | Fix |
+|---|---|
+| s2b_step_50 seed1000: pre-drop pierce to 105.74 on a 100 link; at drop+1.7 s the belief had fallen 83 -> 64.6 (ceiling 58.15 < 0.9 x 105.74) but `belief_conf` was 0.3 (< the 0.45 severe gate) because confidence had decayed on a pre-drop link the tree never saturated. The severe trigger refused and the verifier's 25 % envelope walked 79.31 -> 59.48 -> 52.16: **landed at 11.7 s**, not 6.97 s as in the earlier smoke. | The severe landing is admitted when the bottleneck is saturated THIS tick AND the belief is FALLING over one tick (>= 2 %), without the confidence gate. A belief that merely sits low (the up shapes: constant 16-18 under a 100 link, because capacity is unobservable below saturation) is NOT a drop and never clears. Applied in both the inflating ratchet and the non-inflating bind (the 1:1 delay sat at 15.9 ms, below the 20 ms ratchet, so the bind was the branch that mattered). |
+| s7_down_100to8 seed1000: the first severe landing (10.6 s) targeted the stale ceiling 65.02; the belief then snapped to 8.3 two seconds later (ceiling 7.47 vs applied 58.52) inside the shared 30 s clearance cooldown, so the emergency was refused and the 25 % walk 48.77/36.57/27.43 needed **16.6 s**. | A CAPACITY COLLAPSE (ceiling <= 0.5 x applied) bypasses the clearance cooldown: the cooldown exists to stop repeated moderate emergencies, not to refuse a second, larger collapse. The landing is still `max(ceiling, floor)`, so the class floors are respected (s7 100->8: max(7.47, 14.0) = 14.0, the legal floor). |
+
+Expected after the fix, replayed on the recorded tick values (unit tests
+`TestRound5SevereLanding` and the updated `TestChangeBudget`):
+s2b_step_50 seed1000 lands 58.14 at drop+1.7 s and the next lawful commit
+reaches the band at drop+~6.7 s (PASS); s7_down_100to8 seed1000 lands 14.0
+at drop+~2.8 s (PASS).
+
+### UP: the 40 s run cannot reach the delivered gate (measured, not inferred)
+
+The up ladder is law-bounded at ONE 25 % step per 5 s dwell. From 18.19 at
+the t=10 step it reaches 69.41 only at 37.8 s, so the final third averages
+0.62-0.73 of the applied rate but the bulk TCP never reaches steady state
+inside the window: `bulk.sink.log` peaks at 39.0 Mbps and the final-third
+mean is 0.30-0.35 of the 100 Mbps truth (gate 0.50). The same workload on
+the SAME build reaches 67-68 Mbps in the final third of the 60 s
+`s7_up_30to100` runs (archived dev band: sink final-third 66.7-68.1 across
+seeds, last applied only 73-76), and 39-40 in the 60 s `s7_up_20to60`.
+So the delivered ceiling is a function of TIME AT RATE, not of the
+controller: the 40 s shape leaves ~4 s at the terminal rung.
+
+The harness already declares the rule this shape violates: "Up-shapes get
+60 s (s4's duration): a bounded multiplicative climb needs room that 40 s
+does not leave" (aciq/harness.py:252-254), and `s2b_ramp_100to30` in the
+same table is 60 s (harness.py:242). `s2b_step_up_20to100` was declared at
+40 s in Task 4 (commit 857ce7bb) and never revisited.
+
+DECLARED CHANGE (operator-approved 2026-10-30): `s2b_step_up_20to100`
+now runs 60 s, the duration the harness already declares for up-shapes
+and the one `s2b_ramp_100to30` in the same table uses. Nothing else moves:
+seeds 1000-1009 / 1100-1109, the protocol (20 -> 100 at t=10), the
+capacity, and every gate constant stay frozen. The step stays at t=10, so
+the run gives the ladder 50 s post-step instead of 30 s; the archived
+60 s 30->100 evidence (final-third delivered 66.7-68.1 Mbps) is the
+expected outcome, re-measured on the re-run, not assumed.

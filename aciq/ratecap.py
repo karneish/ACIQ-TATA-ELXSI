@@ -176,7 +176,20 @@ DELAY_ALPHA = 0.5
 #: offered >= PROBE_DEMAND_FRAC x applied -- before a ceiling-piercing
 #: probe may fire. A step in the dark needs a sustained window; this is
 #: seeded from HOLD_CLEAR_S and tuned ONLY on the s7_* DEV band.
-PROBE_HOLD_S = 7.0
+#:
+#: Round 4: lowered from 7.0 to the law's minimum dwell (MIN_DWELL_S = 5).
+#: The same number is the SURVIVAL window that promotes a pierce to
+#: `_probe_verified` (and the guard that keeps the bind from wiping it). A
+#: survival window LONGER than the minimum spacing between the pierces it
+#: observes can never elapse: the ladder pace is one lawful change per
+#: 5 s, so every new pierce re-stamped `_last_rise` before 7 s, promotion
+#: never fired, `_probe_verified` stayed None, and the terminal bind fell
+#: back to the stale ceiling (dev smoke seed1000 s2b_step_up_20to100:
+#: pierces 7.4/12.7/18.1/23.4/28.7/34.0, zero promotions, publishable
+#: 0.57). 5 s is the largest window that is still reachable at lawful
+#: cadence; the demand window it also governs is one law slot, which is
+#: exactly the sustained evidence a piercing step needs.
+PROBE_HOLD_S = 5.0
 
 #: Round 3. Multiplicative probe step above the (stale) ceiling.
 #: 0.25 matches the law's up envelope exactly, so a probe commit need
@@ -198,6 +211,19 @@ PROBE_DEMAND_GAP_S = 3.0
 #: Round 3. After a probe overshoot lands its backoff, new probes are
 #: blocked this long: back-offs are prioritized, rises are cheap.
 PROBE_BACKOFF_S = 18.0
+
+#: Round 4. Below this offered/delivered rate the wire is IDLE: nothing is
+#: riding the queue (a lone voice call offers ~1.5 Mbps; the bulk flow that
+#: any round-3 shape saturates with is tens of Mbps). The bind branch
+#: ("belief fell below applied") may only follow a decaying belief down
+#: while the wire still carries the load -- on an idle wire the belief has
+#: simply run out of samples, and shrinking the cap there is (a) protecting
+#: nothing and (b) exactly the policy instability the brief asks to avoid.
+#: Dev smoke seed1000 s2b_step_up_20to100: the bulk stopped at ~39 s, the
+#: belief decayed, and the final commit fell to 48.5 (a 25% law-clamped
+#: descent from 64.7) inside the measured final third, dragging the
+#: publishable utilization from 0.65 to 0.57 for no benefit.
+IDLE_WIRE_MBPS = 5.0
 
 #: Round 3 (DEV-band retune, declared in round3-params.md). The pierce
 #: witness. The ceiling-freshness gate could not tell a tree pin (a
@@ -231,6 +257,12 @@ PROBE_RUNNING_FRAC = 0.6
 #: Tuned ONLY on the DEV band. Below CAPACITY_EMERGENCY_COLLAPSE_FRAC
 #: the old conf-less emergency still rules.
 SEVERE_DROP_FRAC = 0.9
+#: A severe-drop landing without estimator confidence needs the belief to be
+#: FALLING (not merely stale) by at least this fraction over one tick, while
+#: the bottleneck is saturated. The up shapes hold a constant low belief
+#: (capacity is unobservable below the link), so a stale ceiling must never
+#: be read as a drop.
+BELIEF_FALL_FRAC = 0.02
 #: DEV-band retune #2 (round3-params.md): 0.6 blocked 4/10 s2b_step_50 seeds
 #: whose estimator confidence could not clear the gate; 0.45 admits them.
 SEVERE_DROP_CONF = 0.45
@@ -379,6 +411,9 @@ class RateGovernor:
         # binding to the pre-probe ceiling after promotion would undo a
         # result the window itself certified. Descents never consult it.
         self._probe_verified: float | None = None
+        #: Previous tick's belief; a fall over one tick is the drop signal
+        #: that admits a confidence-less severe landing (round 5).
+        self._prev_belief: float | None = None
         # Full decision log for the run artefact. One small dict per tick.
         self.log: list[dict] = []
 
@@ -542,6 +577,18 @@ class RateGovernor:
         # base = what we already have; the ceiling is a hard bound in every
         # branch, so "hold" can still fall when the belief dropped, but never
         # rises on a passive tick.
+        # A severe drop is a FALLING belief observed while the bottleneck
+        # is saturated, not merely a stale-low one. The up shapes park the
+        # belief at a constant low value because a sub-link tree never
+        # saturates the external link (estimator doc: capacity is only
+        # observable while saturated), so "ceiling < applied" alone is
+        # normal there and must never trigger an emergency descent.
+        belief_falling = (self._prev_belief is not None
+                          and belief is not None
+                          and belief < self._prev_belief
+                          * (1.0 - BELIEF_FALL_FRAC))
+        if belief is not None:
+            self._prev_belief = belief
         rate, reason, emerg = self._decide(
             cfg, applied=applied, ceiling=ceiling,
             inflating=inflating, held_clear=held_clear,
@@ -550,6 +597,7 @@ class RateGovernor:
             offered=offered, min_rate=min_rate, budget_left=budget_left,
             delay_ema=self._delay_ema, emerg_free=emerg_free, now=now,
             belief_conf=belief_conf,
+            belief_saturated=belief_saturated, belief_falling=belief_falling,
             tree_overlimit_per_s=tree_overlimit_per_s)
 
         if emerg:
@@ -562,7 +610,16 @@ class RateGovernor:
             if reason.startswith("demand-probe up"):
                 # A piercing probe went out. Hold onto its stamp: the rise
                 # survives a full clear window and it becomes known-good.
-                self._last_rise = (now, rate)
+                # Round 4: only a NEW (higher) target re-stamps. While the
+                # kernel apply lags a pierce the governor re-proposes the
+                # SAME target for several ticks; each of those used to
+                # restart the survival window, so it could never conclude
+                # (dev smoke seed1000: four re-proposals 1 s apart after
+                # every rung). Re-proposing the pending rate is not a new
+                # rise and must not reset the clock that verifies it.
+                if (self._last_rise is None
+                        or rate > self._last_rise[1] * (1.0 + _EPS)):
+                    self._last_rise = (now, rate)
         elif applied is not None and rate is not None and rate < applied:
             # A descent is real change for the log; it never spends the
             # budget (see the ledger comment above).
@@ -593,6 +650,8 @@ class RateGovernor:
                 offered, min_rate, budget_left, delay_ema,
                 emerg_free: bool, now: float = 0.0,
                 belief_conf: float | None = None,
+                belief_saturated: bool | None = None,
+                belief_falling: bool = False,
                 tree_overlimit_per_s: float | None = None):
         """The rule table, in one place so the reasons stay readable."""
         if ceiling is None and applied is None:
@@ -673,15 +732,31 @@ class RateGovernor:
             collapse = (ceiling is not None
                         and ceiling < applied
                         * CAPACITY_EMERGENCY_COLLAPSE_FRAC)
+            # Round 5: a confidence-less severe drop is admitted when the
+            # bottleneck is saturated THIS tick and the belief is falling.
+            # The 1:1 smoke measured a 50 Mbps drop whose first post-drop
+            # belief (83 -> 64.6) had conf < 0.45 (the confidence had
+            # decayed on a 100 Mbps link the tree never saturated), so the
+            # gate refused and the law walked 105.7 -> 79.3 -> 59.5 -> 52.2
+            # = 11.7 s. A collapse bypasses the clearance cooldown too: when
+            # the belief later snaps to the true 8 Mbps (ceiling 7.5 vs
+            # applied 58.5) the first clearance is already spent, and the
+            # 25 % walk then cannot reach the floor band inside 8 s.
             severe = (ceiling is not None
-                      and belief_conf is not None
-                      and belief_conf >= cfg.severe_drop_conf
-                      and ceiling < applied * cfg.severe_drop_frac)
-            if ((delay_shock or collapse or severe) and emerg_free
-                    and ceiling < applied):
+                      and ceiling < applied * cfg.severe_drop_frac
+                      and ((belief_conf is not None
+                            and belief_conf >= cfg.severe_drop_conf)
+                           or (bool(belief_saturated) and belief_falling)))
+            if ((delay_shock or collapse or severe)
+                    and (emerg_free or collapse) and ceiling < applied):
                 land = (max(ceiling, min_rate)
                         if min_rate is not None else ceiling)
-                if delay_shock:
+                if not emerg_free:
+                    why = (f"capacity collapse: ceiling {ceiling:.2f} < "
+                           f"{CAPACITY_EMERGENCY_COLLAPSE_FRAC:.2f}x "
+                           f"applied {applied:.2f}: land at max(ceiling, "
+                           f"floor) in one commit (cooldown bypassed)")
+                elif delay_shock:
                     why = (f"delay emergency {delay_ema:.1f} ms >= "
                            f"{cfg.delay_emergency_ms:.0f} ms: descent "
                            f"as max(ceiling, floor) in one commit")
@@ -813,6 +888,31 @@ class RateGovernor:
             return applied, (f"pierce probe verifying: hold at probe "
                              f"rate until the window concludes "
                              f"({cfg.probe_hold_s - (now - self._last_rise[0]):.1f}s left)"), False
+        # Round 4: a pierce whose kernel apply has not landed yet (the tree
+        # still reads the PRE-pierce rate) is NOT a failed probe. On an idle
+        # wire the belief decays once the load stops, and the bind branch
+        # would cancel the pending pierce by proposing the stale ceiling --
+        # the reported final third then ends in a needless descent. Keep the
+        # pending probe alive while the wire is idle; a busy wire keeps its
+        # full descent priority below (that is the real capacity-drop path).
+        pending_rise = (self._last_rise is not None
+                        and (now - self._last_rise[0]) < cfg.probe_hold_s)
+        # Idle means MEASURED idle: with no telemetry at all the old descent
+        # stays in force (never claim a shrink we cannot see).
+        has_wire = offered is not None or delivered is not None
+        wire_idle = (has_wire
+                     and (offered is None or offered <= IDLE_WIRE_MBPS)
+                     and (delivered is None or delivered <= IDLE_WIRE_MBPS))
+        if pending_rise and wire_idle and applied is not None:
+            keep = max(applied, self._last_rise[1])
+            if keep > applied:
+                return keep, ("pierce probe pending on an idle wire: keep "
+                              "the probe rate instead of following the "
+                              "decayed belief"), False
+        if wire_idle and applied is not None:
+            return applied, ("belief fell below applied on an idle wire: "
+                             "hold (no demand to protect, no evidence to "
+                             "shrink)"), False
         hold = min(applied, eff_hold) if (self._probe_verified is not None
                                           or ceiling is not None) else applied
         if hold < applied:
@@ -820,6 +920,28 @@ class RateGovernor:
             land = (eff_hold if self._probe_verified is not None
                     and self._probe_verified > (ceiling or 0.0)
                     else ceiling)
+            # Round 5: the same falling+saturated severe drop the inflating
+            # branch honours must be law-cleared HERE, where a quiet delay
+            # (the 1:1 smoke sat at 15.9 ms, below the 20 ms ratchet) sends
+            # the bind. Without the clearance the verifier clamps the ceiling
+            # target to one 25 % step, which is exactly the 11.7 s walk.
+            svd = (ceiling is not None
+                   and ceiling < applied * cfg.severe_drop_frac
+                   and ((belief_conf is not None
+                         and belief_conf >= cfg.severe_drop_conf)
+                        or (bool(belief_saturated) and belief_falling)))
+            collapse_now = (ceiling is not None
+                            and ceiling < applied
+                            * CAPACITY_EMERGENCY_COLLAPSE_FRAC)
+            if svd and (emerg_free or collapse_now):
+                target = max(land, min_rate) if min_rate is not None else land
+                how = ("severe drop" if not collapse_now
+                       else "capacity collapse")
+                return target, (
+                    f"belief fell below applied: {how} landing "
+                    f"max(ceiling {land:.2f}, floor "
+                    f"{min_rate if min_rate is not None else 0.0:.1f}) in "
+                    f"one commit"), True
             return land, "belief fell below applied: ceiling binds", False
         if delay_ema is not None:
             return hold, (f"delay {delay_ema:.1f} ms between clear and "

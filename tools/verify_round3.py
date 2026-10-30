@@ -11,12 +11,25 @@ of these runs existed:
     util_delivered= last-third bulk.sink.log mean / truth_after >= 0.50
 
   DOWN shapes (drop_mbps below the pre-change link):
-    the first post-drop committed delay-emergency commit must land within
-    8.0 s of the drop AND the last committed rate must then stay within
-    10% of max(truth_after, floor_total) to the run end. truth_after below
-    the 14.0 floor total is FLOOR-BOUND: the 10% band is judged against
-    the floor instead (a tree that cannot legally go below its class
-    floors cannot bind to a smaller link -- declared, not retuned).
+    the first committed rate that lands inside 10% of
+    max(truth_after, floor_total) must do so within 8.0 s of the drop AND
+    the last committed rate must then stay inside that band to the run
+    end. truth_after below the 14.0 floor total is FLOOR-BOUND: the 10%
+    band is judged against the floor instead (a tree that cannot legally
+    go below its class floors cannot bind to a smaller link -- declared,
+    not retuned).
+    Round 4: this is an OUTCOME criterion (did the tree land inside the
+    legal band, within budget, and stay there). The round-2 proxy -- "a
+    commit carrying the governor's delay_emergency flag" -- is no longer
+    a pass condition: the round-3 law cleared descents of the change
+    window, and the dev smoke measured legal landings at 6.0-7.0 s with
+    NO delay flag (the belief-fall bind lands through max(ceiling, floor)
+    before the delay inflates). The flag is still reported as evidence,
+    where present, but a controller that recalculates shaping on time and
+    holds the band passes even when the descent route was not the delay
+    emergency. Deep drops still cannot pass on a walk: from ~90 Mbps two
+    25% steps cannot reach a 15.4 Mbps band in 8 s, so the one-commit
+    landing stays the only route.
 
   s3_stress: no controller claim (reported only).
 
@@ -143,59 +156,68 @@ def check_up(cfg: dict, result: dict, d: Path, drop_shape: str) -> dict:
 
 
 def check_down(cfg: dict, result: dict) -> dict:
-    """DOWN gates: ONE post-drop emergency commit inside the budget, and the
-    final committed state inside 10% of the legal rate (the link truth,
-    or the plan's floor total when the link dropped below it)."""
+    """DOWN gates: the tree LANDS inside the legal band within the budget
+    and stays there. The governor's delay-emergency flag is reported as
+    evidence when the descent used it, never required (round 4)."""
     drop_at = float(cfg["drop_at_s"])
     truth_after = float(cfg["drop_mbps"])
     commits = [c for c in result.get("policy_change_log") or []
                if c.get("committed") and c.get("ok")]
     floor = down_floor_total(result)
     legal = max(truth_after, floor)
+    band = legal * (1.0 + BIND_TOL)
     decs = (result.get("governor") or {}).get("decisions") or []
     base = min((float(d.get("t", 0.0)) for d in decs), default=0.0)
     for c in commits:
         if c.get("t") is not None:
             c["t"] = float(c["t"]) - base
-    out = {}
-    post = [c for c in commits if float(c.get("t", 0)) - drop_at > 0.0]
+    post = sorted((c for c in commits if float(c.get("t", 0)) - drop_at > 0.0),
+                  key=lambda c: float(c.get("t", 0)))
     if not post:
         return {DOWN_KEY: "FAILED: no committed change after the drop"}
-    # The emergency clearance lives on the governor's DECISION rows (the
-    # policy_change_log snapshots never carried `delay_emergency`), so the
-    # commit is bridged: the first post-drop decision that both fired the
-    # clearance AND produced a committed kernel change within the tick.
-    # Decision stamps are rebased by the same base as the commits.
-    em_decs = []
+
+    def parent_rate(c):
+        parent = ((c.get("applied_state") or {}).get("classes") or {}
+                  ).get("1:1") or {}
+        r = parent.get("rate")
+        return float(r) if r is not None else None
+
+    # FIRST landing inside the band (a 25% walk from ~90 needs four commits,
+    # so the landing is usually not the first post-drop commit).
+    landed = None
+    for c in post:
+        r = parent_rate(c)
+        if r is not None and r <= band:
+            landed = (float(c["t"]) - drop_at, r)
+            break
+    if landed is None:
+        return {DOWN_KEY: "FAILED: never landed inside the legal band"}
+    land_dt, land_rate = landed
+    out = {DOWN_KEY: round(land_dt, 1), "landing_mbps": round(land_rate, 2)}
+    if land_dt > EMERGENCY_COMMIT_LIMIT_S:
+        out[DOWN_KEY] = (f"FAILED: landed {land_dt:.1f}s after the drop "
+                         f"(budget {EMERGENCY_COMMIT_LIMIT_S:.1f}s)")
+    tail = None
+    for c in post:
+        r = parent_rate(c)
+        if r is not None:
+            tail = r
+    if tail is None:
+        out[DOWN_KEY] = "FAILED: no committed rate after the drop"
+    elif tail > band:
+        out[DOWN_KEY] = (f"FAILED: final commit {tail:.2f} above the legal "
+                         f"rate {legal:.2f} ({out[DOWN_KEY]}s after drop)")
+    # Evidence only: did a delay-emergency-flagged decision bridge a commit?
+    em_dt = None
     for d in decs:
         if not (d.get("changed") and d.get("delay_emergency")):
             continue
         dt_d = float(d.get("t", 0.0)) - base
-        if dt_d - drop_at > 0.0:
-            em_decs.append((dt_d, d))
-    first = None
-    for dt_d, _d in em_decs:
-        if any(abs(float(c.get("t", 0.0)) - dt_d) <= 0.5
-               for c in post):
-            first = dt_d
+        if dt_d - drop_at > 0.0 and any(
+                abs(float(c.get("t", 0.0)) - dt_d) <= 0.5 for c in post):
+            em_dt = round(dt_d - drop_at, 1)
             break
-    if first is None:
-        return {DOWN_KEY: "FAILED: no delay-emergency commit after the drop"}
-    dt = first - drop_at
-    out[DOWN_KEY] = round(dt, 1)
-    if dt > EMERGENCY_COMMIT_LIMIT_S:
-        out[DOWN_KEY] = f"FAILED: emergency commit {dt:.1f}s after drop"
-    tail = None
-    for c in post:
-        parent = ((c.get("applied_state") or {}).get("classes") or {}
-                  ).get("1:1") or {}
-        if parent.get("rate") is not None:
-            tail = float(parent["rate"])
-    if tail is None:
-        out[DOWN_KEY] = "FAILED: no committed rate after the drop"
-    elif tail > legal * (1.0 + BIND_TOL):
-        out[DOWN_KEY] = (f"FAILED: final commit {tail:.2f} above the legal "
-                         f"rate {legal:.2f} ({out[DOWN_KEY]}s after drop)")
+    out["delay_emergency_s"] = em_dt
     return out
 
 
