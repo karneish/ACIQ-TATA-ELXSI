@@ -350,3 +350,51 @@ the recorded decisions could not be built this round (offered/applied
 reconstruction diverges from the recorded flow), so the exact refusal
 path of the stall ticks stays OPEN; the four seeds re-run under the
 landing fix and the diagnosis resumes on their trace if they fail again.
+
+## Retune #8 (declared 2026-10-31, BEFORE any re-run of the dev band)
+
+The band at fdfd2cf6 left 20 of 100 cells judged SKIP because
+`tools/verify_round3.py` had no lane for a walking-wire ramp-down or a
+steady-demand stress. The round-7 artefacts can say nothing about those
+shapes if the gate cannot judge them, so the two LAST skip classes
+become judged lanes here, ahead of the re-band that must pass them. No
+gate constant moves: the new lanes reuse the frozen constants (the 10%
+bind band, the 8.0 s landing budget, the 0.50 delivered law). Only the
+judge file changes (`tools/verify_round3.py`: `ramp_down_landing`,
+`stress_deliver`); an unclassified shape FAILS from now on -- nothing
+reaches the gate that the gate cannot judge.
+
+### ramp-down lane (s2b_ramp_100to30: the wire walks 100 -> 30 Mb/s over [t=10, t=30], 3.5 Mb/s/s)
+
+The wire cannot be announced to the controller, so a per-commit tracking
+law would judge the estimator, not the contract (the round-6 artefacts
+put the earliest ramp commits at 1.27-1.53x the walking target -- they
+are counted and printed as `overtrack_max` evidence, never a pass
+condition). The frozen contract is the ENDPOINT mirror of the DOWN lane:
+
+| Law | Frozen value | Old-code measurement (seeds 1000-1009) |
+|-----|--------------|----------------------------------------|
+| END-BAND LANDING | first committed rate <= 33.0 (30 x 1.10) within 8.0 s of the ramp END | 9/10 seeds land 0.9-4.1 s after ramp end (31.26-31.64), seed1003 walks 39.48 -> 35.54 -> 31.62 and lands at ramp END + 12.6 s: FAIL, exactly the judged step-walk class |
+| TAIL | the final committed rate stays <= 33.0 to the run end | 10/10 (tails 22.32-30.56) |
+| DELIVERED | last-third bulk.sink mean >= 0.50 x 30 | 10/10 (0.828-1.261) |
+
+(The landing budget counts from the ramp END, not from ramp start: the
+walk loses 70 Mb/s at 3.5 Mb/s/s by declaration and the tree cannot see
+it coming; the endpoint is the event, and round 7's wire-rate landing is
+the mechanism that must cover it.)
+
+### stress lane (s3_stress: demand above the capacity, no capacity shape)
+
+`s3_stress` was held judge-free through round 7 ("no controller claim").
+The minimal mechanical pass rule frozen here judges what the ACIQ arm
+claims on any shape -- it acts and it delivers what it commits:
+
+| Law | Frozen value | Old-code measurement (seeds 1000-1009) |
+|-----|--------------|----------------------------------------|
+| ACTS | at least one committed policy change | 10/10 (6-8 commits per seed) |
+| DELIVER-AS-COMMITTED | last-third bulk.sink mean >= 0.50 of the last-third applied mean | 10/10 (0.613-1.144) |
+
+No interactive-protection number becomes a gate: the workload reports
+carry those measurements and no claim has been frozen for them; the
+delay columns stay report, not gate (docs/FIX_REPORT.md section 3,
+updated to point here).

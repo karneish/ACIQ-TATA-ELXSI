@@ -93,8 +93,11 @@ declared rules:
   must occur **<= 8.0 s** after the drop AND the final committed rate
   must stay **within 10%** of `max(truth_after, floor_total)` to the
   run end (the FLOOR-BOUND case judges against the plan floor).
-- `s3_stress`: demand-stress scenario, `no_controller_claim` (delay and
-  delivered-goodput columns only).
+- `s3_stress`: demand-stress scenario. Being judged ONLY (delivered-goodput
+  columns): no threshold claim is frozen for it (retune #8
+  docs/evidence/round3-params.md freezes a minimal mechanical pass rule
+  -- at least one commit and last-third delivered >= 0.50 of the
+  last-third applied mean; interactive delay stays report, not gate).
 - Provenance: every run's `result.json.commit_hash` must equal the
   engine that generated the report; report headers stamp per-band and
   per-scenario hashes with SUPERSEDED verdicts (commit 0e6f986). A band

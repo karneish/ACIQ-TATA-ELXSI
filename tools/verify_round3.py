@@ -31,7 +31,30 @@ of these runs existed:
     25% steps cannot reach a 15.4 Mbps band in 8 s, so the one-commit
     landing stays the only route.
 
-  s3_stress: no controller claim (reported only).
+  s3_stress: see STRESS below.
+
+  Retune #8 (frozen 2026-10-31, docs/evidence/round3-params.md, BEFORE the
+  dev re-band): the last two skip classes become judged.
+
+  RAMP-DOWN (ramp_to below the pre-ramp link, the mirror of s7_rampup):
+    the walking wire is tracked through the estimator, so no per-commit
+    claim is frozen; the laws are the ENDPOINT mirror of DOWN:
+    first committed rate inside ramp_to*(1+10%) within
+    EMERGENCY_COMMIT_LIMIT_S of the ramp END, the final commit inside that
+    band to the run end, and the last-third delivered stream >= 0.50 of
+    ramp_to. Commits above the walking target during the walk are counted
+    and reported as evidence (overtrack, round-8 candidates), never a pass
+    condition.
+
+  STRESS (demand > capacity, no capacity shape exists):
+    the controller must commit at least one change, and the last-third
+    delivered stream must be >= UP_UTIL_DELIVERED_MIN of the last-third
+    applied mean (deliver what you commit). Interactive-protection
+    numbers live in the workload reports and stay judge-free -- no claim
+    is frozen for them.
+
+  An unclassified shape FAILS instead of skipping: nothing reaches the
+  gate that the gate cannot judge.
 
 Exit 0 only when every ACIQ run in the root passes its shape's checks;
 PENDING means the runs do not exist yet (the gate is what the dev band
@@ -60,7 +83,8 @@ SINK_T = re.compile(r"t=([\d.]+) cum=\d+ bytes inst=([\d.]+) Mbps")
 
 UP_KEY = "up_util_applied"
 DOWN_KEY = "down_emergency_landing"
-FLAT_KEY = "no_controller_claim"
+RAMP_KEY = "ramp_down_landing"
+STRESS_KEY = "stress_deliver"
 
 
 def sink_last_third(run_dir: Path, lo: float, hi: float) -> float | None:
@@ -221,6 +245,130 @@ def check_down(cfg: dict, result: dict) -> dict:
     return out
 
 
+def ramp_target(cfg: dict, t: float) -> float:
+    """The wire's walking rate at run-clock t (aciq/experiment.py's S2b
+    ramp block: linear from link to ramp_to over [ramp_at, ramp_at+dur])."""
+    at = float(cfg["ramp_at_s"])
+    dur = float(cfg["ramp_duration_s"]) if cfg.get("ramp_duration_s") else 0.0
+    link = float(cfg["link_mbps"])
+    to = float(cfg["ramp_to_mbps"])
+    if dur <= 0:
+        return to
+    frac = min(1.0, max(0.0, (t - at) / dur))
+    return link + (to - link) * frac
+
+
+def check_down_ramp(cfg: dict, result: dict, d: Path) -> dict:
+    """RAMP-DOWN laws (the mirror of DOWN, endpoint-judged). The landing
+    budget counts from the ramp END: the walk itself loses 70 Mbps at
+    3.5 Mbps/s and the tree cannot see it coming, so the walking window
+    has no frozen per-commit claim -- the end-band, the tail and the
+    delivered stream are the contract."""
+    ramp_end = float(cfg["ramp_at_s"]) + float(
+        cfg.get("ramp_duration_s") or 0.0)
+    truth_end = float(cfg["ramp_to_mbps"])
+    band = truth_end * (1.0 + BIND_TOL)
+    commits = [c for c in result.get("policy_change_log") or []
+               if c.get("committed") and c.get("ok")]
+    decs = (result.get("governor") or {}).get("decisions") or []
+    base = min((float(x.get("t", 0.0)) for x in decs), default=0.0)
+    pts = []  # (rebased t, parent rate); policy_change_log is left untouched
+    for c in commits:
+        if c.get("t") is None:
+            continue
+        r = ((c.get("applied_state") or {}).get("classes") or {}).get("1:1") \
+              or {}
+        if r.get("rate") is None:
+            continue
+        pts.append((float(c["t"]) - base, float(r["rate"])))
+    if not pts:
+        return {RAMP_KEY: "FAILED: no committed change at all"}
+
+    def parent_rate(c):
+        parent = ((c.get("applied_state") or {}).get("classes") or {}
+                  ).get("1:1") or {}
+        r = parent.get("rate")
+        return float(r) if r is not None else None
+
+    post = [(t, r) for t, r in pts if t > ramp_end]
+    if not post:
+        return {RAMP_KEY: "FAILED: no committed change after the ramp end"}
+
+    landed = None
+    for t, r in post:
+        if r is not None and r <= band:
+            landed = (t - ramp_end, r)
+            break
+    if landed is None:
+        return {RAMP_KEY: "FAILED: never landed inside the end-band"}
+    land_dt, land_rate = landed
+    tail = None
+    for _t, r in post:
+        if r is not None:
+            tail = r
+    series = [(t, v) for t, v in applied_series(result) if t >= ramp_end]
+    if series:
+        lo, hi = window_last_third(series)
+        dl = sink_last_third(d, lo, hi)
+        delv = (dl / truth_end) if dl is not None else None
+    else:
+        delv = None
+    fails = []
+    if land_dt > EMERGENCY_COMMIT_LIMIT_S:
+        fails.append(f"landed {land_dt:.1f}s after the ramp end "
+                     f"(budget {EMERGENCY_COMMIT_LIMIT_S:.1f}s)")
+    if tail is not None and tail > band:
+        fails.append(f"final commit {tail:.2f} above the end-band "
+                     f"{band:.2f}")
+    if delv is None or delv < UP_UTIL_DELIVERED_MIN:
+        delv_txt = f"{delv:.2f}" if delv is not None else "n/a"
+        fails.append(f"delivered {delv_txt} below "
+                     f"{UP_UTIL_DELIVERED_MIN:.2f} of the "
+                     f"{truth_end:.0f} end truth")
+    if fails:
+        return {RAMP_KEY: "FAILED: " + "; ".join(fails),
+                "landing_mbps": round(land_rate, 2)}
+    out = {RAMP_KEY: round(land_dt, 1), "landing_mbps": round(land_rate, 2),
+           "util_delivered": round(delv, 3)}
+
+    over = []
+    for ct, r in pts:
+        if not (float(cfg["ramp_at_s"]) <= ct <= ramp_end):
+            continue
+        tgt = ramp_target(cfg, ct)
+        if r > tgt * (1.0 + BIND_TOL):
+            over.append(round(r / tgt, 2))
+    out["overtrack_max"] = max(over) if over else None
+    return out
+
+
+def check_stress(cfg: dict, result: dict, d: Path) -> dict:
+    """STRESS laws: the controller must have acted at all, and the tree
+    must deliver what it commits in the final third -- nothing else is
+    frozen (interactive protection is judged nowhere: the workload
+    reports carry the numbers, no gate names them)."""
+    commits = [c for c in result.get("policy_change_log") or []
+               if c.get("committed") and c.get("ok")]
+    series = applied_series(result)
+    if not commits or not series:
+        return {STRESS_KEY: "FAILED: no committed change"}
+    lo, hi = window_last_third(series)
+    third = [v for t, v in series if lo <= t <= hi]
+    if not third:
+        return {STRESS_KEY: "FAILED: no applied series in the final third"}
+    applied = statistics.fmean(third)
+    dl = sink_last_third(d, lo, hi)
+    if dl is None or applied <= 0:
+        return {STRESS_KEY: "FAILED: no delivered stream in the final "
+                            "third"}
+    ratio = dl / applied
+    if ratio < UP_UTIL_DELIVERED_MIN:
+        return {STRESS_KEY: f"FAILED: delivered {dl:.2f} of applied "
+                            f"{applied:.2f} = {ratio:.2f} below "
+                            f"{UP_UTIL_DELIVERED_MIN:.2f}"}
+    return {STRESS_KEY: round(ratio, 3), "commits": len(commits)}
+
+
 def check_run(d: Path) -> dict:
     cfg = json.loads((d / "config.json").read_text())
     result = json.loads((d / "result.json").read_text())
@@ -228,13 +376,13 @@ def check_run(d: Path) -> dict:
     if cfg.get("ramp_to_mbps") is not None:
         if float(cfg["ramp_to_mbps"]) > link:
             return check_up(cfg, result, d, "rampup")
-        return {FLAT_KEY: "skip"}
+        return check_down_ramp(cfg, result, d)
     if cfg.get("recover_at_s") is not None \
             and float(cfg.get("recover_to_mbps") or 0.0) > link:
         return check_up(cfg, result, d, "recover")
     if cfg.get("drop_at_s") is not None:
         return check_down(cfg, result)
-    return {FLAT_KEY: "skip"}
+    return check_stress(cfg, result, d)
 
 
 def main(argv: list[str]) -> int:
@@ -244,26 +392,24 @@ def main(argv: list[str]) -> int:
         print(f"verify_round3: NO aciq adaptive runs in {root} "
               "(PENDING until the privileged band runs)")
         return 2
-    bad, ok_n, skip_n = 0, 0, 0
+    bad, ok_n = 0, 0
     for d in dirs:
         try:
             verdict = check_run(d)
         except FileNotFoundError as e:
             verdict = {DOWN_KEY: f"FAILED: missing artefact {e}"}
         body = "; ".join(f"{k}={v}" for k, v in verdict.items())
-        if FLAT_KEY in verdict:
-            status, skip_n = "SKIP", skip_n + 1
-        elif "FAILED" in body:
+        if "FAILED" in body:
             status, bad = "FAIL", bad + 1
         else:
             status, ok_n = "PASS", ok_n + 1
         print(f"[{status}] {d.name}: {body}")
     if bad:
-        print(f"verify_round3 FAILED: {bad} judged FAIL, {ok_n} PASS, "
-              f"{skip_n} skipped (no controller claim) of {len(dirs)}")
+        print(f"verify_round3 FAILED: {bad} judged FAIL, {ok_n} PASS "
+              f"of {len(dirs)} -- 0 skips: every shape is judged")
         return 1
-    print(f"verify_round3 PASS: {ok_n} judged PASS, {bad} FAIL, "
-          f"{skip_n} skipped (no controller claim) of {len(dirs)}")
+    print(f"verify_round3 PASS: {ok_n} judged PASS, {bad} FAIL "
+          f"of {len(dirs)} -- 0 skips: every shape is judged")
     return 0
 
 

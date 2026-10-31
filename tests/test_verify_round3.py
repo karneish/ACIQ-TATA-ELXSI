@@ -1,6 +1,7 @@
 """verify_round3 gate tests: the rules are frozen, so the tool must judge
-them exactly as docs/FIX_REPORT.md declares — including the honest skip
-for shapes it makes no controller claim about."""
+them exactly as docs/FIX_REPORT.md declares. Retune #8 closed the last two
+skip classes: the ramp-down and stress lanes are judged, and an
+unclassified shape fails rather than hiding."""
 
 import json
 import tempfile
@@ -178,15 +179,166 @@ class TestRound3Gate(unittest.TestCase):
             verdict = check_run(d)
             self.assertIn("FAILED", verdict["down_emergency_landing"])
 
-    def test_ramp_down_makes_no_controller_claim(self):
+    def test_ramp_down_passes_on_an_in_band_landing(self):
+        """Retune #8: the ramp-down lane is judged. Endpoint mirror of DOWN:
+        the tree lands <= 33.0 (30 x 1.10) within 8.0 s of the ramp END,
+        holds the tail, and delivers >= 0.50 of the 30 Mbps end truth."""
         with tempfile.TemporaryDirectory() as tmp:
             d = write_run(Path(tmp), "s2b_ramp__aciq__seed1104",
                           {"scenario": "s2b_ramp_100to30",
                            "link_mbps": 100.0, "ramp_at_s": 10.0,
                            "ramp_duration_s": 20.0, "ramp_to_mbps": 30.0},
                           {"governor": {"decisions": [{"t": 0.0}]},
+                           "policy_change_log": [
+                               {"committed": True, "ok": True, "t": 14.0,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 40.0}}}},
+                               {"committed": True, "ok": True, "t": 31.0,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 31.0}}}},
+                               {"committed": True, "ok": True, "t": 36.0,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 29.0}}}},
+                               {"committed": True, "ok": True, "t": 40.0,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 29.0}}}}]},
+                          sink_lines=["[bulk sink] t=20.00 cum=0 bytes "
+                                      "inst=20.00 Mbps\n",
+                                      "[bulk sink] t=30.00 cum=0 bytes "
+                                      "inst=20.00 Mbps\n",
+                                      "[bulk sink] t=38.00 cum=0 bytes "
+                                      "inst=20.00 Mbps\n"])
+            verdict = check_run(d)
+            self.assertEqual(verdict["ramp_down_landing"], 1.0)
+            self.assertEqual(verdict["landing_mbps"], 31.0)
+            self.assertEqual(verdict["util_delivered"], 0.667)
+            self.assertIsNone(verdict["overtrack_max"])
+
+    def test_ramp_down_fails_when_the_landing_misses_the_budget(self):
+        """The seed1003 shape from the band before retune #8: the walk
+        committed 39.5/35.5 out of band and only reached 31.62 at ramp
+        END + 12.6 s, past the 8.0 s budget."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = write_run(Path(tmp), "s2b_ramp__aciq__seed1105",
+                          {"scenario": "s2b_ramp_100to30",
+                           "link_mbps": 100.0, "ramp_at_s": 10.0,
+                           "ramp_duration_s": 20.0, "ramp_to_mbps": 30.0},
+                          {"governor": {"decisions": [{"t": 0.0}]},
+                           "policy_change_log": [
+                               {"committed": True, "ok": True, "t": 32.0,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 39.48}}}},
+                               {"committed": True, "ok": True, "t": 37.3,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 35.54}}}},
+                               {"committed": True, "ok": True, "t": 42.6,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 31.62}}}}]},
+                          sink_lines=["[bulk sink] t=35.00 cum=0 bytes "
+                                      "inst=20.00 Mbps\n"])
+            verdict = check_run(d)
+            self.assertIn("FAILED", verdict["ramp_down_landing"])
+
+    def test_ramp_down_fails_when_the_tail_rises_back_above_the_band(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = write_run(Path(tmp), "s2b_ramp__aciq__seed1106",
+                          {"scenario": "s2b_ramp_100to30",
+                           "link_mbps": 100.0, "ramp_at_s": 10.0,
+                           "ramp_duration_s": 20.0, "ramp_to_mbps": 30.0},
+                          {"governor": {"decisions": [{"t": 0.0}]},
+                           "policy_change_log": [
+                               {"committed": True, "ok": True, "t": 31.0,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 31.0}}}},
+                               {"committed": True, "ok": True, "t": 44.0,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 45.0}}}}]},
+                          sink_lines=["[bulk sink] t=35.00 cum=0 bytes "
+                                      "inst=20.00 Mbps\n"])
+            verdict = check_run(d)
+            self.assertIn("FAILED", verdict["ramp_down_landing"])
+
+    def test_ramp_down_fails_when_delivered_is_below_the_end_truth(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = write_run(Path(tmp), "s2b_ramp__aciq__seed1107",
+                          {"scenario": "s2b_ramp_100to30",
+                           "link_mbps": 100.0, "ramp_at_s": 10.0,
+                           "ramp_duration_s": 20.0, "ramp_to_mbps": 30.0},
+                          {"governor": {"decisions": [{"t": 0.0}]},
+                           "policy_change_log": [
+                               {"committed": True, "ok": True, "t": 31.0,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 31.0}}}},
+                               {"committed": True, "ok": True, "t": 40.0,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 29.0}}}}]},
+                          sink_lines=["[bulk sink] t=35.00 cum=0 bytes "
+                                      "inst=5.00 Mbps\n"])
+            verdict = check_run(d)
+            self.assertIn("FAILED", verdict["ramp_down_landing"])
+            self.assertIn("delivered", verdict["ramp_down_landing"])
+
+    def test_ramp_down_fails_without_any_commit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = write_run(Path(tmp), "s2b_ramp__aciq__seed1108",
+                          {"scenario": "s2b_ramp_100to30",
+                           "link_mbps": 100.0, "ramp_at_s": 10.0,
+                           "ramp_duration_s": 20.0, "ramp_to_mbps": 30.0},
+                          {"governor": {"decisions": [{"t": 0.0}]},
                            "policy_change_log": []})
-            self.assertEqual(check_run(d), {"no_controller_claim": "skip"})
+            verdict = check_run(d)
+            self.assertIn("FAILED", verdict["ramp_down_landing"])
+
+    def test_stress_passes_when_the_tree_delivers_what_it_commits(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = write_run(Path(tmp), "s3_stress__aciq__seed1109",
+                          {"scenario": "s3_stress",
+                           "link_mbps": 100.0},
+                          {"governor": {"decisions": [{"t": 0.0}]},
+                           "policy_change_log": [
+                               {"committed": True, "ok": True, "t": 10.0,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 80.0}}}},
+                               {"committed": True, "ok": True, "t": 40.0,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 80.0}}}}]},
+                          sink_lines=["[bulk sink] t=20.00 cum=0 bytes "
+                                      "inst=60.00 Mbps\n",
+                                      "[bulk sink] t=35.00 cum=0 bytes "
+                                      "inst=60.00 Mbps\n"])
+            verdict = check_run(d)
+            self.assertEqual(verdict["stress_deliver"], 0.75)
+            self.assertEqual(verdict["commits"], 2)
+
+    def test_stress_fails_when_the_controller_never_commits(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = write_run(Path(tmp), "s3_stress__aciq__seed1110",
+                          {"scenario": "s3_stress",
+                           "link_mbps": 100.0},
+                          {"governor": {"decisions": [{"t": 0.0}]},
+                           "policy_change_log": []})
+            verdict = check_run(d)
+            self.assertIn("FAILED", verdict["stress_deliver"])
+
+    def test_stress_fails_when_the_delivered_stream_collapses(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = write_run(Path(tmp), "s3_stress__aciq__seed1111",
+                          {"scenario": "s3_stress",
+                           "link_mbps": 100.0},
+                          {"governor": {"decisions": [{"t": 0.0}]},
+                           "policy_change_log": [
+                               {"committed": True, "ok": True, "t": 10.0,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 80.0}}}},
+                               {"committed": True, "ok": True, "t": 40.0,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 80.0}}}}]},
+                          sink_lines=["[bulk sink] t=20.00 cum=0 bytes "
+                                      "inst=20.00 Mbps\n",
+                                      "[bulk sink] t=35.00 cum=0 bytes "
+                                      "inst=20.00 Mbps\n"])
+            verdict = check_run(d)
+            self.assertIn("FAILED", verdict["stress_deliver"])
 
 
 UP_PASS = "0.967"  # 58.0/60.0, the frozen landed-probe shape
