@@ -213,6 +213,48 @@ class TestProbeUp(unittest.TestCase):
 
 
 class TestChangeBudget(unittest.TestCase):
+    def test_dormant_ceiling_ladder_seven_rungs_in_one_window(self):
+        """Retune #9: the rise budget must not plateau-lock a pierce ladder
+        whose estimator ceiling never moves (dev band 2026-10-31, seed1000
+        s2b_step_up: six rungs to 56.32 then 28 s of refusals at overlimit
+        4092-4217/s with util stuck at 0.56; the passing seeds ran 7-10
+        rungs only because their ceiling stepped up and each step's
+        law-refused no-op bypass refunded a stamp). The shipped default
+        (MAX_CHANGES_PER_MIN 12) must let all seven rungs pierce inside
+        one 60 s window; the six-budget rung 7 is the regression."""
+        g = RateGovernor(config=GovernorConfig())  # the shipped default
+        applied = 17.0
+        # room: the ceiling states the first rate; the demand window starts
+        g.observe(belief=16.40, belief_conf=0.0, belief_saturated=False,
+                  applied=None, delivered=15.0, backlog_bytes=0,
+                  offered=None, now=0.0, min_rate=14.0,
+                  tree_overlimit_per_s=None)
+        g.observe(belief=16.40, belief_conf=0.0, belief_saturated=False,
+                  applied=17.0, delivered=15.0, backlog_bytes=0,
+                  offered=None, now=0.1, min_rate=14.0,
+                  tree_overlimit_per_s=None)
+        # hold the demand signature for the full probe window without ever
+        # moving the belief: the ceiling stays 0.9 x 16.40 forever
+        for t in (1.1, 2.2, 3.3, 4.4, 5.5):
+            g.observe(belief=16.40, belief_conf=0.0, belief_saturated=False,
+                      applied=17.0, delivered=15.0, backlog_bytes=0,
+                      offered=15.7, now=t, min_rate=14.0,
+                      tree_overlimit_per_s=4200.0)
+        # seven rungs at the law's dwell floor (>= 5 s between commits),
+        # each a fresh higher target: 17.0 x 1.25^7
+        t = 6.4
+        for rung in range(7):
+            d = g.observe(belief=16.40, belief_conf=0.0, belief_saturated=False,
+                          applied=applied, delivered=applied, backlog_bytes=0,
+                          offered=applied * 0.90, now=t, min_rate=14.0,
+                          tree_overlimit_per_s=4200.0)
+            self.assertTrue(
+                d.reason.startswith("demand-probe up"),
+                f"rung {rung + 1} did not pierce: {d.reason}")
+            applied = d.rate
+            t += 5.3
+        self.assertAlmostEqual(applied, 17.0 * 1.25 ** 7, delta=0.01)
+
     def test_budget_exhaustion_holds(self):
         """max_changes_per_min bounds the RISES the governor generates; falls
         are not rationed (docs/evidence/task2-params.md #3): the post-fix
@@ -510,12 +552,16 @@ class TestPierceSurvivesTheStaleCeiling(unittest.TestCase):
         self.assertAlmostEqual(held.rate, d2.rate)
         # a partial descent outruns the pierce: the bind still cannot land
         # below the verified rate (promotions need the full window and a
-        # survived pierce; a fell-short pierce only saves its own rung)
+        # survived pierce; a fell-short pierce only saves its own rung).
+        # MAX_CHANGES_PER_MIN 12 lets this second pierce arm, so its
+        # survival promotes the verified rate to d2.rate; the bind's hold
+        # is then min(applied, d2.rate) = applied exactly, which answers
+        # through the delay-hold branch -- the rate band, not the branch
+        # text, carries the law.
         bound = g.observe(belief=18.36, belief_conf=0.0, belief_saturated=False,
                           applied=d2.rate * 0.85, delivered=d2.rate * 0.85,
                           backlog_bytes=0, offered=None, now=36.0,
                           min_rate=14.0, tree_overlimit_per_s=None)
-        self.assertIn("ceiling binds", bound.reason)
         self.assertGreaterEqual(bound.rate, want - 0.01)
         self.assertLess(bound.rate, d2.rate)
 
@@ -548,6 +594,42 @@ class TestPierceSurvivesTheStaleCeiling(unittest.TestCase):
                       tree_overlimit_per_s=None)
         self.assertIn("probe overshoot", d.reason)
         self.assertLessEqual(d.rate, delivered)
+        self.assertTrue(d.delay_emergency)
+
+    def test_the_overshoot_clearance_costs_one_commit_per_cooldown(self):
+        """Retune #10: a free delay-emergency clearance buys the overshoot
+        landing its one-commit fast track (dev seed1005 ramp_100to30: the
+        31.37 landing wanted one commit at rel 31.3 but fell back to the
+        law's 25 % step clamp, landing the <= 33.0 commit 9.7 s after the
+        ramp END against an 8.0 s budget). The clearance is spent only on
+        a committed landing; inside the cooldown the branch answers with
+        the same landing value but no flag, and once the cooldown lapses
+        the flag returns."""
+        g = gov()
+        want = self._pierce(g)
+        delivered = 0.9 * want
+
+        def observe(applied, t):
+            return g.observe(belief=18.36, belief_conf=0.0,
+                             belief_saturated=False, applied=applied,
+                             delivered=min(0.9 * applied, applied),
+                             backlog_bytes=int(60.0 * delivered * 125.0),
+                             offered=applied, now=t, min_rate=14.0,
+                             tree_overlimit_per_s=None)
+
+        d = observe(want, 13.5)
+        self.assertIn("probe overshoot", d.reason)
+        self.assertLessEqual(d.rate, delivered)
+        self.assertTrue(d.delay_emergency)
+        # inside the 20 s cooldown: same landing value, no clearance spent
+        d2 = observe(d.rate, 14.0)
+        self.assertIn("probe overshoot", d2.reason)
+        self.assertFalse(d2.delay_emergency)
+        self.assertLessEqual(d2.rate, delivered)
+        # past the cooldown the clearance is free again
+        d3 = observe(d2.rate, 40.0)
+        self.assertIn("probe overshoot", d3.reason)
+        self.assertTrue(d3.delay_emergency)
 
     def test_a_failed_clearance_refunds_its_cooldown(self):
         """refund_delay_emergency buys back a clearance that never reached

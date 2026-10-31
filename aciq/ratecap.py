@@ -138,7 +138,7 @@ PROBE_RATIO = 1.05
 #: ledger and the kernel root then sat at 3.23x the deliverable for the rest
 #: of every S2/S4 run. Descent is bounded by the law's dwell instead; the
 #: flap risk this budget exists for is a risk only when the rate is rising.
-MAX_CHANGES_PER_MIN = 6
+MAX_CHANGES_PER_MIN = 12
 
 #: Delay EMA at which the law is handed a delay emergency: a single DOWN move
 #: may land at the want in one commit, skipping the dwell, subject to a
@@ -820,7 +820,14 @@ class RateGovernor:
                            f"ms, wire carries {delivered:.1f} of applied "
                            f"{applied:.1f}: land at known-good "
                            f"{land:.1f} Mbps")
-                    return land, why, False
+                    # Retune #10: this is a DOWN landing the tree can
+                    # price exactly (the wire carries the landing rate
+                    # through the tree), and landing below the current
+                    # rate cannot overshoot or grow a queue. A free
+                    # delay-emergency clearance buys the one-commit
+                    # landing; a clearance-less tick falls back to the
+                    # dwelled step clamp this branch always used.
+                    return land, why, bool(emerg_free)
 
             if ceiling is None:
                 # No belief yet (estimate not established): no ceiling to

@@ -398,3 +398,93 @@ No interactive-protection number becomes a gate: the workload reports
 carry those measurements and no claim has been frozen for them; the
 delay columns stay report, not gate (docs/FIX_REPORT.md section 3,
 updated to point here).
+
+## Retune #9 -- frozen before the runs (step_up plateau-lock, seeds 1000/1003/1006)
+
+### The measured defect (dev band, 2026-10-31, retune-8 judge: 4 FAIL / 96 PASS / 0 skips)
+
+Three step_up seeds reached only 6 rungs of the x1.25 demand-probe ladder
+and then plateau-locked in refusal ticks for the rest of the run
+("clear for 10 s but offered X does not demand it", overlimit 4092-4217
+per second, delay EMA < 1 ms -- the wire is demonstrably over-subscribed
+the whole time). The other seven seeds committed 7-10 rungs and passed.
+The pass/fail split was traced to a lottery:
+
+- The pierce ledger spends one stamp per committed rise within a rolling
+  60 s window; `budget_left = max_changes_per_min - len(ups_recent)`.
+- A spent budget is only ever refilled by `refund_last_change()`, and that
+  refund fires only when the harness ATTEMPTS a law-bound apply the law
+  refuses. No-op wants (`rate == applied`) early-out in the harness and
+  never reach the law.
+- Seeds whose estimator ceiling stayed flat after rung 6 (seed1000:
+  belief 16.40 / ceiling 14.76 constant to run end) never trigger
+  cap.changed, so no refund ever fires: the 7th pierce is budget-blocked
+  for the rest of the run (util 0.56). Seeds whose ceiling stepped up in
+  lock-step with the ladder got one law-refused no-op bypass per step,
+  one refund per step, and the budget stayed live (util 1.01).
+
+Offline replay with kernel latency and the demand signature modeled
+reproduces the stall exactly: 6 rungs then plateau at 56.3 with the
+ledger at exactly 6.
+
+### The fix
+
+`MAX_CHANGES_PER_MIN` 6 -> 12. The budget keeps its role as a backstop;
+upward churn stays paced by the pre-existing hard laws, which the spent
+budget never replaced: the law's 5 s dwell between real kernel changes
+(the measured rung cadence was 5.3 s in every seed) and the x1.25 step
+cap. At dwell cadence a 60 s window cannot exceed 12 spends, so the
+budget becomes non-binding and the plateau-lock class is closed without
+moving any pacing covenant. Downward change spends nothing (unchanged).
+
+### Predictions to falsify on the next dev band
+
+- step_up seeds 1000/1003/1006 commit to >= 90 of the 100 Mbps target
+  (util_delivered >= 0.90) instead of plateauing at 0.56-0.71.
+- step_up seeds that passed keep passing; no seed's commit cadence
+  quickens below the 5.3 s dwell floor (the dwell still binds).
+- No other lane's result changes: the budget spends only on rises, and
+  the down/ramp/stress lanes rise nothing.
+
+## Retune #10 -- frozen before the runs (ramp-down landing, seed1005)
+
+### The measured defect (fresh dev band 2026-10-31, retune-8 judge)
+
+`s2b_ramp_100to30` seed1005 landed 9.7 s after the ramp END (first
+commit <= 33.0 at rel 39.7 of a 2-step walk 49.38 -> 37.04 (rel 34.4) ->
+31.45 (rel 39.7)); the budget is 8.0 s and the other nine seeds landed
+0.9-4.1 s after the END. The walk arrived at the ramp END one commit late
+(a windshield pierce at rel 6.4/11.9 overshot the walking link; its
+arrest delayed the descent walk), leaving the tree at 49.38 vs a link at
+30 -- a landing the tree demonstrably knows (the wire carries exactly
+31.37, delay EMA 39-52 ms, backlog draining) but the probe-overshoot
+branch answered with `emerg=False`, so the law clamped the landing to
+one 25 % down step per dwell and the second commit fell 1.7 s past the
+frozen budget.
+
+### The fix
+
+The probe-overshoot landing (inflating delay, wire carrying the landing
+figure through the tree) now spends one delay-emergency clearance when
+one is free (`emerg_free`): the law's DOWN emergency path skips dwell and
+the step bound, so the landing reaches the wire's rate in one commit.
+The clearance accounting is untouched: a clearance costs its 20 s
+cooldown ONLY when the apply commits (the landed-only refund stands), a
+clearance-less tick falls back to the dwelled 25 % step clamp as before,
+and a real 100 ms delay-shock share the same budget (one per 20 s).
+The landing value is unchanged: min(known-good, the wire's carried rate),
+floored at the plan floor; DOWN-only by the branch's own `land < applied`
+predicate.
+
+### Predictions to falsify on the next dev band
+
+- ramp_100to30 seed1005's first commit <= 33.0 lands within 8.0 s of the
+  ramp END (the 31.37 want commits at ~rel 31.3-34.4, one dwell after
+  the 29.1 commit it waited behind).
+- No seed's landing commits faster than that same signature allows
+  (one clearance per 20 s). The other nine ramp-down seeds keep their
+  results; their landing values do not change (the wire carried them too).
+- step_up/up lanes: an overshoot arrest now lands in one commit instead
+  of two dwelled steps; the ladder cadence and the pierce budget are
+  untouched. No lane judges this as churn: commits never accelerate
+  above the law's one-clearance-per-cooldown covenant.
