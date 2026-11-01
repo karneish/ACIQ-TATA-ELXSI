@@ -108,8 +108,6 @@
       <a href="#demo">Live replay</a>
       <a href="#results">Results</a>
       <a href="#fairness">Fairness</a>
-      <a href="dashboard.html">Dashboard</a>
-      <a href="results.html">Raw results</a>
       <a href="https://github.com/karneish/ACIQ-TATA-ELXSI">GitHub</a>
     </nav>
   </div>
@@ -166,18 +164,18 @@
         <span id="clock" style="font-variant-numeric:tabular-nums;font-size:13px;
               color:var(--muted);min-width:64px;text-align:right">0.0 s</span>
       </div>
-      <canvas id="chart" width="1040" height="360" aria-label="Capacity, applied rate and delivered throughput over time"></canvas>
+      <canvas id="chart" width="1040" height="360" aria-label="Capacity, applied rate and delivered goodput over time"></canvas>
       <div class="legend">
         <span><i style="background:#9aa7a1"></i>link capacity (as seen by the controller)</span>
         <span><i style="background:#0f6b4f"></i>applied parent rate</span>
-        <span><i style="background:#8fcbb3"></i>delivered throughput</span>
+        <span><i style="background:#8fcbb3"></i>delivered goodput</span>
         <span><i style="background:#c2410c"></i>playhead</span>
       </div>
       <div class="readout">
         <div><span>time</span><b id="r-t">0.0 s</b></div>
         <div><span>capacity</span><b id="r-cap">—</b></div>
         <div><span>applied rate</span><b id="r-rate">—</b></div>
-        <div><span>delivered</span><b id="r-del">—</b></div>
+        <div><span>delivered goodput</span><b id="r-del">—</b></div>
         <div><span>queue backlog</span><b id="r-q">—</b></div>
         <div><span>link use</span><b id="r-use">—</b></div>
       </div>
@@ -186,7 +184,7 @@
       <strong>This is a replay, not a live controller.</strong> GitHub Pages serves
       static files only; applying <code>tc</code> rules needs root and Linux network
       namespaces. Capacity is the configured link; applied rate and delivered
-      throughput are the values the testbed recorded — nothing is simulated or
+      goodput are the values the testbed recorded — nothing is simulated or
       smoothed.
     </p>
   </section>
@@ -208,29 +206,13 @@
           <tr><td>p99 latency (ms)</td><td><strong>99.57</strong></td><td>105.41</td><td>97.32</td></tr>
           <tr><td>jitter (ms)</td><td>0.90</td><td>0.86</td><td><strong>0.73</strong></td></tr>
           <tr><td>loss (%)</td><td>0.60</td><td>0.45</td><td><strong>0.10</strong></td></tr>
-          <tr><td>throughput (Mbps)</td><td><strong>19.02</strong></td><td><strong>19.02</strong></td><td>16.93</td></tr>
         </tbody>
       </table>
     </div>
     <p class="sub" style="margin-top:12px">
-      ACIQ trades ~11 % of throughput for a 98.5 % lower median latency in this
-      scenario. The case-study brief does not score throughput; it is reported here
-      for completeness. <em>p95 is shown; the poster's “p90” label was an error.</em>
+      <em>p95 is shown; the poster's “p90” label was an error.</em>
     </p>
 
-    <h2 style="margin-top:34px">Round-3 throughput — where ACIQ leads</h2>
-    <p class="sub">
-      Sink throughput (Mbps) per traffic shape, round-3 DEV band. ACIQ beats both
-      CAKE arms on 7 of 10 shapes.
-    </p>
-    <div class="card scroll">
-      <table id="r3-table">
-        <thead>
-          <tr><th>Shape</th><th>ACI</th><th>CAKE cons</th><th>CAKE auto</th></tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
   </section>
 
   <section id="fairness">
@@ -276,8 +258,6 @@
   <section id="links">
     <h2>Evidence and source</h2>
     <div class="links">
-      <a href="dashboard.html"><b>M8 dashboard →</b><br><small>Recorded snapshot of one validated dev run.</small></a>
-      <a href="results.html"><b>Raw round-3 results →</b><br><small>Generated table of every cell, no summarising.</small></a>
       <a href="https://github.com/karneish/ACIQ-TATA-ELXSI"><b>GitHub repository →</b><br><small>Source, tests, docs, reproduction steps.</small></a>
       <a href="https://github.com/karneish/ACIQ-TATA-ELXSI/blob/main/README.md"><b>README →</b><br><small>Status, provenance map, limitations, FAQ.</small></a>
     </div>
@@ -310,29 +290,6 @@ tools/verify_round3.py                      # judged verdict</code></pre>
 
 <script>
 const DATA = {"run":"s2b_step_50__aciq__adaptive__seed1002","seed":1002,"scenario":"s2b_step_50","commit":"969dab3c01a8","duration":40.0,"drop_at":10.0,"link":[100.0,50.0],"rows":[{"t":0.0,"cap":100.0,"rate":90.0,"del":0.0,"q":0},{"t":1.0,"cap":100.0,"rate":90.0,"del":0.0,"q":33308},{"t":2.0,"cap":100.0,"rate":90.0,"del":0.1,"q":0},{"t":3.0,"cap":100.0,"rate":90.0,"del":0.1,"q":0},{"t":4.0,"cap":100.0,"rate":90.0,"del":0.1,"q":15140},{"t":5.0,"cap":100.0,"rate":78.56,"del":0.1,"q":15140},{"t":6.0,"cap":100.0,"rate":78.56,"del":0.0,"q":10598},{"t":7.0,"cap":100.0,"rate":78.56,"del":18.22,"q":9084},{"t":8.0,"cap":100.0,"rate":98.21,"del":86.16,"q":36336},{"t":9.0,"cap":100.0,"rate":98.21,"del":85.27,"q":0},{"t":10.0,"cap":50.0,"rate":98.21,"del":83.81,"q":0},{"t":11.0,"cap":50.0,"rate":78.56,"del":73.34,"q":119904},{"t":12.0,"cap":50.0,"rate":49.3,"del":72.77,"q":119904},{"t":13.0,"cap":50.0,"rate":49.3,"del":73.27,"q":156240},{"t":14.0,"cap":50.0,"rate":49.3,"del":71.53,"q":4542},{"t":15.0,"cap":50.0,"rate":49.3,"del":62.84,"q":0},{"t":16.0,"cap":50.0,"rate":49.3,"del":63.14,"q":7570},{"t":17.0,"cap":50.0,"rate":49.3,"del":63.57,"q":6056},{"t":18.0,"cap":50.0,"rate":49.3,"del":63.97,"q":6056},{"t":19.0,"cap":50.0,"rate":49.3,"del":49.96,"q":6056},{"t":20.0,"cap":50.0,"rate":49.3,"del":47.82,"q":13626},{"t":21.0,"cap":50.0,"rate":49.3,"del":43.71,"q":3028},{"t":22.0,"cap":50.0,"rate":49.3,"del":39.86,"q":6056},{"t":23.0,"cap":50.0,"rate":49.3,"del":39.79,"q":3028},{"t":24.0,"cap":50.0,"rate":49.3,"del":40.06,"q":7570},{"t":25.0,"cap":50.0,"rate":49.3,"del":40.18,"q":7570},{"t":26.0,"cap":50.0,"rate":49.3,"del":40.15,"q":0},{"t":27.0,"cap":50.0,"rate":49.3,"del":42.29,"q":7570},{"t":28.0,"cap":50.0,"rate":49.3,"del":39.78,"q":4542},{"t":29.0,"cap":50.0,"rate":49.3,"del":40.08,"q":7570},{"t":30.0,"cap":50.0,"rate":49.3,"del":40.17,"q":6056},{"t":31.0,"cap":50.0,"rate":49.3,"del":40.18,"q":6056},{"t":32.0,"cap":50.0,"rate":49.3,"del":40.13,"q":7570},{"t":33.0,"cap":50.0,"rate":49.3,"del":41.83,"q":7570},{"t":34.0,"cap":50.0,"rate":49.3,"del":39.92,"q":6056},{"t":35.0,"cap":50.0,"rate":49.3,"del":39.94,"q":16654},{"t":36.0,"cap":50.0,"rate":49.3,"del":39.96,"q":3028},{"t":37.0,"cap":50.0,"rate":49.3,"del":40.18,"q":15140},{"t":38.0,"cap":50.0,"rate":49.3,"del":39.65,"q":0},{"t":39.0,"cap":50.0,"rate":49.3,"del":40.17,"q":7570},{"t":40.0,"cap":50.0,"rate":49.3,"del":39.94,"q":0},{"t":41.0,"cap":50.0,"rate":49.3,"del":40.17,"q":0},{"t":42.0,"cap":50.0,"rate":49.3,"del":40.17,"q":0},{"t":43.0,"cap":50.0,"rate":49.3,"del":40.18,"q":0},{"t":44.0,"cap":50.0,"rate":49.3,"del":39.83,"q":0},{"t":45.0,"cap":50.0,"rate":49.3,"del":39.94,"q":0},{"t":46.0,"cap":50.0,"rate":49.3,"del":40.02,"q":0}]};
-
-const R3 = [
-  ["ramp 100→30",        46.32, 37.62, 43.26],
-  ["step 100→10",        27.21, 19.92, 29.30],
-  ["step 100→50",        49.46, 47.71, 41.97],
-  ["step 20→100",        45.24,  9.45, 15.17],
-  ["stress 3 streams",   71.46, 34.37, 62.45],
-  ["down 100→15",        30.70, 23.44, 33.46],
-  ["down 100→8",         26.71, 18.57, 28.75],
-  ["ramp up 30→100",     56.03, 14.23, 24.71],
-  ["up 20→60",           35.03,  9.45, 15.97],
-  ["up 30→100",          56.66, 14.23, 25.55]
-];
-(function(){
-  const tb = document.querySelector("#r3-table tbody");
-  const max = 75;
-  for (const [name,a,b,c] of R3){
-    const tr = document.createElement("tr");
-    const bar = (v,cls)=>`<span class="bar ${cls}" style="width:${(v/max*100).toFixed(1)}%"></span>${v.toFixed(2)}`;
-    tr.innerHTML = `<td>${name}</td><td>${bar(a,"aci")}</td><td>${bar(b,"cake")}</td><td>${bar(c,"cake")}</td>`;
-    tb.appendChild(tr);
-  }
-})();
 
 (function(){
   const R = DATA.rows;

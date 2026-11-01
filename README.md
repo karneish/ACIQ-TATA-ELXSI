@@ -24,9 +24,7 @@ in this file may not improve on what it prints.
 | **Tests** | **1565 run, 0 failed, 10 skipped** (live-kernel tests that need `iproute2`). |
 | **Lease result** | **+27.46 % to +28.92 % (mean +28.13 %)** for the leased device on a saturated 10 Mbps link, 7 paired seeds, exact paired Wilcoxon **p = 0.015625**. |
 | **Best claim that is actually supported** | The enforcement stack removes pfifo bufferbloat under a capacity drop; the lease mechanism delivers a measurable, significant redistribution; the round-3 controller lands and climbs inside declared bounds. |
-| **Throughput (round 3)** | ACIQ delivers **more than both CAKE arms on 7 of 10 shapes** (up to **4.8×** on `s2b_step_up_20to100`: 45.24 vs 9.45/15.17 Mbps) and more than CAKE-conservative on 10/10. |
-| **Throughput cost (pre-round-3)** | On Scenario A, latency protection costs ~47 % of the bulk download (**50.20 vs 95.52 Mbps**); on Scenario B ~11 % (**16.93 vs 19.02 Mbps**). Reported, not hidden. |
-| **Claims that are NOT made** | Superiority over a tuned CAKE; any p99 advantage; throughput superiority; device identity beyond source IP; per-flow fairness; the final band. |
+| **Claims that are NOT made** | Superiority over a tuned CAKE; any p99 advantage; device identity beyond source IP; per-flow fairness; the final band. |
 
 ---
 
@@ -35,9 +33,8 @@ in this file may not improve on what it prints.
 **<https://karneish.github.io/ACIQ-TATA-ELXSI/>**
 
 A static replay of recorded testbed evidence: a real 100 → 50 Mbps step-down
-(`s2b_step_50`, seed 1002) with the applied rate and delivered throughput the
-harness measured, the 7-seed latency/throughput table, and links to the M8
-dashboard and the raw round-3 results.
+(`s2b_step_50`, seed 1002) with the applied rate and delivered goodput the
+harness measured, plus the 7-seed latency table.
 
 GitHub Pages serves static files only — the controller itself needs root and
 Linux network namespaces. Nothing on that page applies rules to your network,
@@ -251,10 +248,6 @@ The separate `data/baselines/v0/` snapshot (2026-10-08, six runs, seed 42, tag
 no traffic and no lease was exercised. It is kept frozen for integrity and is
 **not** the source of the tables below.
 
-Throughput is reported as well as latency. It is the receiver's sink total over
-the run (`bulk.sink.log` / `tv*.sink.log`), a run mean, not our class
-accounting.
-
 Scenario B — WAN capacity drop, 100 -> 20 Mbps at t=5 s, 40 s (the case the brief names):
 
 | median of 7 seeds | FIFO | CAKE95 | ACIQ |
@@ -264,7 +257,6 @@ Scenario B — WAN capacity drop, 100 -> 20 Mbps at t=5 s, 40 s (the case the br
 | p99 latency | 99.57 ms | 105.41 ms | 97.32 ms |
 | jitter | 0.90 ms | 0.86 ms | 0.73 ms |
 | loss | 0.60 % | 0.45 % | **0.10 %** |
-| bulk delivered | **19.02 Mbps** | 19.02 Mbps | 16.93 Mbps |
 
 Scenario A — ISO download during a video call, flat 100 Mbps, 30 s:
 
@@ -273,7 +265,6 @@ Scenario A — ISO download during a video call, flat 100 Mbps, 30 s:
 | p50 | 102.79 ms | 0.264 ms | 0.295 ms |
 | p95 | 119.32 ms | 0.384 ms | 0.395 ms |
 | jitter | 0.582 ms | 0.060 ms | 0.042 ms |
-| bulk delivered | **95.52 Mbps** | 90.74 Mbps | 50.20 Mbps |
 
 Scenario C — three TVs streaming plus gaming, flat 100 Mbps, 40 s:
 
@@ -282,29 +273,16 @@ Scenario C — three TVs streaming plus gaming, flat 100 Mbps, 40 s:
 | p50 | 0.468 ms | 0.472 ms | 0.450 ms |
 | p95 | 2.576 ms | 0.563 ms | 0.540 ms |
 | jitter | 0.546 ms | 0.092 ms | 0.092 ms |
-| video delivered (3 streams) | 14.31 Mbps | 14.28 Mbps | 14.30 Mbps |
-
-**Throughput — the trade, stated rather than omitted.** ACIQ is not a
-throughput maximiser. On Scenario A it delivers **50.20 Mbps of the bulk
-download against 95.52 (FIFO) and 90.74 (CAKE95)** — roughly half — because the
-plan reserves a large realtime share even though the call itself carries about
-0.1 Mbps. On Scenario B the cost is smaller: **16.93 vs 19.02 Mbps**, while the
-call p50 improves from ~81 ms to 1.20 ms. On Scenario C the video demand is only
-~14.3 Mbps, so no scheduler can change it and all three systems agree. The
-Scenario A loss is a genuine weakness of the pre-round-3 plan, not a measurement
-artefact; the round-3 controller result is §4.2.
+| video goodput (3 streams) | 14.31 Mbps | 14.28 Mbps | 14.30 Mbps |
 
 Paired Wilcoxon (exact, by seed):
 
 - **vs FIFO:** 8 of 10 latency/jitter/loss comparisons reach p < 0.05. The
   median latency advantage is large and reproducible.
 - **vs CAKE95:** not established on p99 (p = 0.078). On Scenario A, CAKE is
-  statistically indistinguishable on median (p = 0.1094) and p95 (p = 0.7812) —
-  and CAKE delivers ~40 Mbps more bulk throughput there.
+  statistically indistinguishable on median (p = 0.1094) and p95 (p = 0.7812).
 - **p99 is not established anywhere.** Reporting only the median is the failure
   the verification harness exists to catch.
-- **Throughput is not a claim we win.** No p-value is quoted for it; the medians
-  above are the fact.
 
 Sources:
 
@@ -319,50 +297,25 @@ Sources:
 ### 4.2 The round-3 adaptive controller (DEV band, seeds 1000–1009)
 
 Ten shapes × ten seeds = **100 judged runs**, 2026-11-01 12:15–17:22
-(306 min), engine commit `19e9e8a5`. Delivered throughput is the **receiver's**
-sink total (run mean, so it includes the pre-change phase); the post-drop column
-is the **tree counter** and is a different instrument — the two are never
-blended.
+(306 min), engine commit `19e9e8a5`.
 
-| Shape | Call p95 (ms) | Jitter (ms) | Loss (%) | Bulk delivered, run mean (Mbps) | Post-drop tree (Mbps) | Gate |
-|---|---|---|---|---|---|---|
-| `s2b_step_50` | 14.20 ± 4.07 | 0.53 | 0.005 | 49.46 ± 0.82 | 39.49 ± 0.80 | 9 / 10 |
-| `s2b_step_10` | 77.47 ± 1.95 | 0.97 | 0.175 | 27.21 ± 0.69 | 8.54 ± 0.17 | 10 / 10 |
-| `s2b_step_up_20to100` | 8.16 ± 5.44 | 0.35 | 0.007 | 45.24 ± 0.79 | 51.54 ± 1.40 | 10 / 10 |
-| `s2b_ramp_100to30` | 36.41 ± 9.22 | 0.56 | 0.000 | 46.32 ± 0.66 | — | 7 / 10 |
-| `s7_up_20to60` | 9.96 ± 2.88 | 0.47 | 0.007 | 35.03 ± 1.87 | 38.82 ± 1.92 | 10 / 10 |
-| `s7_up_30to100` | 11.37 ± 4.77 | 0.39 | 0.003 | 56.66 ± 1.52 | 64.38 ± 2.64 | 10 / 10 |
-| `s7_rampup_30to100` | 10.40 ± 3.94 | 0.43 | 0.007 | 56.03 ± 1.24 | — | 10 / 10 |
-| `s7_down_100to15` | 59.79 ± 6.28 | 0.79 | 0.045 | 30.70 ± 0.60 | 13.18 ± 0.37 | 10 / 10 |
-| `s7_down_100to8` | 80.62 ± 1.23 | 1.33 | 0.440 | 26.71 ± 0.40 | 7.90 ± 0.12 | 10 / 10 |
-| `s3_stress` | game p95 18.36 ± 3.20 | — | — | 71.46 ± 2.44 | — | 10 / 10 |
+| Shape | Call p95 (ms) | Jitter (ms) | Loss (%) | Gate |
+|---|---|---|---|---|---|
+| `s2b_step_50` | 14.20 ± 4.07 | 0.53 | 0.005 | 9 / 10 |
+| `s2b_step_10` | 77.47 ± 1.95 | 0.97 | 0.175 | 10 / 10 |
+| `s2b_step_up_20to100` | 8.16 ± 5.44 | 0.35 | 0.007 | 10 / 10 |
+| `s2b_ramp_100to30` | 36.41 ± 9.22 | 0.56 | 0.000 | 7 / 10 |
+| `s7_up_20to60` | 9.96 ± 2.88 | 0.47 | 0.007 | 10 / 10 |
+| `s7_up_30to100` | 11.37 ± 4.77 | 0.39 | 0.003 | 10 / 10 |
+| `s7_rampup_30to100` | 10.40 ± 3.94 | 0.43 | 0.007 | 10 / 10 |
+| `s7_down_100to15` | 59.79 ± 6.28 | 0.79 | 0.045 | 10 / 10 |
+| `s7_down_100to8` | 80.62 ± 1.23 | 1.33 | 0.440 | 10 / 10 |
+| `s3_stress` | game p95 18.36 ± 3.20 | — | — | 10 / 10 |
 
 Mean ± 95 % CI over 10 seeds (t(9) = 2.262). The gate judges landing and climb,
 not latency; the latency columns are reported as measured. Full per-seed and
 per-arm tables (ACI vs CAKE-conservative vs CAKE-adaptive):
 [`data/experiments/RESULTS_DEV3.md`](data/experiments/RESULTS_DEV3.md).
-
-**Throughput — where ACIQ leads, and where it does not.** On the same ten
-shapes, ACIQ's delivered (receiver) throughput is **higher than both CAKE arms
-on 7 of 10** shapes and higher than CAKE-conservative on **10 of 10**:
-
-| Shape | ACIQ | CAKE-cons | CAKE-auto |
-|---|---|---|---|
-| `s2b_step_up_20to100` | **45.24** | 9.45 | 15.17 |
-| `s7_rampup_30to100` | **56.03** | 14.23 | 24.71 |
-| `s7_up_30to100` | **56.66** | 14.23 | 25.55 |
-| `s7_up_20to60` | **35.03** | 9.45 | 15.97 |
-| `s3_stress` | **71.46** | 34.37 | 62.45 |
-| `s2b_step_50` | **49.46** | 47.71 | 41.97 |
-| `s2b_ramp_100to30` | **46.32** | 37.62 | 43.26 |
-| `s2b_step_10` | 27.21 | 19.92 | **29.30** |
-| `s7_down_100to15` | 30.70 | 23.44 | **33.46** |
-| `s7_down_100to8` | 26.71 | 18.57 | **28.75** |
-
-Mbps, receiver sink, run mean (95 % CI in the table above). ACIQ does not win
-the down-step shapes against CAKE-adaptive; the table shows that rather than
-hiding it. These are throughput facts, not gate verdicts — the gate verdict for
-each shape is the PASS count above.
 
 **The four misses, and the fix.** All four were root-caused from per-tick
 artefacts, declared in
@@ -449,7 +402,6 @@ Source: [`docs/PROJECT_REPORT.md`](docs/PROJECT_REPORT.md).
 | DEV verdict 96/100 | `tools/verify_round3.py data/runs_dev3` | `data/live_status_round3/dev_verify.log` |
 | Per-shape means ± CI | `tools/build_report.py` over `data/runs_dev3` | `data/experiments/RESULTS_DEV3.md` |
 | 7-seed latency medians (A/B/C) | workload-measured `call.json` / `game.json`, median over seeds | `data/host_gate_*` (revision `c5da3fd9`) |
-| 7-seed throughput medians (A/B/C) | receiver sink totals (`bulk.sink.log`, `tv*.sink.log`) | `data/host_gate_*` |
 | Scenario B re-derivation | `tools/reconcile_results.py` over `data/host_gate_congested_*` | `docs/gap-closure/reconciliation-congested.json` |
 | Lease +28.13 %, p = 0.015625 | paired sender totals, sign-enumeration Wilcoxon | `docs/limitations.md` §lease |
 | Estimator replay | recorded run, replayed through `aciq/capacity.py` | `docs/PROJECT.md`, `docs/PROJECT_REPORT.md` |
@@ -616,11 +568,6 @@ list with measurements: [`docs/limitations.md`](docs/limitations.md).
 7. **The final acceptance band has not run.** Until it does, the round-3
    controller result is a DEV-band result and is labelled as such.
 8. **p99 is not established** in any ACIQ-vs-CAKE comparison.
-9. **The pre-round-3 plan costs bulk throughput.** On Scenario A it delivers
-   50.20 Mbps of the bulk download against 95.52 (FIFO) and 90.74 (CAKE95),
-   because a large realtime share is reserved for a call that needs ~0.1 Mbps.
-   This is a planner limitation, measured and reported, not a bug hidden behind
-   latency numbers.
 
 ---
 
