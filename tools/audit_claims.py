@@ -197,6 +197,9 @@ def check_test_count() -> dict:
         cwd=ROOT, capture_output=True, text=True, timeout=900)
     d = parse_suite_status(r.stderr)
     d["exit"] = r.returncode
+    if not d["ok"]:
+        tail = (r.stderr or "").strip().splitlines()
+        d["detail"] = "\n".join(tail[-80:])
     return d
 
 
