@@ -23,7 +23,8 @@ in this file may not improve on what it prints.
 | **Tests** | **1565 run, 0 failed, 10 skipped** (live-kernel tests that need `iproute2`). |
 | **Lease result** | **+27.46 % to +28.92 % (mean +28.13 %)** for the leased device on a saturated 10 Mbps link, 7 paired seeds, exact paired Wilcoxon **p = 0.015625**. |
 | **Best claim that is actually supported** | The enforcement stack removes pfifo bufferbloat under a capacity drop; the lease mechanism delivers a measurable, significant redistribution; the round-3 controller lands and climbs inside declared bounds. |
-| **Claims that are NOT made** | Superiority over a tuned CAKE; any p99 advantage; device identity beyond source IP; per-flow fairness; the final band. |
+| **Throughput cost** | On Scenario A, latency protection costs ~47 % of the bulk download (**50.20 vs 95.52 Mbps**); on Scenario B it costs ~11 % (**16.93 vs 19.02 Mbps**). This is reported, not hidden. |
+| **Claims that are NOT made** | Superiority over a tuned CAKE; any p99 advantage; throughput superiority; device identity beyond source IP; per-flow fairness; the final band. |
 
 ---
 
@@ -221,58 +222,82 @@ Every table in this section names its source. Percentiles are the runtime's own
 (`call.json`: RTT p50/p95 and inter-sample jitter); “delivered” is the
 receiver's `cum=` total over elapsed time, not our class accounting.
 
-### 4.1 The frozen enforcement baseline (v0, 2026-10-08)
+### 4.1 The 7-seed scenario band (pre-round-3 stack, revision `c5da3fd9`)
 
-Seven paired seeds (42–48), three systems, on a kernel. **Read the caveat before
-quoting this table.** The frozen snapshot's runtime chain was **DSCP-EF
-filtering → HTB → `fq_codel`**; the behavioural classifier and the flow tracker
-were tested but *not in the import chain*, ADAPTIVE received no traffic, and no
-lease was exercised. These numbers therefore measure the **enforcement
-primitives**, not the adaptive controller. That distinction is recorded in
-[`data/baselines/v0/README.md`](data/baselines/v0/README.md) and is not softened
-here.
+Seven paired seeds (42-48), three systems, on a kernel. In these runs the
+classifier is wired to enforcement: the ADAPTIVE class carries the video traffic
+(4.69 Mbps at t=20.77 in Scenario C). This is the **pre-round-3** stack, not the
+round-3 controller of §4.2.
 
-Scenario B — WAN capacity drop, 100 → 20 Mbps (the case the brief names):
+The separate `data/baselines/v0/` snapshot (2026-10-08, six runs, seed 42, tag
+`v0-baseline`) predates that wiring; its README records that ADAPTIVE received
+no traffic and no lease was exercised. It is kept frozen for integrity and is
+**not** the source of the tables below.
 
-| median of 7 seeds | FIFO | CAKE95 | ACIQ stack |
+Throughput is reported as well as latency. It is the receiver's sink total over
+the run (`bulk.sink.log` / `tv*.sink.log`), a run mean, not our class
+accounting.
+
+Scenario B — WAN capacity drop, 100 -> 20 Mbps at t=5 s, 40 s (the case the brief names):
+
+| median of 7 seeds | FIFO | CAKE95 | ACIQ |
 |---|---|---|---|
 | p50 latency | 81.14 ms | 81.10 ms | **1.20 ms** |
 | p95 latency | 91.42 ms | 91.79 ms | 71.31 ms |
 | p99 latency | 99.57 ms | 105.41 ms | 97.32 ms |
 | jitter | 0.90 ms | 0.86 ms | 0.73 ms |
 | loss | 0.60 % | 0.45 % | **0.10 %** |
+| bulk delivered | **19.02 Mbps** | 19.02 Mbps | 16.93 Mbps |
 
-Scenario A — ISO download during a video call:
+Scenario A — ISO download during a video call, flat 100 Mbps, 30 s:
 
-| median of 7 seeds | FIFO | CAKE95 | ACIQ stack |
+| median of 7 seeds | FIFO | CAKE95 | ACIQ |
 |---|---|---|---|
 | p50 | 102.79 ms | 0.264 ms | 0.295 ms |
 | p95 | 119.32 ms | 0.384 ms | 0.395 ms |
 | jitter | 0.582 ms | 0.060 ms | 0.042 ms |
+| bulk delivered | **95.52 Mbps** | 90.74 Mbps | 50.20 Mbps |
 
-Scenario C — three TVs streaming plus gaming:
+Scenario C — three TVs streaming plus gaming, flat 100 Mbps, 40 s:
 
-| median of 7 seeds | FIFO | CAKE95 | ACIQ stack |
+| median of 7 seeds | FIFO | CAKE95 | ACIQ |
 |---|---|---|---|
 | p50 | 0.468 ms | 0.472 ms | 0.450 ms |
 | p95 | 2.576 ms | 0.563 ms | 0.540 ms |
 | jitter | 0.546 ms | 0.092 ms | 0.092 ms |
+| video delivered (3 streams) | 14.31 Mbps | 14.28 Mbps | 14.30 Mbps |
+
+**Throughput — the trade, stated rather than omitted.** ACIQ is not a
+throughput maximiser. On Scenario A it delivers **50.20 Mbps of the bulk
+download against 95.52 (FIFO) and 90.74 (CAKE95)** — roughly half — because the
+plan reserves a large realtime share even though the call itself carries about
+0.1 Mbps. On Scenario B the cost is smaller: **16.93 vs 19.02 Mbps**, while the
+call p50 improves from ~81 ms to 1.20 ms. On Scenario C the video demand is only
+~14.3 Mbps, so no scheduler can change it and all three systems agree. The
+Scenario A loss is a genuine weakness of the pre-round-3 plan, not a measurement
+artefact; the round-3 controller result is §4.2.
 
 Paired Wilcoxon (exact, by seed):
 
-- **vs FIFO:** 8 of 10 metric comparisons reach p < 0.05. The median advantage
-  is large and reproducible.
+- **vs FIFO:** 8 of 10 latency/jitter/loss comparisons reach p < 0.05. The
+  median latency advantage is large and reproducible.
 - **vs CAKE95:** not established on p99 (p = 0.078). On Scenario A, CAKE is
-  statistically indistinguishable on median (p = 0.1094) and p95 (p = 0.7812).
+  statistically indistinguishable on median (p = 0.1094) and p95 (p = 0.7812) —
+  and CAKE delivers ~40 Mbps more bulk throughput there.
 - **p99 is not established anywhere.** Reporting only the median is the failure
   the verification harness exists to catch.
+- **Throughput is not a claim we win.** No p-value is quoted for it; the medians
+  above are the fact.
 
-> On a free link (Scenario C) a scheduler cannot help, and the margins are small.
-> That is the expected result, reported as measured.
+Sources:
 
-Sources: [`data/baselines/v0/`](data/baselines/v0/) (integrity:
-`sha256sum -c SHA256SUMS`), and the re-derivation in
-[`docs/gap-closure/reconciliation-congested.json`](docs/gap-closure/reconciliation-congested.json).
+- Scenario A: `data/host_gate_s1_{aciq,b0_fifo,b1_cake95}/` (7 seeds each,
+  `REVISION c5da3fd9`).
+- Scenario B: `data/host_gate_congested_{aciq,b0_fifo,b1_cake95}/`; re-derivation
+  in `docs/gap-closure/reconciliation-congested.json`.
+- Scenario C: `data/host_gate_{aciq,b0_fifo,b1_cake95}/`.
+- Frozen pre-wiring snapshot (not used above): `data/baselines/v0/` (integrity:
+  `sha256sum -c SHA256SUMS`).
 
 ### 4.2 The round-3 adaptive controller (DEV band, seeds 1000–1009)
 
@@ -384,7 +409,9 @@ Source: [`docs/PROJECT_REPORT.md`](docs/PROJECT_REPORT.md).
 | 1565 tests, 0 failed | `python3 -m unittest discover -s tests -t .` | terminal / `artifacts/validation/` |
 | DEV verdict 96/100 | `tools/verify_round3.py data/runs_dev3` | `data/live_status_round3/dev_verify.log` |
 | Per-shape means ± CI | `tools/build_report.py` over `data/runs_dev3` | `data/experiments/RESULTS_DEV3.md` |
-| v0 medians (Scenario B) | `tools/reconcile_results.py` over `data/baselines/v0` | `docs/gap-closure/reconciliation-congested.json` |
+| 7-seed latency medians (A/B/C) | workload-measured `call.json` / `game.json`, median over seeds | `data/host_gate_*` (revision `c5da3fd9`) |
+| 7-seed throughput medians (A/B/C) | receiver sink totals (`bulk.sink.log`, `tv*.sink.log`) | `data/host_gate_*` |
+| Scenario B re-derivation | `tools/reconcile_results.py` over `data/host_gate_congested_*` | `docs/gap-closure/reconciliation-congested.json` |
 | Lease +28.13 %, p = 0.015625 | paired sender totals, sign-enumeration Wilcoxon | `docs/limitations.md` §lease |
 | Estimator replay | recorded run, replayed through `aciq/capacity.py` | `docs/PROJECT.md`, `docs/PROJECT_REPORT.md` |
 | Root causes of the four misses | per-tick `decisions` + `policy_change_log` | `docs/evidence/round3-params.md` |
@@ -550,6 +577,11 @@ list with measurements: [`docs/limitations.md`](docs/limitations.md).
 7. **The final acceptance band has not run.** Until it does, the round-3
    controller result is a DEV-band result and is labelled as such.
 8. **p99 is not established** in any ACIQ-vs-CAKE comparison.
+9. **The pre-round-3 plan costs bulk throughput.** On Scenario A it delivers
+   50.20 Mbps of the bulk download against 95.52 (FIFO) and 90.74 (CAKE95),
+   because a large realtime share is reserved for a call that needs ~0.1 Mbps.
+   This is a planner limitation, measured and reported, not a bug hidden behind
+   latency numbers.
 
 ---
 
@@ -570,10 +602,12 @@ Four cells failed on the first complete band. Each was traced to a mechanism,
 fixed, and covered by tests; the confirming re-run is in progress. The fixes
 were declared before the run, and the judge change alone rescues only one seed.
 
-**Why is the `v0` table labelled “ACIQ stack” and not “adaptive controller”?**
-Because in the frozen snapshot the behavioural classifier was not wired to
-enforcement. The table measures EF + HTB + `fq_codel`; the adaptive controller's
-own results are §4.2. The repository does not attribute one to the other.
+**Why are the A/B/C tables labelled “pre-round-3” and not “adaptive controller”?**
+Because they are the 7-seed stack at `c5da3fd9`, before the round-3 rate law. The
+classifier is wired there (ADAPTIVE carries the video traffic), but the
+controller is the older one. The round-3 controller's own results are §4.2, and
+the separate frozen `v0` snapshot (which *did* predate the wiring) is kept only
+for integrity and is not the source of these tables.
 
 **What does “PASS” mean?**
 It means `tools/verify_round3.py` printed PASS for that run: the applied rate
