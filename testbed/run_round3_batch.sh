@@ -63,7 +63,13 @@ step() {  # id estm cmd...
   fi
   echo "===== ${BAND}_${id} | est ${estm}m | $(date +%H:%M:%S) ====="
   local log="$STATUS_DIR/${BAND}_${id}.log"
-  if "$@" >"$log" 2>&1; then
+  # A hung cell must not block the band for hours: the 2026-11-01 dev band
+  # sat 40+ minutes on a b1_cake_auto seed whose sinks were never torn down
+  # (the experiment never reached collect()). Bound every step at 3x its
+  # estimate (floor 30 min) and let a timeout fail it loudly like any other
+  # step; a restart re-runs it because no .done marker is written.
+  local tmo=$(( estm * 3 )); [ "$tmo" -lt 30 ] && tmo=30
+  if timeout --foreground --kill-after=60s "${tmo}m" "$@" >"$log" 2>&1; then
     date +%s >"$STATUS_DIR/${BAND}_${id}.done"
     tail -3 "$log" | sed 's/^/    /'
     return
