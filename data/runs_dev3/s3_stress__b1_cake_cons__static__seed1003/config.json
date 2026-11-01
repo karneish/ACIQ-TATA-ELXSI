@@ -1,0 +1,92 @@
+{
+  "scenario": "s3_stress",
+  "system": "b1_cake_cons",
+  "mode": "static",
+  "seed": 1003,
+  "link_mbps": 100.0,
+  "drop_mbps": 20.0,
+  "drop_at_s": null,
+  "recover_at_s": null,
+  "recover_to_mbps": null,
+  "ramp_at_s": null,
+  "ramp_duration_s": null,
+  "ramp_to_mbps": null,
+  "cake_rate_at_apply": 50.0,
+  "oracle_from_start": false,
+  "duration_s": 40.0,
+  "settle_s": 4.0,
+  "workloads": [
+    {
+      "kind": "game",
+      "label": "game",
+      "dscp": 46
+    },
+    {
+      "kind": "video",
+      "label": "tv1",
+      "dscp": null
+    },
+    {
+      "kind": "video",
+      "label": "tv2",
+      "dscp": null
+    },
+    {
+      "kind": "video",
+      "label": "tv3",
+      "dscp": null
+    },
+    {
+      "kind": "bulk",
+      "label": "bulk",
+      "dscp": null
+    }
+  ],
+  "ports": [
+    {
+      "label": "game",
+      "port": 5354,
+      "dscp": 46
+    },
+    {
+      "label": "tv1",
+      "port": 5386,
+      "dscp": null
+    },
+    {
+      "label": "tv2",
+      "port": 5284,
+      "dscp": null
+    },
+    {
+      "label": "tv3",
+      "port": 5213,
+      "dscp": null
+    },
+    {
+      "label": "bulk",
+      "port": 5469,
+      "dscp": null
+    }
+  ],
+  "floor_mbps": 5.0,
+  "enforce_requested": true,
+  "enforcement_note": "b1_cake_cons is a baseline, not ACIQ",
+  "lease_ips": [],
+  "device_ips": {
+    "game": "203.0.113.3",
+    "tv1": "203.0.113.4",
+    "tv2": "203.0.113.5",
+    "tv3": "203.0.113.6",
+    "bulk": "203.0.113.7"
+  },
+  "lease_weight": null,
+  "lease_ttl_s": null,
+  "inject_fail_apply": false,
+  "api_intent_requested": false,
+  "intent_at_s": null,
+  "intent_ttl_s": null,
+  "intent_weight": null,
+  "intent_label": null,
+  "commit_hash": "19e9e8a5e0cc"
+}
