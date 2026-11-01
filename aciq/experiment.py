@@ -52,9 +52,20 @@ def git_commit_hash() -> str | None:
     compared (docs/evidence/round3-params.md, task 5). Cached per process:
     git may be missing (bare runner hosts); None then means "unknown", which
     the report prints verbatim instead of inventing.
+
+    `ACIQ_COMMIT_HASH` pins the answer for a long batch: a documentation or
+    demo commit made while the band is still running would otherwise move
+    HEAD and be stamped as the next cell's *engine* hash (the 2026-11-01 dev
+    band did that
+    to 80/300 cells). An explicit pin wins over HEAD; the batch exports the
+    hash it started from, so every cell and the report carry one revision.
     """
     global _COMMIT_HASH
     if _COMMIT_HASH is None:
+        pinned = os.environ.get("ACIQ_COMMIT_HASH", "").strip()
+        if pinned:
+            _COMMIT_HASH = pinned
+            return _COMMIT_HASH
         try:
             import subprocess
             out = subprocess.run(

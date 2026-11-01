@@ -24,6 +24,16 @@
 # be empty at exit (the last step checks).
 set -uo pipefail
 cd "$(dirname "$0")/.."
+
+# Pin engine provenance for the whole band. A documentation or demo commit made
+# while the batch is running would otherwise move HEAD, and every later cell
+# would stamp that docs hash as its "engine" revision (the 2026-11-01 dev band
+# recorded docs commits on 80/300 cells). The pin keeps every cell and the
+# report on the tree the band started from; the provenance step below refuses
+# to report if engine files were edited mid-run.
+RUN_HEAD="$(git rev-parse --short=12 HEAD 2>/dev/null || true)"
+[ -n "$RUN_HEAD" ] && export ACIQ_COMMIT_HASH="$RUN_HEAD"
+
 VENV="${ACIQ_VENV:-/home/mekarz/aciq-venv}"
 PY="$VENV/bin/python"; [ -x "$PY" ] || PY=python3
 export PYTHONPATH="$(pwd)"
@@ -51,6 +61,15 @@ s3_stress"
   *)
     echo "usage: $0 dev|final" >&2; exit 64;;
 esac
+
+# The band's OWN seed range, labelled by its role. Passing the same range as
+# both --dev-seeds and --eval-seeds (the old line) duplicated every run under
+# two family names and printed a dev band as "primary band: EVAL".
+if [ "$BAND" = final ]; then
+  BAND_SEEDS=(--eval-seeds "${SEED0}-$((SEED0+9))")
+else
+  BAND_SEEDS=(--dev-seeds "${SEED0}-$((SEED0+9))")
+fi
 
 STATUS_DIR="data/live_status_round3/"; mkdir -p "$STATUS_DIR" testbed/logs
 T0=$(date +%s)
@@ -80,7 +99,7 @@ step() {  # id estm cmd...
   exit 1
 }
 
-echo "[run_round3_batch] band=$BAND seeds from $SEED0 | $(date)"
+echo "[run_round3_batch] band=$BAND seeds from $SEED0 engine=${ACIQ_COMMIT_HASH:-unknown} | $(date)"
 
 # ---------- hygiene ----------
 step gate 3 ./testbed/gate.sh
@@ -113,10 +132,27 @@ echo "----- verify_round3 gate -----"
   | tee "$STATUS_DIR/${BAND}_verify.log" \
   || echo "[note] verify_round3 judged FAIL — recorded, batch continues"
 
+# ---------- provenance: the pin is only honest if the engine did not move ----------
+# A docs commit during the band is harmless (the pin wins); an ENGINE edit is
+# not, because cells after it ran different code under the same pinned hash.
+step provenance 1 sh -c '
+  dirty=$(git status --porcelain -- aciq tools run_experiments.py testbed | grep -v "testbed/logs/" || true)
+  if [ -n "$dirty" ]; then
+    echo "[provenance] engine tree is dirty; the pinned hash would be a lie:"
+    echo "$dirty"
+    exit 1
+  fi
+  [ -n "${ACIQ_COMMIT_HASH:-}" ] || { echo "[provenance] no pinned engine hash"; exit 1; }
+  cur=$(git rev-parse --short=12 HEAD 2>/dev/null || true)
+  if [ "$cur" != "$ACIQ_COMMIT_HASH" ]; then
+    echo "[provenance] HEAD moved $ACIQ_COMMIT_HASH -> $cur; engine hash stays pinned (engine tree clean)"
+  fi
+'
+
 # ---------- reports (disk only) ----------
 step report_band 2 "$PY" tools/build_report.py \
   --runs-root "$RUNS_DIR" \
-  --dev-seeds ${SEED0}-$((SEED0+9)) --eval-seeds ${SEED0}-$((SEED0+9)) \
+  "${BAND_SEEDS[@]}" \
   --out "data/experiments/RESULTS_$(echo $BAND | tr a-z A-Z)3.md"
 
 if [ "$BAND" = final ]; then
@@ -127,7 +163,19 @@ if [ "$BAND" = final ]; then
       echo \"COMMIT-PROVENANCE FAIL: \$bad result.json files have no commit_hash\"
       exit 1
     fi
-    echo 'all runs carry commit_hash'"
+    hashes=\$(grep -rho '\"commit_hash\": \"[^\"]*\"' '$RUNS_DIR' --include=result.json 2>/dev/null | sort -u)
+    n=\$(printf '%s\n' \"\$hashes\" | sed '/^$/d' | wc -l)
+    if [ \"\$n\" -ne 1 ]; then
+      echo \"COMMIT-PROVENANCE FAIL: \$n distinct engine hashes in the frozen band\"
+      printf '%s\n' \"\$hashes\"
+      exit 1
+    fi
+    got=\$(printf '%s\n' \"\$hashes\" | sed -n 's/.*\"\([0-9a-f]*\)\".*/\1/p')
+    if [ \"\$got\" != \"\$ACIQ_COMMIT_HASH\" ]; then
+      echo \"COMMIT-PROVENANCE FAIL: frozen band is \$got, pinned \$ACIQ_COMMIT_HASH\"
+      exit 1
+    fi
+    echo \"all runs carry the pinned engine hash \$got\""
   # Merge every band for the full RESULTS.md.
   BANDS_ROOT=data/experiments/bands_merge_r3
   step merged_farm 1 sh -c "

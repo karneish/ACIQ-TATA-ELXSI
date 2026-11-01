@@ -21,6 +21,24 @@ from aciq.report import (
 from aciq.txn import FakeRunner
 
 
+class TestEngineCommitPin(unittest.TestCase):
+    def test_env_pin_wins_over_head(self):
+        import os
+        import aciq.experiment as E
+        saved = os.environ.get("ACIQ_COMMIT_HASH")
+        old = E._COMMIT_HASH
+        try:
+            os.environ["ACIQ_COMMIT_HASH"] = "abc123def456"
+            E._COMMIT_HASH = None
+            self.assertEqual(E.git_commit_hash(), "abc123def456")
+        finally:
+            E._COMMIT_HASH = old
+            if saved is None:
+                os.environ.pop("ACIQ_COMMIT_HASH", None)
+            else:
+                os.environ["ACIQ_COMMIT_HASH"] = saved
+
+
 class TestRunPaths(unittest.TestCase):
     def test_creates_artefacts(self):
         with tempfile.TemporaryDirectory() as d:
