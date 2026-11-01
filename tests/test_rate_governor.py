@@ -989,8 +989,11 @@ class TestRound5SevereLanding(unittest.TestCase):
         self.assertTrue(d.delay_emergency)
         # Round 6: the landing is clamped to what the wire actually carries
         # (52.4), never the stale ceiling (58.14) -- on a 50 Mbps link the
-        # ceiling alone would sit above the gate band (top 55.0).
-        self.assertAlmostEqual(d.rate, 52.4)
+        # ceiling alone would sit above the gate band (top 55.0). Retune
+        # #11: this sample is the drop tick itself (nothing has drained
+        # yet), so the landing takes the ratchet's 10 % hysteresis below
+        # it: 52.4 -> 47.16, still inside the 55.0 band.
+        self.assertAlmostEqual(d.rate, 47.16)
         self.assertIn("severe drop", d.reason)
 
     def test_collapse_bypasses_the_clearance_cooldown(self):
@@ -1069,7 +1072,9 @@ class TestRound6DownRegime(unittest.TestCase):
                       offered=52.0, now=10.0, min_rate=14.0,
                       tree_overlimit_per_s=3886.0)
         self.assertTrue(d.delay_emergency)
-        self.assertAlmostEqual(d.rate, 52.18)
+        # Retune #11: the drop tick is the window minimum (fresh drain),
+        # so the landing sits 10 % under the carried 52.18.
+        self.assertAlmostEqual(d.rate, 46.962)
         self.assertIn("severe drop", d.reason)
 
     def test_a_pierce_that_overshot_a_healthy_link_is_not_a_drop(self):
@@ -1105,7 +1110,9 @@ class TestRound6DownRegime(unittest.TestCase):
                       offered=63.9, now=12.83, min_rate=29.2,
                       tree_overlimit_per_s=3700.0)
         self.assertTrue(d.delay_emergency)
-        self.assertAlmostEqual(d.rate, 52.18, delta=0.1)
+        # Retune #11: the drop tick itself is the only sub-applied sample,
+        # so the landing takes the 10 % transient margin: 52.18 -> 46.96.
+        self.assertAlmostEqual(d.rate, 46.962, delta=0.1)
         self.assertIn("severe drop", d.reason)
         self.assertLess(d.rate, 56.36)  # not the law's 25% step from 75.15
 
@@ -1130,6 +1137,33 @@ class TestRound6DownRegime(unittest.TestCase):
         self.assertTrue(d.delay_emergency)
         self.assertAlmostEqual(d.rate, 52.39, delta=0.1)
         self.assertIn("severe drop", d.reason)
+
+    def test_a_fresh_drain_transient_lands_inside_the_band(self):
+        """s2b_step_50 seed1001 (dev band 2026-11-01): the drop tick's FIRST
+        sample was 55.38 -- the pre-drop queue still draining -- while the
+        new truth was 50.0, so landing on it sat 0.38 ABOVE the 55.0 band
+        top; the tree then held 55.38 until the belief fell at t+9.5 s
+        (budget 8.0 s). No earlier sample had drained below the carry, so
+        this is the fresh-drain case retune #11 covers: land 10 % under
+        the carried rate, inside the band by construction.
+        """
+        g = RateGovernor()
+        g.observe(belief=85.0111008, belief_conf=1.0, belief_saturated=True,
+                  applied=107.23, delivered=96.56,
+                  backlog_bytes=int(1.0 * 96.56 * 125.0),
+                  offered=96.6, now=9.81, min_rate=29.2,
+                  tree_overlimit_per_s=1000.0)
+        d = g.observe(belief=85.0111008, belief_conf=1.0,
+                      belief_saturated=True, applied=107.23,
+                      delivered=55.38,
+                      backlog_bytes=int(20.4 * 55.38 * 125.0),
+                      offered=55.4, now=10.88, min_rate=29.2,
+                      tree_overlimit_per_s=1000.0)
+        self.assertTrue(d.delay_emergency)
+        self.assertIn("severe drop", d.reason)
+        self.assertAlmostEqual(d.rate, 49.842, delta=0.1)
+        self.assertLessEqual(d.rate, 55.0)   # the judge's 1.10x band top
+        self.assertGreaterEqual(d.rate, 29.2)  # never under the plan floor
 
     def test_no_pierce_while_the_belief_is_in_a_drop_regime(self):
         """After the landing the belief sits at 41-46 while its recent
@@ -1251,12 +1285,14 @@ class TestRound7DevBand(unittest.TestCase):
         self.assertIn("severe drop", d.reason)
         self.assertAlmostEqual(d.rate, 59.1, msg=d.reason)
 
-    def test_wire_dropped_landing_is_unchanged(self):
+    def test_wire_dropped_landing_keeps_the_round6_anchor(self):
         """The round-6 anchor: a stale-HIGH ceiling over a collapsed wire
         still lands at min(ceiling, delivered, drained) -- 52.18 of 75.15,
-        delivered below both the 0.8x bound and the ceiling. The prime
-        keeps the EMA mid-band so the land tick itself crosses the 20 ms
-        threshold (the recorded run's delay rose through the same path)."""
+        delivered below both the 0.8x bound and the ceiling -- with retune
+        #11's 10 % transient margin when the drop tick is the only sample
+        (46.96). The prime keeps the EMA mid-band so the land tick itself
+        crosses the 20 ms threshold (the recorded run's delay rose through
+        the same path)."""
         g = gov()
         g.observe(belief=83.5, belief_conf=0.0, belief_saturated=False,
                   applied=75.15, delivered=67.2,
@@ -1270,4 +1306,4 @@ class TestRound7DevBand(unittest.TestCase):
                       tree_overlimit_per_s=3886.0)
         self.assertTrue(d.delay_emergency)
         self.assertIn("severe drop", d.reason)
-        self.assertAlmostEqual(d.rate, 52.18)
+        self.assertAlmostEqual(d.rate, 46.962)

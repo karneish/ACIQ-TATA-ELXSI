@@ -488,3 +488,55 @@ predicate.
   of two dwelled steps; the ladder cadence and the pierce budget are
   untouched. No lane judges this as churn: commits never accelerate
   above the law's one-clearance-per-cooldown covenant.
+
+## Retune #11 -- frozen before the runs (wire-led landing margin, s2b_step_50 seed1001)
+
+### The measured defect (dev band 2026-11-01, post retunes #9/#10, in flight)
+
+`s2b_step_50` (100 -> 50 at t=10) seed1001: the severe-drop landing fired at
+t+0.88 s on the FIRST post-drop delivered sample, 55.38 Mbps. That sample is
+the pre-drop queue still draining -- the new truth is 50.0, so the landing
+sat at 1.108x the truth, 0.38 Mbps ABOVE the judge's 1.10x band top (55.0).
+The judge does not count an out-of-band commit as the landing; the tree then
+held 55.38 until the belief fell at t+9.5 s and stepped to 49.84, so the
+judged landing moved from t+0.88 s to t+9.5 s (budget 8.0 s). The seeds that
+passed sampled the drain lower (seed1000 landed 53.31, seed1002 52.76, both
+inside the band): the failure is a coin flip on the drain transient, not a
+lane behaviour.
+
+The round-6 rule already prefers the drained rate (`recent_delivered_min`
+over a 4 s window, retune-tested as `test_landing_uses_the_drained_rate_not_
+the_drain_transient`). It only has something to drain TO when an earlier
+sample already read below the current carry. seed1001's drop arrived with no
+such sample: the current tick WAS the window minimum, and the landing trusted
+it verbatim.
+
+### The fix
+
+When the wire-led landing's only sub-applied evidence is the current tick
+(the window minimum is at or above the current carry), land with the
+ratchet's own 10 % hysteresis below the demonstrated carry:
+`land = min(ceiling, delivered, carried) x (1 - WIRE_LANDING_MARGIN_FRAC)`.
+A window that has already drained (an earlier sample below the current
+carry) lands at the measured rate unchanged -- the round-6 anchor is about
+the drained rate, not the transient. The plan-floor clamp and the one-commit
+emergency are untouched. Scope is the `wire_dropped` leg only; the round-7.1
+stale-low-ceiling leg inside `land_target` lands at a HEALTHY wire the tree
+overshot (no queue drain to distrust) and stays verbatim (s7_rampup seed1008
+keeps 104.58).
+
+### Predictions to falsify on the next dev band
+
+- `s2b_step_50` seed1001 lands inside the 55.0 band within 1 s
+  (49.84 at t+0.88 s) and the other nine seeds keep their landings; the
+  cell passes on all 10 seeds.
+- No down lane's landing moves ABOVE its previous value: the margin only
+  ever lowers a fresh-transient landing by 10 %, and the drained-window
+  path (seed1002's 52.39) is bit-for-bit unchanged.
+- The round-7.1 stale-low-ceiling anchor is bit-for-bit unchanged
+  (s7_rampup seed1008 still lands at the wire's 104.58, not a margin).
+- The up lanes are untouched: `land_target` is only reached from the
+  inflating and bind down branches; no rise path calls it.
+- Landings stay above the plan floor (max(min_rate) clamp) and the
+  delivered last-third stays >= 0.5x the truth (0.9x the truth by
+  construction in the fresh case).

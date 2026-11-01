@@ -299,6 +299,19 @@ SEVERE_LANDING_WINDOW_S = 4.0
 #: former the estimator's ceiling keeps owning the severe landing; at the
 #: latter it must not (the stale-low leg of wire_dropped, round 7).
 SEVERE_WIRE_LED_CARRY_FRAC = 0.9
+#: Retune #11 (dev band 2026-11-01, s2b_step_50 seed1001). When the wire-led
+#: landing's ONLY sub-applied evidence is the drop tick itself, the tree is
+#: landing on the pre-drop queue still draining: seed1001 measured 55.38 of
+#: a 50 Mbps truth (1.108x), 0.38 above the judge's 1.10x band, and then
+#: held the overage for 8.6 s until the belief fell (judged landing 9.5 s,
+#: budget 8.0 s). Land the transient-led pass this fraction below the
+#: demonstrated carry -- the ratchet's own 10 % hysteresis -- so it is
+#: inside the band by construction. A drained window (an earlier sample
+#: already below the current carry) lands at the measured rate unchanged:
+#: the round-6 rule is about the drained rate, not the transient. Scope is
+#: the wire_dropped leg only: the round-7.1 stale-low-ceiling leg lands at
+#: a HEALTHY wire the tree overshot (no queue drain to distrust).
+WIRE_LANDING_MARGIN_FRAC = 0.1
 
 _EPS = 1e-9
 
@@ -761,7 +774,17 @@ class RateGovernor:
                 carried = (recent_delivered_min
                            if recent_delivered_min is not None else delivered)
                 if wire_dropped:
-                    base = min(base, delivered, carried)
+                    drop_land = min(delivered, carried)
+                    # Retune #11: the current tick being the window minimum
+                    # means nothing has drained yet -- that sample is the
+                    # pre-drop queue, not the wire's rate, and trusting it
+                    # can land just above the band (seed1001: 55.38 of a
+                    # 50 truth). A window holding an earlier sub-carry
+                    # sample has drained and lands at the measured rate
+                    # verbatim.
+                    if carried >= delivered * (1.0 - _EPS):
+                        drop_land *= (1.0 - WIRE_LANDING_MARGIN_FRAC)
+                    base = min(base, drop_land)
                 elif applied is not None and applied > 0.0 \
                         and delivered < SEVERE_WIRE_LED_CARRY_FRAC * applied:
                     # Round 7.1: the ceiling may own the land only while the
