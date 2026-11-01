@@ -4,6 +4,7 @@
 (TATA ELXSI / TELIPORT)
 
 **Repository:** <https://github.com/karneish/ACIQ-TATA-ELXSI>
+**Live demo (static replay):** <https://karneish.github.io/ACIQ-TATA-ELXSI/>
 **Code under test:** `1ee8e57d` (commits after it change documentation and
 evidence only). **Last full DEV band:** 2026-11-01, seeds 1000–1009.
 **Verdict authority:** [`tools/verify_round3.py`](tools/verify_round3.py) — prose
@@ -26,6 +27,21 @@ in this file may not improve on what it prints.
 | **Throughput (round 3)** | ACIQ delivers **more than both CAKE arms on 7 of 10 shapes** (up to **4.8×** on `s2b_step_up_20to100`: 45.24 vs 9.45/15.17 Mbps) and more than CAKE-conservative on 10/10. |
 | **Throughput cost (pre-round-3)** | On Scenario A, latency protection costs ~47 % of the bulk download (**50.20 vs 95.52 Mbps**); on Scenario B ~11 % (**16.93 vs 19.02 Mbps**). Reported, not hidden. |
 | **Claims that are NOT made** | Superiority over a tuned CAKE; any p99 advantage; throughput superiority; device identity beyond source IP; per-flow fairness; the final band. |
+
+---
+
+## Live demo
+
+**<https://karneish.github.io/ACIQ-TATA-ELXSI/>**
+
+A static replay of recorded testbed evidence: a real 100 → 50 Mbps step-down
+(`s2b_step_50`, seed 1002) with the applied rate and delivered throughput the
+harness measured, the 7-seed latency/throughput table, and links to the M8
+dashboard and the raw round-3 results.
+
+GitHub Pages serves static files only — the controller itself needs root and
+Linux network namespaces. Nothing on that page applies rules to your network,
+and nothing there is simulated.
 
 ---
 
