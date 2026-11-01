@@ -1307,3 +1307,70 @@ class TestRound7DevBand(unittest.TestCase):
         self.assertTrue(d.delay_emergency)
         self.assertIn("severe drop", d.reason)
         self.assertAlmostEqual(d.rate, 46.962)
+
+
+class TestRetune12(unittest.TestCase):
+    """Retune #12 (dev band 2026-11-01 at 19e9e8a5, 96 PASS / 4 FAIL).
+
+    A. `s2b_ramp_100to30` seeds 1001/1007 walked 42.1 -> 37.9 -> 31.4 in
+       10.4 s (budget 8.0 s): the 10 % ratchet plus the 5 s dwell needs
+       three commits to cross a >22 % gap. When the wire has itself
+       demonstrated it cannot carry the applied (`wire_dropped`), the
+       ordinary ratchet takes the law's full 25 % envelope instead.
+    B. `s2b_step_50` seed1008 landed at the drop tick's instantaneous
+       delivered 55.897 on a 50 truth (band 55.0) and re-entered at 9.4 s.
+       When the wire sits BELOW the belief at the overshoot tick (the
+       drain, not the up lanes' stale-low probe), the landing is capped at
+       the 4 s carried minimum.
+    """
+
+    def test_wire_dropped_ratchet_takes_the_full_law_step(self):
+        g = gov()
+        d = g.observe(belief=68.5, applied=46.823, delivered=32.40,
+                      backlog_bytes=int(23.9 * 32.40 * 125.0),
+                      offered=32.4, now=29.85, min_rate=14.0,
+                      belief_conf=0.0, belief_saturated=False)
+        self.assertEqual(
+            d.reason,
+            "delay inflated 23.9 ms > 20 ms: ratchet down one step")
+        self.assertAlmostEqual(d.rate, 46.823 * 0.75, places=6)
+
+    def test_ratchet_without_wire_evidence_keeps_the_gentle_step(self):
+        """The full envelope is wire-evidence-only: a delay ratchet whose
+        wire still carries >= 0.8x applied keeps the 10 % pace."""
+        g = gov()
+        d = g.observe(belief=68.5, applied=46.823, delivered=45.0,
+                      backlog_bytes=int(23.9 * 45.0 * 125.0),
+                      offered=45.0, now=29.85, min_rate=14.0,
+                      belief_conf=0.0, belief_saturated=False)
+        self.assertAlmostEqual(d.rate, 46.823 * 0.9, places=6)
+
+    def test_overshoot_lands_at_the_drained_carry_below_the_belief(self):
+        """seed1008's tick: wire 55.90 of applied 69.80 with the belief
+        above (ceiling 65.40), the tick before carried 52.40. Land at the
+        carried 52.40, inside the 55.0 band -- not the 55.90 transient."""
+        g = gov()
+        g._known_good = 93.07
+        g._last_rise = (9.78, 116.34)
+        g._delivered_hist.append((12.93, 52.40))
+        d = g.observe(belief=72.667, applied=69.803, delivered=55.897,
+                      backlog_bytes=int(22.9 * 55.897 * 125.0),
+                      offered=55.9, now=14.05, min_rate=35.0)
+        self.assertTrue(d.reason.startswith("probe overshoot"))
+        self.assertAlmostEqual(d.rate, 52.40, places=6)
+        self.assertLessEqual(d.rate, 55.0)   # the judge's band top
+
+    def test_overshoot_at_a_stale_low_ceiling_keeps_the_wire_rate(self):
+        """The up lanes' overshoot carries MORE than the belief (s7_rampup
+        seed1008: wire 109.12, ceiling 36.0). That is the healthy wire the
+        tree overshot, not a drain: no carried cap, the 109.12 landing
+        stands."""
+        g = gov()
+        g._known_good = 128.75
+        g._last_rise = (20385.0, 128.75)
+        g._delivered_hist.append((20384.0, 96.04))
+        d = g.observe(belief=40.0, applied=128.75, delivered=109.12,
+                      backlog_bytes=int(21.5 * 109.12 * 125.0),
+                      offered=109.1, now=20386.1, min_rate=14.0)
+        self.assertTrue(d.reason.startswith("probe overshoot"))
+        self.assertAlmostEqual(d.rate, 109.12, places=6)

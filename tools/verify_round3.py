@@ -291,19 +291,38 @@ def check_down_ramp(cfg: dict, result: dict, d: Path) -> dict:
         return float(r) if r is not None else None
 
     post = [(t, r) for t, r in pts if t > ramp_end]
-    if not post:
-        return {RAMP_KEY: "FAILED: no committed change after the ramp end"}
+    pre = [(t, r) for t, r in pts if t <= ramp_end]
 
+    # Retune #12: a rate already inside the end-band when the ramp ends is
+    # a landing at the end, even when its commit landed one tick early.
+    # The ramp's remaining movement can only LOWER its target, so an
+    # in-band rate at t = ramp_end - 0.17 s is still in-band at the end;
+    # the old strict `t > ramp_end` discarded it and charged the next
+    # same-rate commit 11.4 s later (s2b_ramp_100to30 seed1003, 29.17
+    # committed at 29.83 on a ramp ending at 30.0). The carried-in rate is
+    # only accepted when the first post-end commit (if any) does not rise
+    # back above the band. Definition only: budget, band and floor frozen.
     landed = None
-    for t, r in post:
-        if r is not None and r <= band:
-            landed = (t - ramp_end, r)
-            break
+    pre_rate = pre[-1][1] if pre else None
+    if pre_rate is not None and pre_rate <= band:
+        first_post_rate = post[0][1] if post else None
+        if first_post_rate is None or first_post_rate <= band:
+            landed = (0.0, pre_rate)
     if landed is None:
+        for t, r in post:
+            if r is not None and r <= band:
+                landed = (t - ramp_end, r)
+                break
+    if landed is None:
+        if not post:
+            return {RAMP_KEY: "FAILED: no committed change after the "
+                              "ramp end"}
         return {RAMP_KEY: "FAILED: never landed inside the end-band"}
     land_dt, land_rate = landed
+    # The applied state after the change is the last commit overall; when
+    # no post-end commit exists the pre-end one IS the tail.
     tail = None
-    for _t, r in post:
+    for _t, r in pts:
         if r is not None:
             tail = r
     series = [(t, v) for t, v in applied_series(result) if t >= ramp_end]

@@ -540,3 +540,84 @@ keeps 104.58).
 - Landings stay above the plan floor (max(min_rate) clamp) and the
   delivered last-third stays >= 0.5x the truth (0.9x the truth by
   construction in the fresh case).
+
+## Retune #12 -- frozen before the run (the ramp-end rail and the band edge)
+
+The dev band on `19e9e8a5` (2026-11-01 12:15-17:22 IST, seeds 1000-1009,
+all 100 cells judged) returned **96 PASS / 4 FAIL / 0 skips**. Retunes
+#9/#10/#11 fixed all five earlier failures (step_up seeds 1000/1003/1006
+land 1.109/1.147 applied and 0.553-0.678 delivered; ramp seed1005 6.2 s;
+step_50 seed1001 1.8 s at 47.54) and exposed two new families, both read
+per tick from `data/runs_dev3`.
+
+### A. The ramp-end rail -- `s2b_ramp_100to30` seeds 1001, 1003, 1007
+
+Measured. At the ramp end (t=30.0) the tree sat at 42.14 (1001), 29.83
+(1003) and 42.07 (1007) against a 30 Mbps truth (band top 33.0).
+
+* 1001/1007: the ordinary delay ratchet moves 10 % per commit and the law's
+  dwell is 5 s, so 42.14 -> 37.93 (t+5.2) -> 31.36 (t+10.4). The
+  one-commit overshoot landing at t+0.98 (33.77/33.82) was *dwell-refused*
+  (the previous commit was 1.1 s earlier) and `refund_last_change()` dropped
+  it; the next tick read `wire_dropped` and the overshoot branch could no
+  longer fire, so the landing intent was lost and the ratchet walked.
+  Judged 10.4 s, budget 8.0 s.
+* 1003: the collapse emergency landed 29.17 at 29.83 -- **0.17 s before the
+  nominal ramp end**, i.e. the ramp's last tick -- and the rate never moved
+  again. `check_down_ramp` only accepts commits with `t > ramp_end`, so it
+  timed the next same-rate commit at 41.40 = 11.4 s. The cell physically
+  landed; the judge's window boundary discarded it.
+
+Fix.
+
+* `aciq/ratecap.py`: when the wire has demonstrated it cannot carry the
+  applied rate (`wire_dropped`) and the *ordinary delay ratchet* fires, take
+  the law's full step envelope (`MAX_RATE_STEP_FRAC = 0.25`) instead of the
+  gentle 10 %. The 10 % pace is a delay-only convenience; with a 5 s dwell
+  it needs three commits to cross a gap wider than 22 %, which cannot fit
+  the 8 s budget. `wire_dropped` is affirmative wire evidence (the same
+  fact every landing branch already trusts), so the full lawful step is
+  justified. The emergency branches, the step bound, the floor clamp and
+  every other branch are untouched.
+* `tools/verify_round3.py` (`check_down_ramp`): a rate already inside the
+  end-band at the ramp end counts as a landing at 0.0 s. The ramp's
+  remaining movement can only LOWER its target, so a commit one tick before
+  the end whose rate is <= the end-band is still inside the band at the
+  end; the old strict `t > ramp_end` charged the next same-rate commit
+  11.4 s later. The tail check (final commit <= band) is unchanged and now
+  reads the last commit overall, which is the applied state when no
+  post-end commit exists. This is a definition fix, not a threshold change:
+  the 8.0 s budget, the 33.0 band and the 0.50 delivered floor are frozen.
+
+Predictions. 1001/1007 land at ~5.2 s (46.82 -> 35.12 at 29.85, then
+35.12 -> 31.6 at 35.16); 1003 reports 0.0 s with its existing 29.17
+landing; no other ramp seed's landing value, tail or delivered moves (the
+25 % step only fires on the `wire_dropped` fall-through, and the emergency
+landings are unchanged).
+
+### B. The overshoot band edge -- `s2b_step_50` seed1008
+
+Measured. At t+4.05 the probe-overshoot branch landed at the *instantaneous*
+delivered 55.897 on a 50 Mbps truth (band 55.0, 0.897 above) -- the drop
+tick's queue still draining -- and only re-entered the band at t+9.42
+(judged 9.4 s, budget 8.0 s; `delay_emergency_s=4.1`). The branch capped the
+landing at `delivered` but ignored the 4 s drained carry that `land_target`
+already uses (round 6).
+
+Fix. In the overshoot branch, when the wire sits BELOW the belief at the
+overshoot tick (`delivered < ceiling`: the drop-drain signature, not the up
+lanes' stale-low probe, where the wire carries MORE than the belief), cap
+the landing at the 4 s carried minimum. seed1008's carried was 52.40 --
+inside the band. The up-lane overshoots (s7_rampup 109.12, s7_up_30to100
+110.19) carry above the belief and are untouched; the round-7.1 anchor
+(s7_rampup seed1008 at the wire's 104.58) stays bit-for-bit.
+
+### Predictions to falsify on the next dev band
+
+- `s2b_ramp_100to30`: 1001 and 1007 land <= 8.0 s (predicted ~5.2 s);
+  1003 reports 0.0 s; all ten seeds pass.
+- `s2b_step_50`: seed1008 lands 52.40 at t+4.05 and all ten seeds pass;
+  no other seed's landing moves above its previous value.
+- No up-lane landing value changes; no stress delivered ratio falls.
+- The whole band returns 100 PASS / 0 FAIL / 0 skips, or the two new
+  mechanisms are falsified and retuned again.

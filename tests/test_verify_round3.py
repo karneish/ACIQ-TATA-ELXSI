@@ -214,6 +214,67 @@ class TestRound3Gate(unittest.TestCase):
             self.assertEqual(verdict["util_delivered"], 0.667)
             self.assertIsNone(verdict["overtrack_max"])
 
+    def test_ramp_down_passes_when_the_band_was_entered_one_tick_early(self):
+        """Retune #12, seed1003 (dev band 2026-11-01): the collapse
+        emergency landed 29.17 at 29.83 -- 0.17 s before the nominal ramp
+        end -- and the rate never moved again. The old strict
+        `t > ramp_end` discarded it and charged the next same-rate commit
+        at 41.40 (11.4 s); a rate inside the end-band at the end IS the
+        landing."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = write_run(Path(tmp), "s2b_ramp__aciq__seed1110",
+                          {"scenario": "s2b_ramp_100to30",
+                           "link_mbps": 100.0, "ramp_at_s": 10.0,
+                           "ramp_duration_s": 20.0, "ramp_to_mbps": 30.0},
+                          {"governor": {"decisions": [{"t": 0.0}]},
+                           "policy_change_log": [
+                               {"committed": True, "ok": True, "t": 19.16,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 68.304}}}},
+                               {"committed": True, "ok": True, "t": 24.49,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 46.745}}}},
+                               {"committed": True, "ok": True, "t": 29.83,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 29.173}}}},
+                               {"committed": True, "ok": True, "t": 41.40,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 29.173}}}},
+                               {"committed": True, "ok": True, "t": 48.78,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 29.173}}}}]},
+                          sink_lines=["[bulk sink] t=48.00 cum=0 bytes "
+                                      "inst=20.00 Mbps\n"])
+            verdict = check_run(d)
+            self.assertEqual(verdict["ramp_down_landing"], 0.0)
+            self.assertEqual(verdict["landing_mbps"], 29.17)
+            self.assertEqual(verdict["util_delivered"], 0.667)
+
+    def test_ramp_down_pre_end_band_does_not_count_if_it_rises_after(self):
+        """The one-tick-early grace is not a blanket pass: if the first
+        post-end commit rises back above the band, the pre-end rate was
+        not the landing."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = write_run(Path(tmp), "s2b_ramp__aciq__seed1111",
+                          {"scenario": "s2b_ramp_100to30",
+                           "link_mbps": 100.0, "ramp_at_s": 10.0,
+                           "ramp_duration_s": 20.0, "ramp_to_mbps": 30.0},
+                          {"governor": {"decisions": [{"t": 0.0}]},
+                           "policy_change_log": [
+                               {"committed": True, "ok": True, "t": 29.83,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 29.0}}}},
+                               {"committed": True, "ok": True, "t": 31.0,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 45.0}}}},
+                               {"committed": True, "ok": True, "t": 42.0,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 29.0}}}}]},
+                          sink_lines=["[bulk sink] t=40.00 cum=0 bytes "
+                                      "inst=20.00 Mbps\n"])
+            verdict = check_run(d)
+            self.assertIn("FAILED", verdict["ramp_down_landing"])
+
     def test_ramp_down_fails_when_the_landing_misses_the_budget(self):
         """The seed1003 shape from the band before retune #8: the walk
         committed 39.5/35.5 out of band and only reached 31.62 at ramp

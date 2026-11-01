@@ -88,6 +88,8 @@ import time
 from collections import deque
 from dataclasses import dataclass
 
+from .verifier import MAX_RATE_STEP_FRAC
+
 #: The estimator's belief is treated as a ceiling, not an application.
 #: 0.90-0.95 configurable; 0.90 because the s2/s4 estimate stall measures
 #: +9% after the hysteresis fix and 0.90 x 1.09 = 0.98 x link.
@@ -833,6 +835,16 @@ class RateGovernor:
                 if delivered is not None:
                     # never land above what the wire is actually carrying
                     land = min(land, delivered)
+                # Retune #12: when the wire sits BELOW the belief at the
+                # overshoot tick, the sample is the drop drain, not a
+                # stale-low probe (the up lanes' overshoots carry MORE
+                # than the belief). Land at the drained carry instead of
+                # the instantaneous sample: step_50 seed1008 landed 55.90
+                # on a 50 truth (band 55.0) and only re-entered at 9.4 s.
+                if (ceiling is not None and delivered is not None
+                        and delivered < ceiling
+                        and recent_delivered_min is not None):
+                    land = min(land, recent_delivered_min)
                 if min_rate is not None:
                     land = max(land, min_rate)
                 if land < applied:
@@ -860,7 +872,18 @@ class RateGovernor:
             # Ratchet DOWN, but never below the ceiling and never above the
             # ceiling either: the ceiling can have moved under the applied
             # rate because the belief fell, so clamp both ways.
-            rate = min(ceiling, applied * (1.0 - cfg.down_step_frac))
+            #
+            # Retune #12: the gentle 10 % pace is a delay-only convenience.
+            # With the law's 5 s dwell it needs three commits to cross a gap
+            # wider than 22 %, which cannot fit the 8 s landing budget;
+            # s2b_ramp_100to30 seeds 1001/1007 walked 42.1 -> 37.9 -> 31.4
+            # in 10.4 s. When the wire has itself demonstrated it cannot
+            # carry the applied (wire_dropped), take the law's full step
+            # envelope instead -- the same affirmative evidence every
+            # landing branch already trusts.
+            step_frac = (MAX_RATE_STEP_FRAC if wire_dropped
+                         else cfg.down_step_frac)
+            rate = min(ceiling, applied * (1.0 - step_frac))
             if min_rate is not None:
                 rate = max(rate, min_rate)
             if rate >= applied:
