@@ -23,7 +23,8 @@ in this file may not improve on what it prints.
 | **Tests** | **1565 run, 0 failed, 10 skipped** (live-kernel tests that need `iproute2`). |
 | **Lease result** | **+27.46 % to +28.92 % (mean +28.13 %)** for the leased device on a saturated 10 Mbps link, 7 paired seeds, exact paired Wilcoxon **p = 0.015625**. |
 | **Best claim that is actually supported** | The enforcement stack removes pfifo bufferbloat under a capacity drop; the lease mechanism delivers a measurable, significant redistribution; the round-3 controller lands and climbs inside declared bounds. |
-| **Throughput cost** | On Scenario A, latency protection costs ~47 % of the bulk download (**50.20 vs 95.52 Mbps**); on Scenario B it costs ~11 % (**16.93 vs 19.02 Mbps**). This is reported, not hidden. |
+| **Throughput (round 3)** | ACIQ delivers **more than both CAKE arms on 7 of 10 shapes** (up to **4.8×** on `s2b_step_up_20to100`: 45.24 vs 9.45/15.17 Mbps) and more than CAKE-conservative on 10/10. |
+| **Throughput cost (pre-round-3)** | On Scenario A, latency protection costs ~47 % of the bulk download (**50.20 vs 95.52 Mbps**); on Scenario B ~11 % (**16.93 vs 19.02 Mbps**). Reported, not hidden. |
 | **Claims that are NOT made** | Superiority over a tuned CAKE; any p99 advantage; throughput superiority; device identity beyond source IP; per-flow fairness; the final band. |
 
 ---
@@ -324,6 +325,28 @@ Mean ± 95 % CI over 10 seeds (t(9) = 2.262). The gate judges landing and climb,
 not latency; the latency columns are reported as measured. Full per-seed and
 per-arm tables (ACI vs CAKE-conservative vs CAKE-adaptive):
 [`data/experiments/RESULTS_DEV3.md`](data/experiments/RESULTS_DEV3.md).
+
+**Throughput — where ACIQ leads, and where it does not.** On the same ten
+shapes, ACIQ's delivered (receiver) throughput is **higher than both CAKE arms
+on 7 of 10** shapes and higher than CAKE-conservative on **10 of 10**:
+
+| Shape | ACIQ | CAKE-cons | CAKE-auto |
+|---|---|---|---|
+| `s2b_step_up_20to100` | **45.24** | 9.45 | 15.17 |
+| `s7_rampup_30to100` | **56.03** | 14.23 | 24.71 |
+| `s7_up_30to100` | **56.66** | 14.23 | 25.55 |
+| `s7_up_20to60` | **35.03** | 9.45 | 15.97 |
+| `s3_stress` | **71.46** | 34.37 | 62.45 |
+| `s2b_step_50` | **49.46** | 47.71 | 41.97 |
+| `s2b_ramp_100to30` | **46.32** | 37.62 | 43.26 |
+| `s2b_step_10` | 27.21 | 19.92 | **29.30** |
+| `s7_down_100to15` | 30.70 | 23.44 | **33.46** |
+| `s7_down_100to8` | 26.71 | 18.57 | **28.75** |
+
+Mbps, receiver sink, run mean (95 % CI in the table above). ACIQ does not win
+the down-step shapes against CAKE-adaptive; the table shows that rather than
+hiding it. These are throughput facts, not gate verdicts — the gate verdict for
+each shape is the PASS count above.
 
 **The four misses, and the fix.** All four were root-caused from per-tick
 artefacts, declared in
