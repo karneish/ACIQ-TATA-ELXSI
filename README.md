@@ -1,51 +1,66 @@
 # ACIQ — Adaptive Classification & Intent-aware QoS
 
-> **Case Study 3 — Adaptive QoS Engine for Mixed Home Broadband Traffic**
-> (TATA ELXSI / TELIPORT)
+**Case Study 3 — Adaptive QoS Engine for Mixed Home Broadband Traffic**
+(TATA ELXSI / TELIPORT)
 
-ACIQ is a traffic controller for a home broadband link. It classifies flows
-without reading payload, estimates the link's real capacity from queue
-counters only, shares bandwidth between classes with guaranteed floors, and can
-grant a user a time-boxed **lease** to one device. This repository contains the
-controller, the kernel enforcement layer, the testbed, the measurement
-pipeline, and every artefact behind every number quoted below.
+**Repository:** <https://github.com/karneish/ACIQ-TATA-ELXSI>
+**Code under test:** `1ee8e57d` (commits after it change documentation and
+evidence only). **Last full DEV band:** 2026-11-01, seeds 1000–1009.
+**Verdict authority:** [`tools/verify_round3.py`](tools/verify_round3.py) — prose
+in this file may not improve on what it prints.
 
-This README is deliberately split into **what is verified**, **what is
-measured but not yet proven**, and **what is not done**. Where a result is
-weaker than it looks, the weakness is stated next to the number.
+---
 
-**Snapshot: 2026-11-01, commit `1ee8e57d`.**
+## At a glance
 
 | | |
 |---|---|
-| Kernel enforcement (HTB, DSCP steering, per-flow filters, IPv4 + IPv6, teardown) | **verified** — testbed gate 20 PASS + 1 MEASURED, 0 FAIL |
-| Controller verdicts, round-3 DEV band (seeds 1000–1009, 10 shapes × 10 seeds) | **96 / 100 PASS, 0 SKIP** at `19e9e8a5`; the 4 misses are diagnosed and fixed in `1ee8e57d`, confirming re-run is the next step |
-| Final acceptance band (seeds 1100–1109) | **not run** — gated on the DEV verdict and a frozen constant set |
-| Unit / integration tests | **1565 run, 0 failed, 10 skipped** (live-kernel tests that need `iproute2`) |
-| Lease benefit, 7 paired seeds | **+27.46 % to +28.92 %, mean +28.13 %**, exact paired Wilcoxon **p = 0.015625** |
-| Superiority over a tuned CAKE | **not established**, and not claimed |
+| **What it is** | A Linux home-broadband data path: classify flows without payload, estimate the real link capacity from queue counters, plan per-class rates with floors, enforce with HTB + `fq_codel`, and grant time-boxed leases. |
+| **Where it runs** | A three-namespace testbed (`router`, `client`, `wan`) on a real kernel; the slow line is an HTB token-bucket shaper. |
+| **Enforcement status** | **Verified** — testbed gate **20 PASS + 1 MEASURED, 0 FAIL**. |
+| **Controller status** | **96 / 100 PASS, 0 SKIP** on the 2026-11-01 DEV band at `19e9e8a5`; the four misses are diagnosed and fixed in `1ee8e57d`; the confirming full-band re-run started 2026-11-01 19:31. |
+| **Final acceptance band** | **Not run** — gated on the DEV verdict and a frozen constant set. |
+| **Tests** | **1565 run, 0 failed, 10 skipped** (live-kernel tests that need `iproute2`). |
+| **Lease result** | **+27.46 % to +28.92 % (mean +28.13 %)** for the leased device on a saturated 10 Mbps link, 7 paired seeds, exact paired Wilcoxon **p = 0.015625**. |
+| **Best claim that is actually supported** | The enforcement stack removes pfifo bufferbloat under a capacity drop; the lease mechanism delivers a measurable, significant redistribution; the round-3 controller lands and climbs inside declared bounds. |
+| **Claims that are NOT made** | Superiority over a tuned CAKE; any p99 advantage; device identity beyond source IP; per-flow fairness; the final band. |
 
 ---
 
 ## Contents
 
 1. [What this is](#1-what-this-is)
-2. [What is verified, and what is not](#2-what-is-verified-and-what-is-not)
+2. [Status: verified, measured, not done](#2-status-verified-measured-not-done)
 3. [How the controller works](#3-how-the-controller-works)
 4. [Measured results](#4-measured-results)
-5. [What the round-3 gate checks](#5-what-the-round-3-gate-checks)
-6. [Running it](#6-running-it)
+5. [The round-3 verdict rule](#5-the-round-3-verdict-rule)
+6. [Reproducing every number](#6-reproducing-every-number)
 7. [Repository layout](#7-repository-layout)
-8. [Provenance and reproducibility](#8-provenance-and-reproducibility)
+8. [Provenance and the retune discipline](#8-provenance-and-the-retune-discipline)
 9. [Known limitations](#9-known-limitations)
-10. [Documentation](#10-documentation)
-11. [Licence](#11-licence)
+10. [FAQ — reading the results without being misled](#10-faq--reading-the-results-without-being-misled)
+11. [Documentation](#11-documentation)
+12. [Licence](#12-licence)
 
 ---
 
 ## 1. What this is
 
-A Linux home-router data path:
+ACIQ is a traffic controller for a home broadband link. It answers four
+questions, in order, every tick:
+
+1. **What is this flow?** — DSCP and per-flow behaviour, never payload. Every
+   decision carries a class, a confidence and its evidence.
+2. **How much capacity is actually there?** — queue counters only. The
+   estimator's input type has no `configured_mbps` field, so it cannot read the
+   shaper's configured rate even by accident.
+3. **How should the link be shared?** — a pure policy function: per-class
+   rates, guaranteed floors, lease weights, with the invariant
+   `Σ rates ≤ capacity`.
+4. **Is it safe to commit?** — a verifier, a shield with veto rules, a
+   snapshot/apply/read-back/rollback transaction, and an escalating safe state.
+
+Then the only module that touches the kernel renders the tree and reads it back.
 
 ```
  traffic ──► M1 classify ──► M2 estimate capacity ──► M3 plan ──► M9 shield ──► M4 tc
@@ -54,71 +69,117 @@ A Linux home-router data path:
                                                         leases)
 ```
 
-- **M1 classifier** — DSCP and per-flow behaviour, never payload. Each decision
-  carries a class, a confidence and its evidence.
-- **M2 capacity estimator** — reads queue counters from the router. Its input
-  type has no `configured_mbps` field, so it cannot read the shaper's rate even
-  by accident.
-- **M3 policy** — a pure function: per-class rates, floors and lease weights,
-  with the invariant `Σ rates ≤ capacity`.
-- **M4 enforcement** — renders an HTB + `fq_codel` tree and verifies it by
-  reading the kernel back.
-- **M9 shield / transaction** — veto rules, snapshot, apply, read-back verify,
-  rollback, and an escalating safe state.
-- **M5–M10** — metrics, harness, intent API (`aciqctl`), dashboard, experiment
-  runner, report generator.
+### The testbed
 
-The testbed is three network namespaces (`router`, `client`, `wan`) joined
-by veth pairs. The slow line is an **HTB class** —
-a token-bucket shaper. `netem` supplies delay and loss only, never bandwidth:
-pretending a bandwidth shaper is `netem` would misrepresent what is emulated.
+Three network namespaces — `router`, `client`, `wan` — joined by veth pairs.
+The slow line is **HTB class `1:1`**, a token-bucket shaper. `netem` supplies
+delay and loss only, never bandwidth. Using `netem` for rate would have been
+simpler and would have lied about what is being emulated.
+
+### Safety
+
+- **Every policy change is transactional** (`aciq/txn.py`): snapshot → apply →
+  read the kernel back → roll back on mismatch. A change that does not verify is
+  never left in place.
+- **The shield can veto** (`aciq/shield.py`): the rate law's step/dwell envelope,
+  the change-rate limit and the delay-emergency path are enforced before a commit
+  reaches `tc`.
+- **Degradation is explicit**: if the link cannot honour every floor, floors
+  scale down and `degraded=True` is set; the controller does not silently
+  over-subscribe.
+- **The band runner is bounded**: every cell runs under
+  `timeout --foreground --kill-after=60s` at 3× its estimate, so a hung kernel
+  call cannot block a 5-hour band.
+- **Cleanup is checked**: the runner exits non-zero if `router`, `client` or
+  `wan` survives teardown.
+
+### Modules
+
+| Module | File | Responsibility |
+|---|---|---|
+| M1 classifier | `aciq/classify.py`, `aciq/flowtrack.py`, `aciq/features.py` | DSCP + behaviour → class, confidence, evidence |
+| M2 capacity | `aciq/capacity.py`, `aciq/external_capacity.py` | estimate from counters only |
+| M3 policy | `aciq/policy.py` | shares, floors, lease maths (pure function) |
+| Rate law | `aciq/ratecap.py`, `aciq/verifier.py` | steps, dwell, severe landing, demand probe |
+| M4 enforcement | `aciq/tc.py`, `aciq/qdisc.py` | render, apply, read back |
+| M5 metrics | `aciq/metrics.py`, `aciq/measure.py` | counters → rates, percentiles, jitter, loss, fairness, CPU |
+| M6 harness | `aciq/harness.py`, `aciq/experiment.py`, `aciq/closedloop.py` | closed loop, baselines, run sequencing |
+| M7 intent API | `aciq/intent.py`, `aciq/identity.py`, `aciq/corrections.py`, `aciq/api.py` | leases, corrections, token-auth HTTP API |
+| M8 dashboard | `aciq/dashboard.py` | read-only view of a run |
+| M9 shield | `aciq/shield.py`, `aciq/txn.py`, `aciq/watchdog.py` | veto, rollback, safe state |
+| M10 report | `aciq/report.py` | Markdown with per-percentile verdicts |
 
 ---
 
-## 2. What is verified, and what is not
+## 2. Status: verified, measured, not done
 
 | Claim | State | Evidence |
 |---|---|---|
-| Per-flow enforcement, IPv4 and IPv6 | **verified on a kernel** | `testbed/gate.sh` checks 11/13/16/18; `data/live_status_round3/dev_gate.log` |
+| Per-flow enforcement, IPv4 and IPv6 | **verified on a kernel** | gate checks 11/13/16/18; [`data/live_status_round3/dev_gate.log`](data/live_status_round3/dev_gate.log) |
 | DSCP-EF claim rejected below capacity | **verified on a kernel** | gate checks 14 and 17 |
-| IPv6 petal/steering path | **verified for filters and routes** | gate checks 13/18; classification wiring is IPv4-only |
-| Capacity drop enforced, no over-subscription | **verified on a kernel** | `docs/gap-closure/capacity-drop-collision.md`, `live-enforcement-validation.md` |
-| Lease lifecycle and measured benefit | **verified on a kernel**, p = 0.015625 | `docs/limitations.md` §lease, `docs/gap-closure/device-identity-and-leases.md` |
-| Controller landing / climb verdicts | **96/100 PASS on DEV**; final band pending | `data/experiments/RESULTS_DEV3.md`, `data/live_status_round3/dev_verify.log` |
+| IPv6 filters, routes and teardown | **verified** | gate checks 13/18/19/20 |
+| Capacity drop enforced, no over-subscription | **verified on a kernel** | [`docs/gap-closure/capacity-drop-collision.md`](docs/gap-closure/capacity-drop-collision.md), [`docs/gap-closure/live-enforcement-validation.md`](docs/gap-closure/live-enforcement-validation.md) |
+| Lease lifecycle and measured benefit | **verified on a kernel**, p = 0.015625 | [`docs/limitations.md`](docs/limitations.md) §lease, [`docs/gap-closure/device-identity-and-leases.md`](docs/gap-closure/device-identity-and-leases.md) |
+| Controller landing / climb verdicts | **96/100 PASS on DEV**; final band pending | [`data/experiments/RESULTS_DEV3.md`](data/experiments/RESULTS_DEV3.md), [`data/live_status_round3/dev_verify.log`](data/live_status_round3/dev_verify.log) |
 | Capacity estimation, replay | **verified offline** | 100 → 45.97 → 24.38 → 15.41 → 12.15 → 10.86 Mbps against truth 10 |
 | Capacity estimation, end to end | **exercised live in round 3, not yet frozen** | applied tracks truth on the down shapes; final band pending |
-| Rollback against a real failing `tc` | **6 / 6** (earlier phase) | `docs/PROJECT_REPORT.md` |
-| Long-run stability | **1851 s, 8 policy changes** (earlier phase) | `docs/PROJECT_REPORT.md` |
-| Better than a well-tuned CAKE | **not established** | paired tests below; reported as “not significant” |
-| Device identity beyond source IP | **not built** — IP-only identity, documented as a deployment assumption | `docs/gap-closure/final-validation-report.md` §C P1-002 |
-| Per-flow (intra-class) fairness surface | **not built** — Jain is per class | `docs/gap-closure/final-validation-report.md` §C P1-005 |
-| Soak / memory scaling | **not measured** | `docs/gap-closure/final-validation-report.md` §C P2-002 |
+| Rollback against a real failing `tc` | **6 / 6** (earlier phase) | [`docs/PROJECT_REPORT.md`](docs/PROJECT_REPORT.md) |
+| Long-run stability | **1851 s, 8 policy changes** (earlier phase) | [`docs/PROJECT_REPORT.md`](docs/PROJECT_REPORT.md) |
+| API security (token auth, bind policy, rate limit, audit) | **verified offline and over a socket** | [`docs/gap-closure/api-security-validation.md`](docs/gap-closure/api-security-validation.md) |
+| Better than a well-tuned CAKE | **not established** | paired tests in §4.1 |
+| Device identity beyond source IP | **not built** — IP-only identity, documented as a deployment assumption | [`docs/gap-closure/final-validation-report.md`](docs/gap-closure/final-validation-report.md) §C P1-002 |
+| Per-flow (intra-class) fairness surface | **not built** — Jain is per class | ibid. §C P1-005 |
+| Soak / memory scaling | **not measured** | ibid. §C P2-002 |
+| Final acceptance band (seeds 1100–1109) | **not run** | gated on the DEV verdict |
 
 **Nothing blocked is reported as passed.** The distinction between “tested
 offline”, “run on a kernel” and “frozen verdict” is kept everywhere in this
 repository.
+
+### The testbed gate (2026-11-01)
+
+Twenty checks PASS and one is a measurement; none fails:
+
+```
+ 1 tooling                              11 conntrack forwarded per-flow v4
+ 2 modules                              12 saturation signals      (MEASURED)
+ 3 conntrack loopback per-flow          13 conntrack forwarded per-flow v6
+ 4 namespaces and routes                14 IPv6 EF filter routes to 1:10
+ 5 offloads off                         15 per-flow flower filters install
+ 6 HTB bottleneck 1:1                   16 steered IPv4 flow routes to 1:20
+ 7 netem on leaf                        17 rejected EF claim does not reach 1:10
+ 8 pyroute2 netlink                     18 steered IPv6 flow routes to 1:20
+ 9 cake at root                         19 removing the filter restores default
+10a cake as leaf                        20 teardown removes bridge filters
+10b pfifo as leaf
+```
+
+The gate stops at the first failure; this run is recorded verbatim in
+`data/live_status_round3/dev_gate.log`.
 
 ---
 
 ## 3. How the controller works
 
 The controller is a **law plus evidence**, not a set of tuned magic numbers.
-Every constant is declared in `docs/evidence/round3-params.md` *before* the run
-it applies to, and the verifier, not prose, decides PASS/FAIL.
-
-The law (`aciq/ratecap.py`, mirrored by `tools/verify_round3.py`):
+Every constant is declared in
+[`docs/evidence/round3-params.md`](docs/evidence/round3-params.md) *before* the
+run it applies to, and the verifier decides PASS/FAIL.
 
 | Rule | Value |
 |---|---|
 | Maximum rate change per commit | 25 % of applied (`MAX_RATE_STEP_FRAC`) |
+| Ordinary descent step | 10 % (`down_step_frac`); 25 % when the wire itself drops |
 | Minimum dwell between commits | 5 s (`MIN_DWELL_S`) |
-| Emergency descent | 2× the normal step, up to 500 Mbps/s (`EMERGENCY_STEP_MULT`, `EMERGENCY_DROP_RATE_PER_S`) |
-| Per-class floor | `max(2 Mbps, 5 % of capacity)`; scaled down with `degraded=True` if the link cannot honour it |
+| Emergency descent | 2× the normal step, up to 500 Mbps/s |
+| Per-class floor | `max(2 Mbps, 5 % of capacity)`; scaled with `degraded=True` if unaffordable |
+| Change-rate limit | 12 commits per minute |
 | Down-step legal target | `max(drop_mbps, floor_total)` |
 | Down-step acceptance band | 1.10 × legal |
 | Climb acceptance | applied ≥ 0.60 × truth **and** delivered ≥ 0.50 × truth over the final third |
+| Stress acceptance | ≥ 1 commit and last-third delivered/applied ≥ 0.50; no rate claim during pure saturation |
 
-Two mechanisms matter for the round-3 work:
+The two mechanisms that matter for round 3:
 
 - **Severe-drop landing** — when the belief is saturated and has fallen through
   0.9 × applied, the controller commits the whole lawful drop in *one* commit
@@ -129,9 +190,17 @@ Two mechanisms matter for the round-3 work:
   overlimiting, then lands back on `min(known_good, delivered)` if the wire
   inflates. The pierce gate is the tree's own overlimit counter, not a timer.
 
-### The round-3 shape set
+Design points worth knowing:
 
-| Shape (10 seeds each) | Protocol | What it tests |
+- **The estimator cannot cheat.** `Measurement` has no `configured_mbps` field.
+- **No starvation by construction.** Every class keeps a floor and
+  `Σ rates ≤ capacity` is tested, including across a 100 → 20 Mbps collapse.
+- **HTB's `default` class cannot be changed on a live qdisc** — measured. Every
+  policy change is a full tree rebuild, which the transaction can roll back.
+
+### The round-3 shape set (10 shapes × 10 seeds)
+
+| Shape | Protocol | What it tests |
 |---|---|---|
 | `s2b_step_50` | 100 → 50 Mbps at t=10 s, 40 s | mid-range drop |
 | `s2b_step_10` | 100 → 10 Mbps at t=10 s, 40 s | near-floor drop |
@@ -142,21 +211,26 @@ Two mechanisms matter for the round-3 work:
 | `s7_rampup_30to100` | flat 30, ramp to 100 over 20 s from t=10, 40 s | up-ramp tracking |
 | `s7_down_100to15` | 100 → 15 at t=10 s, 40 s | mid-severe drop |
 | `s7_down_100to8` | 100 → 8 at t=10 s, 40 s | severe drop near the floor |
-| `s3_stress` | flat 100; game + 3 video + bulk background, 40 s | demand > capacity; no enforcement claim by design |
+| `s3_stress` | flat 100; game + 3 video + bulk background, 40 s | demand > capacity; no rate claim by design |
 
 ---
 
 ## 4. Measured results
 
-### 4.1 The frozen enforcement baseline (v0 snapshot, 2026-10-08)
+Every table in this section names its source. Percentiles are the runtime's own
+(`call.json`: RTT p50/p95 and inter-sample jitter); “delivered” is the
+receiver's `cum=` total over elapsed time, not our class accounting.
 
-Seven paired seeds (42–48), three systems, on a kernel. **Read the caveat
-before quoting this table.** The frozen snapshot's runtime chain was
-**DSCP-EF filtering → HTB → `fq_codel`**; the behavioural classifier and the
-flow tracker were tested but *not in the import chain*, ADAPTIVE received no
-traffic, and no lease was exercised. The numbers therefore measure the
-**enforcement primitives**, not the adaptive controller. That distinction is
-recorded in `data/baselines/v0/README.md` and is not softened here.
+### 4.1 The frozen enforcement baseline (v0, 2026-10-08)
+
+Seven paired seeds (42–48), three systems, on a kernel. **Read the caveat before
+quoting this table.** The frozen snapshot's runtime chain was **DSCP-EF
+filtering → HTB → `fq_codel`**; the behavioural classifier and the flow tracker
+were tested but *not in the import chain*, ADAPTIVE received no traffic, and no
+lease was exercised. These numbers therefore measure the **enforcement
+primitives**, not the adaptive controller. That distinction is recorded in
+[`data/baselines/v0/README.md`](data/baselines/v0/README.md) and is not softened
+here.
 
 Scenario B — WAN capacity drop, 100 → 20 Mbps (the case the brief names):
 
@@ -193,15 +267,20 @@ Paired Wilcoxon (exact, by seed):
 - **p99 is not established anywhere.** Reporting only the median is the failure
   the verification harness exists to catch.
 
-Raw data: `data/baselines/v0/` (integrity: `sha256sum -c SHA256SUMS`),
-`docs/gap-closure/reconciliation-congested.json`.
+> On a free link (Scenario C) a scheduler cannot help, and the margins are small.
+> That is the expected result, reported as measured.
+
+Sources: [`data/baselines/v0/`](data/baselines/v0/) (integrity:
+`sha256sum -c SHA256SUMS`), and the re-derivation in
+[`docs/gap-closure/reconciliation-congested.json`](docs/gap-closure/reconciliation-congested.json).
 
 ### 4.2 The round-3 adaptive controller (DEV band, seeds 1000–1009)
 
 Ten shapes × ten seeds = **100 judged runs**, 2026-11-01 12:15–17:22
 (306 min), engine commit `19e9e8a5`. Delivered throughput is the **receiver's**
-sink total; the post-drop column is the **tree counter** and is a different
-instrument (run-mean vs post-drop, never blended).
+sink total (run mean, so it includes the pre-change phase); the post-drop column
+is the **tree counter** and is a different instrument — the two are never
+blended.
 
 | Shape | Call p95 (ms) | Jitter (ms) | Loss (%) | Bulk delivered, run mean (Mbps) | Post-drop tree (Mbps) | Gate |
 |---|---|---|---|---|---|---|
@@ -216,29 +295,33 @@ instrument (run-mean vs post-drop, never blended).
 | `s7_down_100to8` | 80.62 ± 1.23 | 1.33 | 0.440 | 26.71 ± 0.40 | 7.90 ± 0.12 | 10 / 10 |
 | `s3_stress` | game p95 18.36 ± 3.20 | — | — | 71.46 ± 2.44 | — | 10 / 10 |
 
-Mean ± 95 % CI over 10 seeds. The gate judges landing and climb, not
-latency; the latency columns are reported as measured. Full per-seed and
+Mean ± 95 % CI over 10 seeds (t(9) = 2.262). The gate judges landing and climb,
+not latency; the latency columns are reported as measured. Full per-seed and
 per-arm tables (ACI vs CAKE-conservative vs CAKE-adaptive):
-`data/experiments/RESULTS_DEV3.md`.
+[`data/experiments/RESULTS_DEV3.md`](data/experiments/RESULTS_DEV3.md).
 
 **The four misses, and the fix.** All four were root-caused from per-tick
-artefacts, declared in `docs/evidence/round3-params.md`, implemented, and
-tested before the confirming re-run:
+artefacts, declared in
+[`docs/evidence/round3-params.md`](docs/evidence/round3-params.md), implemented,
+and tested before the confirming re-run:
 
 | Miss | Root cause | Fix in `1ee8e57d` |
 |---|---|---|
 | `s2b_ramp_100to30` seeds 1001, 1007 (10.4 s vs 8.0 s) | 10 % ratchet + 5 s dwell: two commits after the ramp end; the one-commit landing was refused by the dwell and its intent discarded | wire-drop evidence now permits a full lawful (25 %) step |
-| `s2b_ramp_100to30` seed 1003 (11.4 s) | landed 29.17 at 29.83 s, 0.17 s *before* the nominal ramp end; a strict `t > ramp_end` judge discarded it | a pre-end landing inside the band counts as 0.0 s |
-| `s2b_step_50` seed 1008 (9.4 s) | overshoot branch landed on the instantaneous 55.90 Mbps (band 55.0), not the 4 s carried 52.40 | drain-signature overshoot lands on `recent_delivered_min` |
+| `s2b_ramp_100to30` seed 1003 (11.4 s) | landed 29.17 at 29.83 s, 0.17 s *before* the nominal ramp end; a strict `t > ramp_end` judge discarded it | a pre-end landing inside the band counts at `0.0 s` |
+| `s2b_step_50` seed 1008 (9.4 s) | the overshoot branch landed on the instantaneous 55.90 Mbps (band 55.0), not the 4 s carried 52.40 | drain-signature overshoot lands on `recent_delivered_min` |
 
 The new judge re-scores the old artefacts as **97 / 100** — only seed 1003 is
 rescued by the definition change; the other three genuinely needed the
-controller fixes. That separation is the point: definitions are not allowed to
-launder failures.
+controller fixes. That separation is deliberate: a definition change is not
+allowed to launder a controller failure.
 
-> **Status:** the confirming DEV re-run has not started at the time of writing.
-> The final band has **not** run, and no final-band number appears anywhere in
-> this repository.
+> **Status of the re-run.** The full DEV band was re-launched on the fixed tree
+> at 19:31 on 2026-11-01 (all markers cleared, so every cell runs on one
+> commit). Its verdict lands in
+> [`data/live_status_round3/dev_verify.log`](data/live_status_round3/dev_verify.log);
+> per-cell progress is the set of `dev_cell_*.done` markers. The final band has
+> **not** run, and no final-band number appears anywhere in this repository.
 
 ### 4.3 Lease — the measured benefit
 
@@ -264,6 +347,8 @@ rather than by our own class accounting.
 Honest caveat: the plan came from the requested drop, not from M2, so this
 demonstrates the **lease mechanism on a correct plan**, not adaptation.
 
+Source: [`docs/limitations.md`](docs/limitations.md) §lease.
+
 ### 4.4 Capacity estimator
 
 Replaying a recorded run through the revised estimator (counters only):
@@ -274,9 +359,10 @@ Replaying a recorded run through the revised estimator (counters only):
 
 Monotone, no collapse. On live round-3 shapes the applied rate tracks the new
 truth after the drop (e.g. `s7_down_100to8` post-drop tree 7.90 vs 8.0 Mbps).
-Estimator caveats are structural, not tuning: it can only see a bottleneck the
-router is on, and it learns nothing from an idle link (confidence decays rather
-than holding a stale value). Both are in `docs/limitations.md`.
+The estimator's caveats are structural, not tuning: it can only see a
+bottleneck the router is on, and it learns nothing from an idle link
+(confidence decays rather than holding a stale value). Both are in
+[`docs/limitations.md`](docs/limitations.md).
 
 ### 4.5 Overhead and stability (earlier phase)
 
@@ -288,15 +374,28 @@ than holding a stale value). Both are in `docs/limitations.md`.
 | Per-flow fairness within a class | two flows within ~1 % |
 | Headroom retained on a 20 Mbps link | 17.30 of 20 Mbps (86 %) |
 
-Source: `docs/PROJECT_REPORT.md`.
+Source: [`docs/PROJECT_REPORT.md`](docs/PROJECT_REPORT.md).
+
+### 4.6 Where every number comes from
+
+| Number | Produced by | Stored in |
+|---|---|---|
+| Gate 20 PASS / 1 MEASURED | `testbed/gate.sh` | `data/live_status_round3/dev_gate.log` |
+| 1565 tests, 0 failed | `python3 -m unittest discover -s tests -t .` | terminal / `artifacts/validation/` |
+| DEV verdict 96/100 | `tools/verify_round3.py data/runs_dev3` | `data/live_status_round3/dev_verify.log` |
+| Per-shape means ± CI | `tools/build_report.py` over `data/runs_dev3` | `data/experiments/RESULTS_DEV3.md` |
+| v0 medians (Scenario B) | `tools/reconcile_results.py` over `data/baselines/v0` | `docs/gap-closure/reconciliation-congested.json` |
+| Lease +28.13 %, p = 0.015625 | paired sender totals, sign-enumeration Wilcoxon | `docs/limitations.md` §lease |
+| Estimator replay | recorded run, replayed through `aciq/capacity.py` | `docs/PROJECT.md`, `docs/PROJECT_REPORT.md` |
+| Root causes of the four misses | per-tick `decisions` + `policy_change_log` | `docs/evidence/round3-params.md` |
 
 ---
 
-## 5. What the round-3 gate checks
+## 5. The round-3 verdict rule
 
-`tools/verify_round3.py` is the authority. It reads each run's
-`decisions`/`policy_change_log` and the link truth, and prints PASS/FAIL. Prose
-may not improve on it.
+[`tools/verify_round3.py`](tools/verify_round3.py) is the authority. It reads
+each run's `decisions`/`policy_change_log` and the link truth, and prints
+PASS/FAIL. Prose may not improve on it.
 
 | Check | Definition |
 |---|---|
@@ -310,12 +409,21 @@ Floor totals: 100 Mbps → 35.0; 50 → 17.5; 30/15/8 → 14.0. The constants
 `UP_UTIL_APPLIED_MIN = 0.60`, `UP_UTIL_DELIVERED_MIN = 0.50`) are frozen at the
 top of the verifier.
 
+The verifier prints a final line such as:
+
+```
+verify_round3 FAILED: 2 judged FAIL, 88 PASS of 90 -- 0 skips: every shape is judged
+```
+
+A band is green only when that line reports `0 judged FAIL` over the full
+100-cell ACIQ set.
+
 ---
 
-## 6. Running it
+## 6. Reproducing every number
 
-Requires Linux with `iproute2`, `python3` (≥ 3.11) and root for the testbed.
-The unit suite needs neither root nor `tc`.
+Requires Linux with `iproute2`, `python3` (≥ 3.11) and root for the testbed. The
+unit suite needs neither root nor `tc`.
 
 ```bash
 # unit / integration tests (1565; 10 live-kernel tests skip without iproute2)
@@ -352,8 +460,8 @@ python3 aciqctl dashboard \
   --out dashboard.html --refresh 5
 ```
 
-The batch runner skips any cell whose `.done` marker exists. To force a cell
-to re-run, delete its marker (and, if the namespaces were torn down, the
+The batch runner skips any cell whose `.done` marker exists. To force a cell to
+re-run, delete its marker (and, if the namespaces were torn down, the
 `gate`/`reset_hub`/`setup_ub`/`cleanup_ub` markers too). A hung cell is bounded
 by `timeout --foreground --kill-after=60s` at 3× its estimate.
 
@@ -395,25 +503,28 @@ data/
   runs_final3/        final-band artefacts (not yet produced)
   live_status_round3/ batch resume markers and logs
 reports/              generated evaluation reports
+artifacts/            validation manifests and logs
 ```
 
 ---
 
-## 8. Provenance and reproducibility
+## 8. Provenance and the retune discipline
 
-- Every run directory carries `config.json` and `result.json`; the latter
-  records `commit_hash`, so a number can be traced to the code that produced it.
+- Every run directory carries `config.json` and `result.json`; the latter records
+  `commit_hash`, so a number can be traced to the code that produced it.
 - `data/experiments/RESULTS_DEV3.md` is generated from the run artefacts, not
   from hand-written tables, and stamps the engine commit per section.
 - `docs/evidence/round3-params.md` declares every constant and every retune
   **before** the run it applies to, including the failed attempts.
-- `tools/verify_round3.py` re-derives verdicts from raw artefacts; the new judge
-  is applied to old artefacts to show what changed and what did not.
+- `tools/verify_round3.py` re-derives verdicts from raw artefacts; the current
+  judge is applied to old artefacts to show exactly what a definition change
+  rescues and what it does not (97/100, one rescued seed).
 - `docs/gap-closure/claim-audit.json` and `tools/audit_claims.py` check prose
   against evidence.
 - Frozen baseline integrity: `cd data/baselines/v0 && sha256sum -c SHA256SUMS`.
 
-Repository: <https://github.com/karneish/ACIQ-TATA-ELXSI>
+A retune that is not declared before its run is not a retune; it is a result
+chosen after seeing the data. The declaration files are in `docs/evidence/`.
 
 ---
 
@@ -442,7 +553,44 @@ list with measurements: [`docs/limitations.md`](docs/limitations.md).
 
 ---
 
-## 10. Documentation
+## 10. FAQ — reading the results without being misled
+
+**Is ACIQ better than CAKE?**
+Not established. It removes pfifo bufferbloat and wins the median under a
+capacity drop; against a tuned CAKE the tests do not separate it except on
+specific metrics, and p99 is not significant anywhere.
+
+**Why is the call p95 77 ms on `s2b_step_10`?**
+Because on a 10 Mbps link the call is not protected by a reserved EF lane the
+way the brief's scenario protects it; the gate judges the controller's landing,
+and the latency is reported as it was measured. Hiding it would be dishonest.
+
+**Why 96/100 and not 100?**
+Four cells failed on the first complete band. Each was traced to a mechanism,
+fixed, and covered by tests; the confirming re-run is in progress. The fixes
+were declared before the run, and the judge change alone rescues only one seed.
+
+**Why is the `v0` table labelled “ACIQ stack” and not “adaptive controller”?**
+Because in the frozen snapshot the behavioural classifier was not wired to
+enforcement. The table measures EF + HTB + `fq_codel`; the adaptive controller's
+own results are §4.2. The repository does not attribute one to the other.
+
+**What does “PASS” mean?**
+It means `tools/verify_round3.py` printed PASS for that run: the applied rate
+landed inside the declared band within the declared time, or climbed to the
+declared utilisation. It does not mean “low latency” or “good user experience”.
+
+**What is the final band?**
+Seeds 1100–1109, one run per cell, executed once on a frozen constant set after
+the DEV band is green. It has not been run. No final-band number exists yet.
+
+**Can I trust a number in this file?**
+Each one is mapped to a file in §4.6. If a number has no file behind it, it does
+not belong here.
+
+---
+
+## 11. Documentation
 
 | | |
 |---|---|
@@ -454,6 +602,7 @@ list with measurements: [`docs/limitations.md`](docs/limitations.md).
 | [`docs/evidence/round3-diagnosis.md`](docs/evidence/round3-diagnosis.md) | pre-fix diagnosis of the declared failures |
 | [`docs/gap-closure/final-validation-report.md`](docs/gap-closure/final-validation-report.md) | what is verified, what is blocked, and why |
 | [`docs/gap-closure/device-identity-and-leases.md`](docs/gap-closure/device-identity-and-leases.md) | the lease measurement |
+| [`docs/gap-closure/api-security-validation.md`](docs/gap-closure/api-security-validation.md) | token auth, bind policy, rate limit, audit |
 | [`docs/WIRING_AUDIT.md`](docs/WIRING_AUDIT.md) | how each flow reaches its class, and the traps |
 | [`docs/ACIQ_EXPLAINED.md`](docs/ACIQ_EXPLAINED.md) | plain-language walkthrough |
 | [`docs/REQUIREMENT_TRACEABILITY.md`](docs/REQUIREMENT_TRACEABILITY.md) | brief requirement → code → evidence |
@@ -462,6 +611,6 @@ list with measurements: [`docs/limitations.md`](docs/limitations.md).
 
 ---
 
-## 11. Licence
+## 12. Licence
 
 MIT — see [`LICENSE`](LICENSE). No third-party source is vendored.
