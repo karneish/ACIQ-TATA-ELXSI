@@ -699,7 +699,9 @@ hit the 14.0 floor. `SHORTFALL_HOLD_S`, `SHORTFALL_GAP_S`,
 `SHORTFALL_CARRY_FRAC`, the 8.0 s budget, the 33.0 band and the 0.50 floor
 are unchanged.
 
-Predictions to falsify on the next full band: seed1001 holds at the first
-carry (~30.0) instead of ratcheting, the delivered ratio stays above 0.50,
-and the four Round 7 landings stay inside 8 s and the band. Two new unit
-tests pin the one-shot rule and the idle-wire exclusion (`TestSustainedShortfall`).
+Predictions to falsify on the next full band: seed1001 fires the carry once
+instead of ratcheting. The pre-existing severe-drop path may still step to
+the lagging belief's ceiling (~21 Mbps), so the prediction is the delivered
+ratio (>= 0.50 of 30, which the ratchet broke at 14.27), not a hold at 30.
+The four Round 7 landings stay inside 8 s and the band. Two new unit tests
+pin the one-shot rule and the idle-wire exclusion (`TestSustainedShortfall`).
