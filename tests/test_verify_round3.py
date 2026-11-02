@@ -39,6 +39,30 @@ class TestRound3Gate(unittest.TestCase):
             verdict = check_run(d)
             self.assertEqual(round(verdict["up_util_applied"], 3), 0.967)
 
+    def test_up_window_is_the_run_final_third_not_the_commit_log_end(self):
+        """A held rate emits no further commits; the commit log can end at
+        56 s of a 64 s run. The delivered window is the run's final third,
+        so the steady state is not cut out of the measurement."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = write_run(Path(tmp), "s2b_up__aciq__adaptive__seed1103",
+                          {"scenario": "s2b_step_up_20to100",
+                           "link_mbps": 20.0, "duration_s": 60.0,
+                           "recover_at_s": 10.0, "recover_to_mbps": 100.0},
+                          {"governor": {"decisions": [{"t": 5.0}]},
+                           "samples": [{"t": float(t)} for t in
+                                       range(10, 65)],
+                           "policy_change_log": [
+                               {"committed": True, "ok": True, "t": 56.0,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 100.0}}}}]},
+                          sink_lines=["[bulk sink] t=20.00 cum=0 bytes "
+                                      "inst=20.00 Mbps\n",
+                                      "[bulk sink] t=50.00 cum=0 bytes "
+                                      "inst=50.00 Mbps\n"])
+            verdict = check_run(d)
+            self.assertEqual(verdict["util_delivered"], 0.5)
+            self.assertEqual(verdict["up_util_applied"], 1.0)
+
     def test_up_run_fails_when_the_tree_never_climbed(self):
         with tempfile.TemporaryDirectory() as tmp:
             d = write_run(Path(tmp), "s7_up__aciq__adaptive__seed1101",

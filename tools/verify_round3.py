@@ -161,9 +161,25 @@ def check_up(cfg: dict, result: dict, d: Path, drop_shape: str) -> dict:
     series = [(t, v) for t, v in applied_series(result) if t >= at]
     if not series:
         return {UP_KEY: "FAILED: no applied series after the change"}
-    lo, hi = window_last_third(series)
-    util = (statistics.fmean(v for t, v in series if lo <= t <= hi)
-            / truth_after)
+    # The final third is the run's, not the change log's: a controller that
+    # holds its last rate emits no more commits, so the commit window can end
+    # well before the run and cut the steady state out of the measurement.
+    sample_ts = sorted(float(s["t"]) for s in (result.get("samples") or [])
+                       if isinstance(s.get("t"), (int, float))
+                       and float(s["t"]) >= at)
+    if sample_ts:
+        lo = sample_ts[0] + (sample_ts[-1] - sample_ts[0]) * (2.0 / 3.0)
+        hi = sample_ts[-1]
+    else:
+        lo, hi = window_last_third(series)
+    in_window = [v for t, v in series if lo <= t <= hi]
+    if in_window:
+        util = statistics.fmean(in_window) / truth_after
+    else:
+        held = [v for t, v in series if t <= hi]
+        if not held:
+            return {UP_KEY: "FAILED: no applied rate in the final third"}
+        util = held[-1] / truth_after
     dl = sink_last_third(d, lo, hi)
     if dl is None:
         delv = None

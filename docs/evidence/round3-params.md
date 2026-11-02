@@ -705,3 +705,29 @@ the lagging belief's ceiling (~21 Mbps), so the prediction is the delivered
 ratio (>= 0.50 of 30, which the ratchet broke at 14.27), not a hold at 30.
 The four Round 7 landings stay inside 8 s and the band. Two new unit tests
 pin the one-shot rule and the idle-wire exclusion (`TestSustainedShortfall`).
+
+## Round 9 -- the up window is the run's final third (after the 2026-11-02 band)
+
+The 300-cell DEV band at `912a6e2e` (the Round 8 one-shot carry, engine code
+unchanged since `e84778a9`) judged 99/100. The one FAIL was not a climb:
+
+`s2b_step_up_20to100` seed1002 -- `up_util_applied=1.10`,
+`util_delivered=0.47` (sink mean 47.22 Mbps of the 100 truth).
+
+The applied series is the policy-change log. Seed1002's last change is at
+56.4 s of a 64 s run, so `check_up` cut the final third from that log
+(42.2-56.4) and ended the delivered window before the steady state. The same
+sink log delivers 64.6 Mbps (0.646) over the run's own final third
+(45.9-63.9). Seeds 1003 and 1004 read 0.50/0.49 in the commit window and
+0.61/0.59 in the run window: the old cut was the failing part, not the
+delivered rate.
+
+Fix: `check_up` cuts the window from the post-change sample timeline. The
+applied utilization holds the last rate when the window carries no new
+commit. The thresholds (applied >= 0.60, delivered >= 0.50), the 8 s landing
+budget and every other window are unchanged. A held rate with an early last
+commit is pinned by
+`test_up_window_is_the_run_final_third_not_the_commit_log_end`.
+
+Judged on the existing `912a6e2e` runs: 100/100 PASS. The final band runs the
+same controller at the new pin with this judge; nothing in `aciq/` changed.

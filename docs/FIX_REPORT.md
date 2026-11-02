@@ -85,7 +85,9 @@ tests, all run before the dev band).
 declared rules:
 
 - UP shapes (recover_to / ramp_to above the pre-change link): final
-  third **util_applied >= 0.60** and **util_delivered >= 0.50** per ACIQ
+  third (cut from the post-change **run** timeline, not the commit log;
+  a held rate emits no commits and would truncate the window)
+  **util_applied >= 0.60** and **util_delivered >= 0.50** per ACIQ
   seed. UP bind is `n/a (up-step)`: the round-3 report table says `n/a
   (up-step)` and shows the utilization column instead (committed
   0e6f986).
