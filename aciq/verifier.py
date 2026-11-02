@@ -48,6 +48,11 @@ EMERGENCY_STEP_MULT = 2.0
 #: bounded that want by its ceiling and floors; a full descent can never
 #: grow any queue. The governor paces this with its own cooldown.
 DELAY_EMERGENCY = True
+#: Downward landings keep this fraction of headroom under the target. The
+#: 100->30 ramp measured a landing at 33.12 against a 33.0 band top: the
+#: target was right, the rounding was not. Two percent is far below the
+#: 10 % band and costs nothing the delivered stream can see.
+LANDING_HEADROOM_FRAC = 0.02
 
 # ---- the verdict -----------------------------------------------------------
 #: Minimum before/after samples (ticks) for a verdict to even be rendered.
@@ -135,10 +140,27 @@ class BoundResult:
         return self.rate is not None
 
 
+def with_landing_headroom(rate: float | None, prev_rate: float | None,
+                          floor: float | None = None) -> float | None:
+    """Shave a DOWN landing so a measured carry never sits on the band edge.
+
+    Only descents are touched: an upward move is already bounded by the
+    ceiling and must not be made to undershoot. `floor` is re-applied after
+    the shave so the headroom can never violate the plan floor.
+    """
+    if rate is None or prev_rate is None or rate >= prev_rate:
+        return rate
+    rate *= (1.0 - LANDING_HEADROOM_FRAC)
+    if floor is not None:
+        rate = max(rate, floor)
+    return rate
+
+
 def bound_rate_change(prev_rate: float | None, want_rate: float,
                       now: float, last_change_t: float | None,
                       drop_rate_per_s: float = 0.0,
-                      delay_emergency: bool = False) -> BoundResult:
+                      delay_emergency: bool = False,
+                      landing: bool = False) -> BoundResult:
     """Whether and how far the parent rate may move, before it is applied.
 
     Order of law: first the dwell (unless emergency), then the step
@@ -149,6 +171,13 @@ def bound_rate_change(prev_rate: float | None, want_rate: float,
     applies only to DOWN moves: the dwell is skipped and the step bound is
     bypassed entirely — landing below the current rate cannot overshoot or
     grow a queue, which is what the step bound exists to prevent going up.
+
+    `landing` skips the dwell (only) for a corrective landing that may sit a
+    hair ABOVE the applied rate. The overshoot branch returns the wire's own
+    carry; after a ramp-down the carry can be 0.1-2% over the applied while
+    still inside the end-band, and the 5 s dwell deferred it past the 8 s
+    landing budget (s2b_ramp_100to30 seeds 1004/1007). It is not a new probe:
+    the ceiling and step bounds still apply.
     """
     emergency = drop_rate_per_s >= EMERGENCY_DROP_RATE_PER_S
     if prev_rate is None:
@@ -157,7 +186,7 @@ def bound_rate_change(prev_rate: float | None, want_rate: float,
                       and want_rate < prev_rate)
     if last_change_t is not None:
         dwelled = (now - last_change_t) >= MIN_DWELL_S
-        if not dwelled and not (emergency or down_emergency):
+        if not dwelled and not (emergency or down_emergency or landing):
             return BoundResult(None, "dwell window not elapsed", False)
     step_frac = MAX_RATE_STEP_FRAC * (EMERGENCY_STEP_MULT if emergency else 1.0)
     max_step = max(prev_rate * step_frac, 0.0)

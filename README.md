@@ -21,7 +21,7 @@ in this file may not improve on what it prints.
 | **Enforcement status** | **Verified** — testbed gate **20 PASS + 1 MEASURED, 0 FAIL**. |
 | **Controller status** | **96 / 100 PASS, 0 SKIP** on the 2026-11-01 DEV band at `19e9e8a5`; the four misses are diagnosed and fixed in `1ee8e57d`; the confirming full-band re-run started 2026-11-01 19:31. |
 | **Final acceptance band** | **Not run** — gated on the DEV verdict and a frozen constant set. |
-| **Tests** | **1566 run, 0 failed, 10 skipped** (live-kernel tests that need `iproute2`). |
+| **Tests** | **1576 run, 0 failed, 10 skipped** (live-kernel tests that need `iproute2`). |
 | **Lease result** | **+27.46 % to +28.92 % (mean +28.13 %)** for the leased device on a saturated 10 Mbps link, 7 paired seeds, exact paired Wilcoxon **p = 0.015625**. |
 | **Best claim that is actually supported** | The enforcement stack removes pfifo bufferbloat under a capacity drop; the lease mechanism delivers a measurable, significant redistribution; the round-3 controller lands and climbs inside declared bounds. |
 | **Claims that are NOT made** | Superiority over a tuned CAKE; any p99 advantage; device identity beyond source IP; per-flow fairness; the final band. |
@@ -398,7 +398,7 @@ Source: [`docs/PROJECT_REPORT.md`](docs/PROJECT_REPORT.md).
 | Number | Produced by | Stored in |
 |---|---|---|
 | Gate 20 PASS / 1 MEASURED | `testbed/gate.sh` | `data/live_status_round3/dev_gate.log` |
-| 1566 tests, 0 failed | `python3 -m unittest discover -s tests -t .` | terminal / `artifacts/validation/` |
+| 1576 tests, 0 failed | `python3 -m unittest discover -s tests -t .` | terminal / `artifacts/validation/` |
 | DEV verdict 96/100 | `tools/verify_round3.py data/runs_dev3` | `data/live_status_round3/dev_verify.log` |
 | Per-shape means ± CI | `tools/build_report.py` over `data/runs_dev3` | `data/experiments/RESULTS_DEV3.md` |
 | 7-seed latency medians (A/B/C) | workload-measured `call.json` / `game.json`, median over seeds | `data/host_gate_*` (revision `c5da3fd9`) |
@@ -444,7 +444,7 @@ Requires Linux with `iproute2`, `python3` (≥ 3.11) and root for the testbed. T
 unit suite needs neither root nor `tc`.
 
 ```bash
-# unit / integration tests (1566; 10 live-kernel tests skip without iproute2)
+# unit / integration tests (1576; 10 live-kernel tests skip without iproute2)
 python3 -m unittest discover -s tests -t .
 
 # lint
@@ -511,7 +511,7 @@ aciq/                 the system
   experiment.py M6    run sequencing and artefacts
   report.py     M10   Markdown report with per-percentile verdicts
 aciqctl               M7/M8  intent API + dashboard
-tests/                1566 tests; live-kernel ones skip without iproute2
+tests/                1576 tests; live-kernel ones skip without iproute2
 testbed/              namespaces, gate, workloads, round-3 batch runner
 tools/                verifier, reports, analysis, claim audit
 docs/                 design, evidence, gap closure, limitations

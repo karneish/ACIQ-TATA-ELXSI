@@ -118,6 +118,19 @@ CLEAR_THRESHOLD_MS = 10.0
 #: Sustained-clear seconds required before the rate may be allowed to rise.
 HOLD_CLEAR_S = 10.0
 
+#: Seconds a sustained shortfall must hold before it may land. The 100->30
+#: ramp's end-band was crossed at t=30 but the estimator's ceiling did not
+#: fall into it until t=44; the tree's own deliver signal (overlimit or a
+#: saturated belief) was already there at t=33.8. Three clear seconds is the
+#: shortest window that is not a single drain transient.
+SHORTFALL_HOLD_S = 3.0
+#: A light tick (the shaper's own gap) must not restart the window.
+SHORTFALL_GAP_S = 2.0
+#: The wire must carry less than this fraction of the applied rate for the
+#: shortfall to count. Under-demand alone is not a drop -- the saturation
+#: witness separates them.
+SHORTFALL_CARRY_FRAC = 0.98
+
 #: Fraction of the applied rate removed per ratchet step while delay is
 #: inflated. The law's 5 s dwell makes this the effective pace floor-bound;
 #: the law's own 25% step (50% under emergency drops) still caps every
@@ -446,6 +459,12 @@ class RateGovernor:
         # tracker lets one light tick through without restarting the hold.
         self._demand_since: float | None = None
         self._demand_gap_since: float | None = None
+        # Sustained-shortfall window: the clear delay plus the tree's own
+        # deliver signal (saturated belief or overlimit) says the applied
+        # rate is above what the path can carry, even while the ceiling
+        # still lags. Round 7 (s2b_ramp_100to30 seed1003).
+        self._shortfall_since: float | None = None
+        self._shortfall_gap_since: float | None = None
         # Probe overshoot state: the highest rate known to have survived a
         # full window without inflation, the cap probes may not exceed after
         # a backoff, and the block deadline itself.
@@ -600,6 +619,37 @@ class RateGovernor:
         held_demand = (self._demand_since is not None
                        and (now - self._demand_since) >= cfg.probe_hold_s)
 
+        # ------------------------------------------------ shortfall window
+        # Clear delay, a wire carrying less than we authorise, and the
+        # tree's OWN saturation witness. Under-demand alone looks the same
+        # (a healthy bulk rides at 0.89-0.96x applied), so the witness is
+        # required: a saturated belief or a real overlimit count means the
+        # path is dropping what we send, i.e. the applied rate is the
+        # problem, not the source's appetite. The gap grace keeps one light
+        # tick from restarting the window.
+        saturated_witness = (bool(belief_saturated)
+                             or (tree_overlimit_per_s is not None
+                                 and tree_overlimit_per_s
+                                 >= cfg.probe_overlimit_min))
+        shortfall_ok = (clear and applied is not None and applied > 0.0
+                        and delivered is not None
+                        and delivered < applied * SHORTFALL_CARRY_FRAC
+                        and saturated_witness)
+        if shortfall_ok:
+            if self._shortfall_since is None:
+                self._shortfall_since = now
+            self._shortfall_gap_since = None
+        elif self._shortfall_since is not None:
+            if self._shortfall_gap_since is None:
+                self._shortfall_gap_since = now
+            if inflating or (
+                    (now - self._shortfall_gap_since) > SHORTFALL_GAP_S):
+                self._shortfall_since = None
+                self._shortfall_gap_since = None
+        held_shortfall = (self._shortfall_since is not None
+                          and (now - self._shortfall_since)
+                          >= SHORTFALL_HOLD_S)
+
         # ------------------------------------------------ probe survivors
         # A probe rise that has lived clear for a full window promotes itself
         # to known-good and lifts the overshoot cap: the climb may continue.
@@ -667,6 +717,7 @@ class RateGovernor:
             cfg, applied=applied, ceiling=ceiling,
             inflating=inflating, held_clear=held_clear, clear=clear,
             held_demand=held_demand, demand_ok=demand_ok,
+            held_shortfall=held_shortfall,
             delivered=delivered,
             offered=offered, min_rate=min_rate, budget_left=budget_left,
             delay_ema=self._delay_ema, emerg_free=emerg_free, now=now,
@@ -723,6 +774,7 @@ class RateGovernor:
 
     def _decide(self, cfg: GovernorConfig, *, applied, ceiling,
                 inflating, held_clear, clear, held_demand, demand_ok,
+                held_shortfall: bool = False,
                 delivered, offered, min_rate, budget_left, delay_ema,
                 emerg_free: bool, now: float = 0.0,
                 belief_conf: float | None = None,
@@ -955,6 +1007,29 @@ class RateGovernor:
             return rate, (f"delay inflated {delay_ema:.1f} ms > "
                           f"{cfg.inflation_threshold_ms:.0f} ms: "
                           f"ratchet down one step"), False
+
+        # Round 7 (s2b_ramp_100to30 seed1003): the SUSTAINED SHORTFALL.
+        # The ramp ended at 30 Mbps at t=30, but the estimator's ceiling
+        # sat at 42.8 until t=38 and only entered the 33.0 band at t=44.
+        # The tree's own saturation flag was already true at t=33.8 while
+        # the wire carried 31.7 of the applied 33.45 and the delay was
+        # clear. Waiting for the ceiling here is waiting for a lagging
+        # witness; the saturated belief plus the wire's own carry is the
+        # drop evidence. Under-demand is excluded by the saturation witness
+        # (a healthy bulk rides at 0.89-0.96x applied without saturating),
+        # and by the drop regime (the belief has fallen materially).
+        if (held_shortfall and clear and not inflating
+                and belief_drop_regime and self._last_rise is None
+                and applied is not None and delivered is not None
+                and delivered < applied):
+            land = delivered
+            if min_rate is not None:
+                land = max(land, min_rate)
+            if land < applied:
+                return land, (f"wire carried {delivered:.1f} of applied "
+                              f"{applied:.1f} for "
+                              f"{SHORTFALL_HOLD_S:.0f} s while saturated: "
+                              f"land at the carry"), False
 
         # Round 3 (DEV-band retune, round3-params.md): the DEMAND PROBE.
         # Pipe-limited demand evidence held for a full window (delay clear,

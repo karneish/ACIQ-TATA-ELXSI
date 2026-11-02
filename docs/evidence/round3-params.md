@@ -621,3 +621,52 @@ inside the band. The up-lane overshoots (s7_rampup 109.12, s7_up_30to100
 - No up-lane landing value changes; no stress delivered ratio falls.
 - The whole band returns 100 PASS / 0 FAIL / 0 skips, or the two new
   mechanisms are falsified and retuned again.
+
+## Round 7 -- the four late ramp-down landings
+
+Measured. The dev band at `f9bd5a90` (300 cells) returned 96 PASS / 4 FAIL.
+All four failures were `s2b_ramp_100to30` late landings against the 8.0 s
+budget from the 30.0 Mbps ramp end (band top 33.0):
+
+| seed | held at | first in-band commit | why |
+|---|---|---|---|
+| 1003 | 33.45 from 31.4 s | 57.6 s | ceiling stayed 42.8 until 38.3 s and entered the band only at 44.0 s; the clear branch then held with `offered 32.0 does not demand it` |
+| 1004 | 33.12 at 38.0 s | 43.96 s | the landing was 0.12 above the 33.0 band top |
+| 1005 | 33.94 at 35.95 s | 41.72 s | the decision at 37.2 s already proposed 30.54; the 5 s dwell deferred it |
+| 1007 | 32.86 at 38.04 s | 38.04 s | in band, but the 4.6 s dwell since 32.29 pushed the commit 0.04 s past the budget |
+
+The causes are different: 1005/1007 are cadence, 1004 is rounding, 1003 is a
+lagging ceiling. Three mechanisms answer them; all three are confined to
+descents and leave the ceiling, step bound, floor and emergency cooldowns
+untouched.
+
+* `aciq/verifier.py`: `LANDING_HEADROOM_FRAC = 0.02`. Every DOWN landing is
+  shaved 2 % after the law permits it, so a carry measured at 33.121 becomes
+  32.46 -- inside the 33.0 band -- instead of sitting 0.121 above it. Up
+  moves are never shaved, and the plan floor is re-applied after the shave.
+* `aciq/harness.py`: a DOWN move whose delay EMA is above
+  `inflation_threshold_ms` (20 ms) skips the dwell for that tick only. A
+  lower rate cannot grow a queue, and the rise budget still paces upward
+  churn. The same tick also skips the shield's change window.
+* `aciq/harness.py`: a `probe overshoot` landing skips the dwell. The
+  overshoot branch returns the wire's own carry, which can sit a fraction
+  ABOVE the applied rate while still inside the end-band (32.29 -> 32.86);
+  that is a corrective landing, not a new probe. The step bound and ceiling
+  still apply.
+* `aciq/ratecap.py`: the sustained shortfall. Clear delay, the wire carrying
+  < `SHORTFALL_CARRY_FRAC` (0.98) of the applied rate, and the tree's own
+  saturation witness (a saturated belief or overlimit >= `probe_overlimit_min`)
+  held for `SHORTFALL_HOLD_S` (3.0 s) land at the carried rate. A single
+  light tick is tolerated for `SHORTFALL_GAP_S` (2.0 s). Under-demand alone
+  is explicitly excluded: a healthy bulk rides at 0.89-0.96x applied without
+  saturating, so the witness and the drop regime are both required.
+
+Not a new probe, not a threshold move: the 8.0 s budget, the 33.0 band, the
+0.50 delivered floor, `MIN_DWELL_S = 5.0`, `MAX_RATE_STEP_FRAC = 0.25` and
+the emergency cooldowns are unchanged.
+
+Predictions to falsify on the next dev band. Seed1003 lands at ~31.5 at
+t=37.1 (7.1 s); seed1004 lands at ~32.9 at t=36.9 (6.9 s); seed1005 lands
+30.54 at t=37.2 (7.2 s); seed1007 lands 32.86 at t=36.9 (6.9 s). All ten
+`s2b_ramp_100to30` seeds pass, and no other scenario's landing value or
+delivered ratio moves.

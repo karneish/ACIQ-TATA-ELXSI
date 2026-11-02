@@ -60,7 +60,7 @@ from .model import Lease, RatePlan, TrafficClass
 from .ratecap import INITIAL_PARENT_FRACTION, GovernorDecision, RateGovernor
 from .policy import build_plan, floor_total_mbps
 from .shield import Shield
-from .verifier import bound_rate_change
+from .verifier import bound_rate_change, with_landing_headroom
 from .controller import Controller
 from .tc import BARE_CLASS_ID, ROOT_CLASS_ID, render
 from .txn import Runner, TransactionManager
@@ -1239,10 +1239,26 @@ class Harness:
                 and want == prev_rate:
             return None, False
 
+        # Round 7 (s2b_ramp_100to30): a descent while the delay is inflating
+        # is already proved safe (a lower rate cannot grow a queue), and the
+        # 5 s dwell is what pushed seeds 1005/1007 past the 8 s landing
+        # budget. Skip it for THAT tick only; the upward churn the dwell
+        # exists to pace is untouched.
+        down_bypass = (prev_rate is not None and want < prev_rate
+                       and gov.delay_ema_ms is not None
+                       and gov.delay_ema_ms
+                       > self._governor.cfg.inflation_threshold_ms)
+        # The overshoot branch lands on the wire's own carry, which can sit
+        # a fraction ABOVE the applied rate while still inside the end-band;
+        # that is a corrective landing, not a new probe, and the dwell must
+        # not push it past the 8 s budget (seeds 1004/1007).
+        overshoot_landing = gov.reason.startswith("probe overshoot")
         bound = bound_rate_change(prev_rate, want, now,
                                   self._last_policy_change_t,
                                   drop_rate_per_s=measurement.drop_rate_per_s,
-                                  delay_emergency=gov.delay_emergency)
+                                  delay_emergency=(gov.delay_emergency
+                                                   or down_bypass),
+                                  landing=overshoot_landing)
         if not bound:
             # the budget's currency is real kernel change; the dwell refusal
             # means nothing reaches the tree, so the stamp goes back.
@@ -1252,7 +1268,11 @@ class Harness:
         # `applied` is what the law permitted to reach the tree. Every log
         # entry below records BOTH, so an evidence file can show a clamped
         # step as clamped, never as the estimator's own figure.
-        applied = bound.rate
+        # Round 7: a downward landing keeps 2% headroom under its target,
+        # so a measured carry that rounds onto the band edge (33.12 against
+        # a 33.0 top, seed1004) lands inside it. Upward moves untouched.
+        applied = with_landing_headroom(bound.rate, prev_rate,
+                                        self._governor_floor(cap.mbps))
         # Round 3: the descent-emergency that bought a one-commit landing
         # (drop-rate emergency, or the delay/collapse/severe descents) gets
         # the same fast track at the shield's change window. Refused only
@@ -1261,7 +1281,8 @@ class Harness:
         emergency_apply = (want is not None and prev_rate is not None
                            and want < prev_rate
                            and (bool(bound.emergency)
-                                or bool(gov.delay_emergency)))
+                                or bool(gov.delay_emergency)
+                                or down_bypass))
         # Round 3 (docs/evidence/round3-params.md, arm B1_AUTO): the
         # adaptive-CAKE baseline runs the IDENTICAL estimator/governor/law
         # chain; only what carries the rate differs. Instead of a four-class

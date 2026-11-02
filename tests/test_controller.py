@@ -21,9 +21,10 @@ import unittest
 
 from aciq.capacity import Measurement
 from aciq.controller import Controller, Phase
-from aciq.verifier import (BoardGuard, MAX_CONSECUTIVE_ROLLBACKS, MIN_DWELL_S,
+from aciq.verifier import (BoardGuard, LANDING_HEADROOM_FRAC,
+                           MAX_CONSECUTIVE_ROLLBACKS, MIN_DWELL_S,
                            MIN_RATE_MBPS, Verdict, bound_rate_change,
-                           timeline_verdict)
+                           timeline_verdict, with_landing_headroom)
 
 
 def m(t=0.0, goodput=20.0, drop=0.0, backlog=0, over=0.0) -> Measurement:
@@ -78,6 +79,48 @@ class TestRateLaw(unittest.TestCase):
     def test_downward_steps_are_steps_too(self):
         r = bound_rate_change(20.0, 2.0, now=200.0, last_change_t=1.0)
         self.assertEqual(r.rate, 15.0)   # -25% bound holds for decreases too
+
+    def test_a_landing_skips_the_dwell(self):
+        """Round 7: the overshoot landing may sit a hair above the applied
+        (32.29 -> 32.86 inside the 33.0 band); the 5 s dwell deferred it
+        past the 8 s ramp landing budget, seeds 1004/1007."""
+        r = bound_rate_change(32.29, 32.86, now=100.0,
+                              last_change_t=95.5, landing=True)
+        self.assertTrue(r)
+        self.assertEqual(r.rate, 32.86)
+        self.assertEqual(r.reason, "within step bound")
+        self.assertEqual(bound_rate_change(32.29, 60.0, now=100.0,
+                                           last_change_t=95.5,
+                                           landing=True).rate, 40.3625)
+
+    def test_a_normal_up_move_still_waits_for_the_dwell(self):
+        r = bound_rate_change(32.29, 32.86, now=100.0, last_change_t=95.5)
+        self.assertFalse(r)
+        self.assertEqual(r.reason, "dwell window not elapsed")
+
+
+class TestLandingHeadroom(unittest.TestCase):
+    """Round 7: a measured carry that lands ON the band edge is not inside it.
+
+    s2b_ramp_100to30 seed1004 landed 33.121 against a 33.0 top; the target
+    was the wire's own carry, so the fix is a small downward headroom, not
+    a different target. Upward moves and the floor are untouched.
+    """
+
+    def test_a_down_landing_keeps_headroom(self):
+        self.assertAlmostEqual(with_landing_headroom(33.121, 34.5),
+                               33.121 * (1.0 - LANDING_HEADROOM_FRAC))
+        self.assertLess(with_landing_headroom(33.121, 34.5), 33.0)
+        self.assertEqual(LANDING_HEADROOM_FRAC, 0.02)
+
+    def test_an_up_move_is_never_shaved(self):
+        self.assertEqual(with_landing_headroom(40.0, 33.0), 40.0)
+
+    def test_the_floor_still_wins(self):
+        self.assertEqual(with_landing_headroom(14.1, 40.0, floor=14.0), 14.0)
+
+    def test_no_previous_rate_means_no_headroom(self):
+        self.assertEqual(with_landing_headroom(20.0, None), 20.0)
 
 
 class TestVerdict(unittest.TestCase):

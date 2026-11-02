@@ -1184,7 +1184,10 @@ class TestRound6DownRegime(unittest.TestCase):
                       offered=36.8, now=12.0, min_rate=14.0,
                       tree_overlimit_per_s=3400.0)
         self.assertNotIn("demand-probe up", d.reason)
-        self.assertEqual(d.rate, applied)
+        # Round 7: a wire carrying 36.85 of 41.29 with the tree overlimit
+        # is the sustained-shortfall landing, not a hold. What this test
+        # forbids is the PIERCE, so the rate may only move DOWN.
+        self.assertLessEqual(d.rate, applied)
 
     def test_a_pending_pierce_is_held_on_a_clear_wire(self):
         """The first-up-shape rung: the pierce 17.14 -> 21.42 at t+1.1 s was
@@ -1374,3 +1377,77 @@ class TestRetune12(unittest.TestCase):
                       offered=109.1, now=20386.1, min_rate=14.0)
         self.assertTrue(d.reason.startswith("probe overshoot"))
         self.assertAlmostEqual(d.rate, 109.12, places=6)
+
+
+class TestSustainedShortfall(unittest.TestCase):
+    """Round 7: s2b_ramp_100to30 seed1003.
+
+    The ramp ended at 30 Mbps at t=30. The estimator's ceiling sat at 42.8
+    until t=38 and only entered the 33.0 band at t=44, so the bind branch
+    could not land. The CLEAR branch held at 33.45 with "offered 32.0 does
+    not demand it" while the wire carried 31.5 and the estimator's own
+    saturation flag was true. The trees's deliver signal (saturated belief
+    or overlimit) is the evidence the ceiling lags; three clear seconds of
+    it land at the carry, never below.
+    """
+
+    def _ramp_context(self, g: RateGovernor) -> None:
+        """One high-belief tick first: the drop regime needs a recent max."""
+        g.observe(belief=100.0, belief_conf=1.0, belief_saturated=True,
+                  applied=90.0, delivered=90.0, backlog_bytes=0,
+                  offered=90.0, now=0.0, min_rate=14.0,
+                  tree_overlimit_per_s=2500.0)
+
+    def _shortfall_tick(self, g: RateGovernor, now: float, *,
+                        saturated: bool = True, overlimit: float = 2500.0,
+                        delivered: float = 31.5):
+        return g.observe(belief=47.5, belief_conf=1.0,
+                         belief_saturated=saturated,
+                         applied=33.45, delivered=delivered,
+                         backlog_bytes=6056, offered=31.5, now=now,
+                         min_rate=14.0,
+                         tree_overlimit_per_s=overlimit)
+
+    def test_three_clear_seconds_land_at_the_carry(self):
+        g = gov()
+        self._ramp_context(g)
+        for t in (1.0, 2.0, 3.0):
+            d = self._shortfall_tick(g, t)
+            self.assertFalse(d.changed)
+        d = self._shortfall_tick(g, 4.0)
+        self.assertAlmostEqual(d.rate, 31.5, places=6)
+        self.assertIn("land at the carry", d.reason)
+        self.assertLessEqual(d.rate, 33.0)
+
+    def test_a_single_light_tick_does_not_restart_the_window(self):
+        """seed1003 has one overlimit=0 tick at t=39.5; the 3 s window must
+        survive it rather than wait another three seconds."""
+        g = gov()
+        self._ramp_context(g)
+        for t in (1.0, 2.0):
+            self._shortfall_tick(g, t)
+        self._shortfall_tick(g, 3.0, overlimit=0.0, saturated=False)
+        d = self._shortfall_tick(g, 4.0)
+        self.assertAlmostEqual(d.rate, 31.5, places=6)
+
+    def test_no_saturation_witness_is_under_demand_not_a_drop(self):
+        """A healthy bulk rides at 0.89-0.96x applied without saturating;
+        it must not ratchet the tree. Same numbers, no witness."""
+        g = gov()
+        self._ramp_context(g)
+        for t in (1.0, 2.0, 3.0, 4.0, 5.0):
+            d = self._shortfall_tick(g, t, saturated=False, overlimit=0.0)
+        self.assertEqual(d.rate, 33.45)
+        self.assertNotIn("land at the carry", d.reason)
+
+    def test_a_healthy_rising_link_is_not_a_drop_regime(self):
+        """The witness is present but the belief is at its recent maximum:
+        that is a probe on a healthy link, not a capacity fall."""
+        g = gov()
+        for t in range(0, 7):
+            d = g.observe(belief=40.0 + t, belief_conf=1.0,
+                          belief_saturated=True,
+                          applied=40.0, delivered=36.0,
+                          backlog_bytes=6056, offered=36.0, now=float(t),
+                          min_rate=14.0, tree_overlimit_per_s=2500.0)
+            self.assertFalse(d.reason.startswith("wire carried"))
