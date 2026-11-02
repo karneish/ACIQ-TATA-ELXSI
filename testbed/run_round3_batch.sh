@@ -32,7 +32,7 @@ cd "$(dirname "$0")/.."
 # report on the tree the band started from; the provenance step below refuses
 # to report if engine files were edited mid-run.
 # The label is the last revision that touched ENGINE paths, not merely HEAD:
-# a docs/demo commit after the engine freeze must not rename the engine the
+# a documentation commit after the engine freeze must not rename the engine the
 # band ran (the same pollution the pin exists to stop). Docs commits during
 # the run are still harmless; an engine edit trips the provenance step.
 RUN_HEAD="$(git rev-list -1 HEAD -- aciq tools run_experiments.py testbed \
