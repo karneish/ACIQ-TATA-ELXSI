@@ -670,3 +670,36 @@ t=37.1 (7.1 s); seed1004 lands at ~32.9 at t=36.9 (6.9 s); seed1005 lands
 30.54 at t=37.2 (7.2 s); seed1007 lands 32.86 at t=36.9 (6.9 s). All ten
 `s2b_ramp_100to30` seeds pass, and no other scenario's landing value or
 delivered ratio moves.
+
+## Round 8 -- one carry landing per descent (after the 2026-11-02 full dev band)
+
+The full DEV band at `e84778a9` ran all 300 cells at one engine revision. The
+gate judged 99/100 ACIQ shapes PASS. The one FAIL was not a late landing:
+`s2b_ramp_100to30` seed1001 landed at 29.37 Mbps at t=35.65 (inside the 8 s
+budget and the 33.0 band) and then kept descending to 14.27 Mbps:
+
+| t (s) | branch | applied -> landed |
+|---|---|---|
+| 35.65 | wire carried 30.0 of applied 33.5 for 3 s | 33.5 -> 30.0 |
+| 36.79 | wire carried 23.5 of applied 29.4 for 3 s | 29.4 -> 23.5 |
+| 42.24 | belief fell below applied: severe drop | 26.5 -> 21.1 |
+| 44.40 | wire carried 18.7 of applied 20.7 for 3 s | 20.7 -> 18.7 |
+| ... | ... | ... -> 14.27 |
+
+The cause is the Round 7 shortfall branch re-firing every hold window. A
+healthy bulk rides at 0.85-0.95x applied, so `delivered < applied` stays true
+forever and each fire chases the overhead down. The gate's delivered floor
+(0.50 of the 30 end truth) caught it; the landing-time check did not.
+
+Fix: the carry branch lands **at most once per descent**. `_shortfall_spent`
+is set when the branch lands, cleared only by a rise or by the shortfall
+window going away (a real re-drop after recovery). A zero carry is excluded
+explicitly -- an idle wire is no demand, not a drop, and landing at it would
+hit the 14.0 floor. `SHORTFALL_HOLD_S`, `SHORTFALL_GAP_S`,
+`SHORTFALL_CARRY_FRAC`, the 8.0 s budget, the 33.0 band and the 0.50 floor
+are unchanged.
+
+Predictions to falsify on the next full band: seed1001 holds at the first
+carry (~30.0) instead of ratcheting, the delivered ratio stays above 0.50,
+and the four Round 7 landings stay inside 8 s and the band. Two new unit
+tests pin the one-shot rule and the idle-wire exclusion (`TestSustainedShortfall`).

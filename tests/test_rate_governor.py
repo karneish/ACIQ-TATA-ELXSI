@@ -1451,3 +1451,38 @@ class TestSustainedShortfall(unittest.TestCase):
                           backlog_bytes=6056, offered=36.0, now=float(t),
                           min_rate=14.0, tree_overlimit_per_s=2500.0)
             self.assertFalse(d.reason.startswith("wire carried"))
+
+    def test_the_carry_lands_once_per_descent(self):
+        """The full dev band re-fired the carry branch every hold window:
+        seed1001 landed at 29.4, then 26, 21, 14 while the link stayed 30.
+        Delivered rides below applied even when healthy, so the branch must
+        not keep chasing it. One descent, one carry landing."""
+        g = gov()
+        self._ramp_context(g)
+        for t in (1.0, 2.0, 3.0):
+            self._shortfall_tick(g, t)
+        d = self._shortfall_tick(g, 4.0)
+        self.assertAlmostEqual(d.rate, 31.5, places=6)
+        for t in (5.0, 6.0, 7.0, 8.0, 9.0):
+            d = g.observe(belief=47.5, belief_conf=1.0,
+                          belief_saturated=True, applied=31.5,
+                          delivered=24.0, backlog_bytes=6056,
+                          offered=24.0, now=t, min_rate=14.0,
+                          tree_overlimit_per_s=2500.0)
+            self.assertFalse(d.reason.startswith("wire carried"),
+                             f"the carry branch fired twice: {d.reason}")
+            self.assertAlmostEqual(d.rate, 31.5, places=6)
+
+    def test_an_idle_wire_is_not_a_shortfall_landing(self):
+        """A zero carry is no demand, not a drop. Landing at it would hit
+        the floor and leave the tree half the truth."""
+        g = gov()
+        self._ramp_context(g)
+        for t in (1.0, 2.0, 3.0, 4.0):
+            d = g.observe(belief=47.5, belief_conf=1.0,
+                          belief_saturated=True, applied=14.3,
+                          delivered=0.0, backlog_bytes=0,
+                          offered=0.0, now=t, min_rate=14.0,
+                          tree_overlimit_per_s=2500.0)
+            self.assertFalse(d.reason.startswith("wire carried"))
+            self.assertAlmostEqual(d.rate, 14.3, places=6)

@@ -465,6 +465,12 @@ class RateGovernor:
         # still lags. Round 7 (s2b_ramp_100to30 seed1003).
         self._shortfall_since: float | None = None
         self._shortfall_gap_since: float | None = None
+        # A descent gets one carry landing. Re-firing every hold window
+        # chased the wire's own overhead down (dev seed1001: 29.4 -> 26 ->
+        # 21 -> 14 while the link was still 30) because delivered sits at
+        # 0.85-0.95x applied even when the link is healthy. Cleared by a rise
+        # or by the shortfall window going away.
+        self._shortfall_spent = False
         # Probe overshoot state: the highest rate known to have survived a
         # full window without inflation, the cap probes may not exceed after
         # a backoff, and the block deadline itself.
@@ -646,6 +652,7 @@ class RateGovernor:
                     (now - self._shortfall_gap_since) > SHORTFALL_GAP_S):
                 self._shortfall_since = None
                 self._shortfall_gap_since = None
+                self._shortfall_spent = False
         held_shortfall = (self._shortfall_since is not None
                           and (now - self._shortfall_since)
                           >= SHORTFALL_HOLD_S)
@@ -747,9 +754,12 @@ class RateGovernor:
                 if (self._last_rise is None
                         or rate > self._last_rise[1] * (1.0 + _EPS)):
                     self._last_rise = (now, rate)
+                    self._shortfall_spent = False
         elif applied is not None and rate is not None and rate < applied:
             # A descent is real change for the log; it never spends the
             # budget (see the ledger comment above).
+            if reason.startswith("wire carried "):
+                self._shortfall_spent = True
             changed = True
         elif applied is None and rate is not None:
             # Room states the first proposal as the ceiling it was; it does
@@ -1017,11 +1027,14 @@ class RateGovernor:
         # witness; the saturated belief plus the wire's own carry is the
         # drop evidence. Under-demand is excluded by the saturation witness
         # (a healthy bulk rides at 0.89-0.96x applied without saturating),
-        # and by the drop regime (the belief has fallen materially).
+        # and by the drop regime (the belief has fallen materially). It
+        # fires at most once per descent: re-firing chases that healthy
+        # overhead down, and a zero carry is an idle wire, not a drop.
         if (held_shortfall and clear and not inflating
                 and belief_drop_regime and self._last_rise is None
+                and not self._shortfall_spent
                 and applied is not None and delivered is not None
-                and delivered < applied):
+                and delivered > 0.0 and delivered < applied):
             land = delivered
             if min_rate is not None:
                 land = max(land, min_rate)

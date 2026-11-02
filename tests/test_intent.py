@@ -1641,12 +1641,13 @@ class TestS6ApiIntentFireOffline(unittest.TestCase):
     """
 
     def test_the_s6_intent_fires_grants_and_auto_reverts(self):
-        # The offline loop spends ~0.05 s of process time on 41 ticks, so a
-        # TTL of 15 real seconds can never expire inside it. The book takes
-        # a clock, and time dilation is consistent for creation AND sweep:
-        # monotonic x 1000 makes the lease age 1000x faster, so TTL 15
-        # emulates ~15 ms and expires a few ticks after the grant.
-        dilated = LeaseBook(clock=lambda: time.monotonic() * 1000.0)
+        # Drive the lease clock explicitly. Wall-clock dilation (monotonic
+        # x 1000) made the grant window ~15 ms, which a loaded machine can
+        # step over between the request and the next sample -- the audit
+        # flaked under load. The book sweeps on read, so advancing its clock
+        # past the TTL exercises the same expiry without depending on speed.
+        now = [0.0]
+        book = LeaseBook(clock=lambda: now[0])
         res = ExperimentRunner(
             launcher=_LiveishLauncher(),
             harness=Harness(runner=FakeRunner(auto_readback=True),
@@ -1655,7 +1656,7 @@ class TestS6ApiIntentFireOffline(unittest.TestCase):
             bridge_executor=_Exec()
         ).run("s6_intent_expire", ACIQ,
               api_intent=True, intent_at_s=1.0, intent_ttl_s=15.0,
-              book=dilated)
+              book=book)
         notes = " | ".join(res.notes)
         self.assertIn("GRANTED", notes,
                       f"the API intent must be granted: {notes}")
@@ -1663,7 +1664,8 @@ class TestS6ApiIntentFireOffline(unittest.TestCase):
         lease = [x.get("lease_active") for x in s
                  if x.get("lease_active") is not None]
         self.assertTrue(any(lease), "the granted lease must steer")
-        late = [x for x in s if x.get("t", 0) > 18.0]
-        self.assertTrue(
-            all(not x.get("lease_active") for x in late),
-            "the intent must revert by its own TTL")
+        now[0] = 16.0
+        self.assertEqual(book.active(), (),
+                         "the intent must revert by its own TTL")
+        self.assertIsNone(book.to_policy_lease(),
+                          "an expired lease must not steer the next tick")
