@@ -19,7 +19,7 @@ in this file may not improve on what it prints.
 | **What it is** | A Linux home-broadband data path: classify flows without payload, estimate the real link capacity from queue counters, plan per-class rates with floors, enforce with HTB + `fq_codel`, and grant time-boxed leases. |
 | **Where it runs** | A three-namespace testbed (`router`, `client`, `wan`) on a real kernel; the slow line is an HTB token-bucket shaper. |
 | **Enforcement status** | **Verified** — testbed gate **20 PASS + 1 MEASURED, 0 FAIL**. |
-| **Controller status** | **96 / 100 PASS, 0 SKIP** on the 2026-11-01 DEV band at `19e9e8a5`; the four misses are diagnosed and fixed in `1ee8e57d`; the confirming full-band re-run started 2026-11-01 19:31. |
+| **Controller status** | **100 / 100 PASS, 0 SKIP** on the 2026-11-02 DEV band at `912a6e2e` (300 cells; 100 round-3 ACIQ shapes judged with the corrected final-third window in `d7e930a9`); the one-shot final band is pending. |
 | **Final acceptance band** | **Not run** — gated on the DEV verdict and a frozen constant set. |
 | **Tests** | **1579 run, 0 failed, 10 skipped** (live-kernel tests that need `iproute2`). |
 | **Lease result** | **+27.46 % to +28.92 % (mean +28.13 %)** for the leased device on a saturated 10 Mbps link, 7 paired seeds, exact paired Wilcoxon **p = 0.015625**. |
@@ -135,7 +135,7 @@ simpler and would have lied about what is being emulated.
 | IPv6 filters, routes and teardown | **verified** | gate checks 13/18/19/20 |
 | Capacity drop enforced, no over-subscription | **verified on a kernel** | [`docs/gap-closure/capacity-drop-collision.md`](docs/gap-closure/capacity-drop-collision.md), [`docs/gap-closure/live-enforcement-validation.md`](docs/gap-closure/live-enforcement-validation.md) |
 | Lease lifecycle and measured benefit | **verified on a kernel**, p = 0.015625 | [`docs/limitations.md`](docs/limitations.md) §lease, [`docs/gap-closure/device-identity-and-leases.md`](docs/gap-closure/device-identity-and-leases.md) |
-| Controller landing / climb verdicts | **96/100 PASS on DEV**; final band pending | [`data/experiments/RESULTS_DEV3.md`](data/experiments/RESULTS_DEV3.md), [`data/live_status_round3/dev_verify.log`](data/live_status_round3/dev_verify.log) |
+| Controller landing / climb verdicts | **100/100 PASS on DEV** (2026-11-02, `912a6e2e`; corrected final-third window); final band pending | [`data/experiments/RESULTS_DEV3.md`](data/experiments/RESULTS_DEV3.md), [`data/experiments/dev_verify_round9.txt`](data/experiments/dev_verify_round9.txt) |
 | Capacity estimation, replay | **verified offline** | 100 → 45.97 → 24.38 → 15.41 → 12.15 → 10.86 Mbps against truth 10 |
 | Capacity estimation, end to end | **exercised live in round 3, not yet frozen** | applied tracks truth on the down shapes; final band pending |
 | Rollback against a real failing `tc` | **6 / 6** (earlier phase) | [`docs/PROJECT_REPORT.md`](docs/PROJECT_REPORT.md) |
@@ -294,10 +294,16 @@ Sources:
 - Frozen pre-wiring snapshot (not used above): `data/baselines/v0/` (integrity:
   `sha256sum -c SHA256SUMS`).
 
-### 4.2 The round-3 adaptive controller (DEV band, seeds 1000–1009)
+### 4.2 The round-3 adaptive controller (2026-11-01 DEV band, seeds 1000–1009 — historical)
 
 Ten shapes × ten seeds = **100 judged runs**, 2026-11-01 12:15–17:22
 (306 min), engine commit `19e9e8a5`.
+
+> Historical band. The current 2026-11-02 DEV band at `912a6e2e` judges
+> **100/100 PASS** with the corrected final-third window (`d7e930a9`); its
+> tables are in
+> [`data/experiments/RESULTS_DEV3.md`](data/experiments/RESULTS_DEV3.md).
+> The one-shot final band will replace this subsection.
 
 | Shape | Call p95 (ms) | Jitter (ms) | Loss (%) | Gate |
 |---|---|---|---|---|---|
@@ -336,7 +342,7 @@ allowed to launder a controller failure.
 > **Status of the re-run.** The full DEV band was re-launched on the fixed tree
 > at 19:31 on 2026-11-01 (all markers cleared, so every cell runs on one
 > commit). Its verdict lands in
-> [`data/live_status_round3/dev_verify.log`](data/live_status_round3/dev_verify.log);
+> [`data/experiments/dev_verify_round9.txt`](data/experiments/dev_verify_round9.txt);
 > per-cell progress is the set of `dev_cell_*.done` markers. The final band has
 > **not** run, and no final-band number appears anywhere in this repository.
 
@@ -399,7 +405,7 @@ Source: [`docs/PROJECT_REPORT.md`](docs/PROJECT_REPORT.md).
 |---|---|---|
 | Gate 20 PASS / 1 MEASURED | `testbed/gate.sh` | `data/live_status_round3/dev_gate.log` |
 | 1579 tests, 0 failed | `python3 -m unittest discover -s tests -t .` | terminal / `artifacts/validation/` |
-| DEV verdict 96/100 | `tools/verify_round3.py data/runs_dev3` | `data/live_status_round3/dev_verify.log` |
+| DEV verdict 100/100 (2026-11-02) | `tools/verify_round3.py data/runs_dev3` | `data/experiments/dev_verify_round9.txt` |
 | Per-shape means ± CI | `tools/build_report.py` over `data/runs_dev3` | `data/experiments/RESULTS_DEV3.md` |
 | 7-seed latency medians (A/B/C) | workload-measured `call.json` / `game.json`, median over seeds | `data/host_gate_*` (revision `c5da3fd9`) |
 | Scenario B re-derivation | `tools/reconcile_results.py` over `data/host_gate_congested_*` | `docs/gap-closure/reconciliation-congested.json` |
@@ -583,10 +589,11 @@ Because on a 10 Mbps link the call is not protected by a reserved EF lane the
 way the brief's scenario protects it; the gate judges the controller's landing,
 and the latency is reported as it was measured. Hiding it would be dishonest.
 
-**Why 96/100 and not 100?**
-Four cells failed on the first complete band. Each was traced to a mechanism,
-fixed, and covered by tests; the confirming re-run is in progress. The fixes
-were declared before the run, and the judge change alone rescues only one seed.
+**Why did earlier bands miss cells, and what does the current DEV band show?**
+The first complete band (2026-11-01) missed four cells; later bands exposed
+the Round 7 shortfall ratchet and the Round 9 final-third window truncation.
+Each was traced to a mechanism and pinned by a test. The 2026-11-02 DEV band
+at `912a6e2e` now judges **100/100 PASS**; the one-shot final band is pending.
 
 **Why are the A/B/C tables labelled “pre-round-3” and not “adaptive controller”?**
 Because they are the 7-seed stack at `c5da3fd9`, before the round-3 rate law. The
