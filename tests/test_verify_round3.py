@@ -11,7 +11,8 @@ from pathlib import Path
 from tools.verify_round3 import check_run
 
 
-def write_run(root, name, cfg, result, sink_lines=None, workloads=None):
+def write_run(root, name, cfg, result, sink_lines=None, workloads=None,
+              sinks=None):
     d = root / name
     d.mkdir(parents=True)
     (d / "config.json").write_text(json.dumps(cfg))
@@ -19,6 +20,9 @@ def write_run(root, name, cfg, result, sink_lines=None, workloads=None):
     if sink_lines is not None:
         (d / "bulk.sink.log").write_text(
             "bulk sink listening on :1\n" + "".join(sink_lines))
+    for label, lines in (sinks or {}).items():
+        (d / f"{label}.sink.log").write_text(
+            f"{label} sink listening on :1\n" + "".join(lines))
     if workloads is not None:
         (d / "workloads.json").write_text(json.dumps(workloads))
     return d
@@ -79,10 +83,22 @@ class TestRound3Gate(unittest.TestCase):
                                {"committed": True, "ok": True, "t": 5.0,
                                 "applied_state": {"classes": {
                                     "1:1": {"rate": 100.0}}}}]},
-                          workloads={"game": {}, "tv1": {}, "tv2": {},
-                                     "tv3": {}})
+                          workloads={"game": {"p95": 2.4,
+                                              "loss_ratio": 0.0},
+                                     "tv1": {"label": "video"},
+                                     "tv2": {"label": "video"},
+                                     "tv3": {"label": "video"}},
+                          sinks={"tv1": ["[tv1 sink] t=30.00 cum=0 bytes "
+                                         "inst=5.00 Mbps\n"],
+                                 "tv2": ["[tv2 sink] t=30.00 cum=0 bytes "
+                                         "inst=5.00 Mbps\n"],
+                                 "tv3": ["[tv3 sink] t=30.00 cum=0 bytes "
+                                         "inst=5.00 Mbps\n"]})
             verdict = check_run(d)
             self.assertIn("NOT APPLICABLE", verdict["stress_deliver"])
+            self.assertEqual(verdict["interactive_delivered_mbps"], 15.0)
+            self.assertEqual(verdict["game_p95_ms"], 2.4)
+            self.assertEqual(verdict["game_loss_pct"], 0.0)
 
     def test_up_run_fails_when_the_tree_never_climbed(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -445,6 +461,66 @@ class TestRound3Gate(unittest.TestCase):
                                       "inst=20.00 Mbps\n"])
             verdict = check_run(d)
             self.assertIn("FAILED", verdict["stress_deliver"])
+
+    def test_stress_window_is_the_run_final_third_not_the_commit_log_end(self):
+        """Same Round 9 truncation as UP: the last commit is at 20 s of a
+        60 s run, so a commit-cut window misses the delivered steady state.
+        The run's final third must be used for both applied and sink."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = write_run(Path(tmp), "s3_stress__aciq__seed1112",
+                          {"scenario": "s3_stress",
+                           "link_mbps": 100.0},
+                          {"governor": {"decisions": [{"t": 0.0}]},
+                           "samples": [{"t": 1.0}, {"t": 60.0}],
+                           "policy_change_log": [
+                               {"committed": True, "ok": True, "t": 10.0,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 80.0}}}},
+                               {"committed": True, "ok": True, "t": 20.0,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 80.0}}}}]},
+                          sink_lines=["[bulk sink] t=55.00 cum=0 bytes "
+                                      "inst=60.00 Mbps\n"])
+            verdict = check_run(d)
+            self.assertEqual(verdict["stress_deliver"], 0.75)
+
+    def test_ramp_down_sink_window_is_the_run_final_third(self):
+        """The ramp-down sink window has the same truncation risk; a held
+        tail with no later commit must still be measured at the run end."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = write_run(Path(tmp), "s2b_ramp__aciq__seed1112",
+                          {"scenario": "s2b_ramp_100to30",
+                           "link_mbps": 100.0, "ramp_at_s": 10.0,
+                           "ramp_duration_s": 20.0, "ramp_to_mbps": 30.0},
+                          {"governor": {"decisions": [{"t": 0.0}]},
+                           "samples": [{"t": 31.0}, {"t": 64.0}],
+                           "policy_change_log": [
+                               {"committed": True, "ok": True, "t": 31.0,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 29.0}}}},
+                               {"committed": True, "ok": True, "t": 40.0,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 29.0}}}}]},
+                          sink_lines=["[bulk sink] t=55.00 cum=0 bytes "
+                                      "inst=20.00 Mbps\n"])
+            verdict = check_run(d)
+            self.assertEqual(verdict["util_delivered"], 0.667)
+
+    def test_bulk_shape_with_no_frozen_law_fails_instead_of_guessing(self):
+        """s6_intent_expire has bulk but no capacity shape and is not the
+        stress lane. It must not silently inherit the stress law."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = write_run(Path(tmp), "s6_intent__aciq__seed1112",
+                          {"scenario": "s6_intent_expire",
+                           "link_mbps": 100.0},
+                          {"governor": {"decisions": [{"t": 0.0}]},
+                           "policy_change_log": [
+                               {"committed": True, "ok": True, "t": 10.0,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 80.0}}}}]},
+                          workloads={"bulk": {}})
+            verdict = check_run(d)
+            self.assertIn("unclassified", verdict["stress_deliver"])
 
 
 UP_PASS = "0.967"  # 58.0/60.0, the frozen landed-probe shape

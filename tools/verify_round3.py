@@ -87,11 +87,10 @@ RAMP_KEY = "ramp_down_landing"
 STRESS_KEY = "stress_deliver"
 
 
-def sink_last_third(run_dir: Path, lo: float, hi: float) -> float | None:
-    """Receiver-side last-third mean inst Mbps from the run's bulk sink log.
-    The +/− 1.5 s slack covers the sink-sampler phase offset against the
-    sampled series the window was cut from."""
-    f = run_dir / "bulk.sink.log"
+def sink_mean(f: Path, lo: float, hi: float) -> float | None:
+    """Mean of a sink sampler's inst Mbps inside the window. The +/− 1.5 s
+    slack covers the sink-sampler phase offset against the sampled series
+    the window was cut from."""
     if not f.exists():
         return None
     vals = []
@@ -103,6 +102,26 @@ def sink_last_third(run_dir: Path, lo: float, hi: float) -> float | None:
         if lo - 1.5 <= t <= hi + 1.5:
             vals.append(v)
     return statistics.fmean(vals) if vals else None
+
+
+def sink_last_third(run_dir: Path, lo: float, hi: float) -> float | None:
+    """Receiver-side last-third mean inst Mbps from the run's bulk sink."""
+    return sink_mean(run_dir / "bulk.sink.log", lo, hi)
+
+
+def run_window(result: dict, at: float = 0.0) -> tuple[float, float] | None:
+    """Final third of the RUN, from its sample timestamps.
+
+    A controller that holds its last rate emits no further commits, so a
+    window cut from the change log can end well before the run (the Round 9
+    bug). Every sink measurement -- up, stress and ramp-down -- must use the
+    run's own clock, not the last commit's."""
+    ts = sorted(float(s["t"]) for s in (result.get("samples") or [])
+                if isinstance(s.get("t"), (int, float))
+                and float(s["t"]) >= at)
+    if not ts:
+        return None
+    return ts[0] + (ts[-1] - ts[0]) * (2.0 / 3.0), ts[-1]
 
 
 def applied_series(result: dict) -> list[tuple[float, float]]:
@@ -164,12 +183,9 @@ def check_up(cfg: dict, result: dict, d: Path, drop_shape: str) -> dict:
     # The final third is the run's, not the change log's: a controller that
     # holds its last rate emits no more commits, so the commit window can end
     # well before the run and cut the steady state out of the measurement.
-    sample_ts = sorted(float(s["t"]) for s in (result.get("samples") or [])
-                       if isinstance(s.get("t"), (int, float))
-                       and float(s["t"]) >= at)
-    if sample_ts:
-        lo = sample_ts[0] + (sample_ts[-1] - sample_ts[0]) * (2.0 / 3.0)
-        hi = sample_ts[-1]
+    rw = run_window(result, at)
+    if rw is not None:
+        lo, hi = rw
     else:
         lo, hi = window_last_third(series)
     in_window = [v for t, v in series if lo <= t <= hi]
@@ -341,9 +357,12 @@ def check_down_ramp(cfg: dict, result: dict, d: Path) -> dict:
     for _t, r in pts:
         if r is not None:
             tail = r
-    series = [(t, v) for t, v in applied_series(result) if t >= ramp_end]
-    if series:
-        lo, hi = window_last_third(series)
+    rw = run_window(result, ramp_end)
+    if rw is None:
+        series = [(t, v) for t, v in applied_series(result) if t >= ramp_end]
+        rw = window_last_third(series) if series else None
+    if rw is not None:
+        lo, hi = rw
         dl = sink_last_third(d, lo, hi)
         delv = (dl / truth_end) if dl is not None else None
     else:
@@ -387,21 +406,67 @@ def check_stress(cfg: dict, result: dict, d: Path) -> dict:
     series = applied_series(result)
     if not commits or not series:
         return {STRESS_KEY: "FAILED: no committed change"}
-    lo, hi = window_last_third(series)
+    rw = run_window(result)
+    if rw is not None:
+        lo, hi = rw
+    else:
+        lo, hi = window_last_third(series)
     third = [v for t, v in series if lo <= t <= hi]
-    if not third:
-        return {STRESS_KEY: "FAILED: no applied series in the final third"}
-    applied = statistics.fmean(third)
+    if third:
+        applied = statistics.fmean(third)
+    else:
+        held = [v for t, v in series if t <= hi]
+        if not held:
+            return {STRESS_KEY: "FAILED: no applied rate in the final "
+                                "third"}
+        applied = held[-1]
     dl = sink_last_third(d, lo, hi)
     if dl is None or applied <= 0:
-        return {STRESS_KEY: "FAILED: no delivered stream in the final "
-                            "third"}
+        return {STRESS_KEY: "FAILED: no delivered bulk stream in the "
+                            "final third (bulk sink missing or empty)"}
     ratio = dl / applied
     if ratio < UP_UTIL_DELIVERED_MIN:
         return {STRESS_KEY: f"FAILED: delivered {dl:.2f} of applied "
                             f"{applied:.2f} = {ratio:.2f} below "
                             f"{UP_UTIL_DELIVERED_MIN:.2f}"}
     return {STRESS_KEY: round(ratio, 3), "commits": len(commits)}
+
+
+def check_interactive(d: Path, result: dict) -> dict:
+    """Report-only evidence for a shape with no bulk workload.
+
+    The bulk-delivery law is undefined without a bulk source: a video ladder
+    only offers its ladder rate, so delivered/applied cannot reach the bulk
+    threshold even on a perfect link. The gate records what the run did
+    (interactive delivered rate, game latency/loss) and leaves the verdict to
+    the workload reports -- exactly as the frozen contract says."""
+    names: dict = {}
+    wl = d / "workloads.json"
+    if wl.exists():
+        try:
+            names = json.loads(wl.read_text())
+        except (OSError, ValueError):
+            names = {}
+    rw = run_window(result)
+    lo, hi = rw if rw is not None else (0.0, 0.0)
+    total, seen = 0.0, False
+    for name in names:
+        if name == "bulk":
+            continue
+        v = sink_mean(d / f"{name}.sink.log", lo, hi)
+        if v is not None:
+            total += v
+            seen = True
+    out = {STRESS_KEY: "NOT APPLICABLE: no bulk workload "
+                       "(interactive-only shape; report-only)"}
+    if seen:
+        out["interactive_delivered_mbps"] = round(total, 2)
+    game = names.get("game") or {}
+    if isinstance(game.get("p95"), (int, float)):
+        out["game_p95_ms"] = game["p95"]
+    if isinstance(game.get("loss_ratio"), (int, float)):
+        out["game_loss_pct"] = round(game["loss_ratio"] * 100.0, 3)
+    return out
 
 
 def check_run(d: Path) -> dict:
@@ -418,15 +483,24 @@ def check_run(d: Path) -> dict:
     if cfg.get("drop_at_s") is not None:
         return check_down(cfg, result)
     wl = d / "workloads.json"
+    names: dict = {}
     if wl.exists():
         try:
             names = json.loads(wl.read_text())
         except (OSError, ValueError):
             names = {}
-        if "bulk" not in names:
-            return {STRESS_KEY: "NOT APPLICABLE: no bulk workload "
-                                "(interactive-only shape; report-only)"}
-    return check_stress(cfg, result, d)
+    if cfg.get("scenario") == "s3_tv_and_gaming" or (
+            wl.exists() and "bulk" not in names):
+        return check_interactive(d, result)
+    # Bulk shapes with no capacity change are judged by the stress law ONLY
+    # when they are declared stress lanes. s1 (isolation during call) has a
+    # bulk source and no capacity shape, so the same "deliver what you
+    # commit" law applies; s3_tv is interactive-only and was handled above.
+    if cfg.get("scenario") in ("s1_iso_during_call", "s3_stress"):
+        return check_stress(cfg, result, d)
+    return {STRESS_KEY: f"FAILED: unclassified shape "
+                        f"{cfg.get('scenario')!r} with a bulk workload; "
+                        "no frozen law"}
 
 
 def main(argv: list[str]) -> int:

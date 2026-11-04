@@ -752,3 +752,18 @@ Corrected gate: `130 PASS, 0 FAIL, 10 NOT APPLICABLE of 140`. Raw log
 100/100 PASS; the additional bulk shapes `s1`, `s2_wan_drop` and
 `s4_capacity_recovery` are 30/30. No final run was re-executed and no controller
 code changed; the 840 runs are exactly the final band's output.
+
+## Round 11 -- the stress/ramp sink window uses the run clock
+
+The Round 9 fix cut the UP delivered window from the run's samples rather
+than the change-log end. The stress and ramp-down lanes still cut theirs from
+the commit series, so a held tail (no further commits) shortened the measured
+window. The gate now uses `run_window()` for all three: the final third of
+the run's own sample timestamps. The applied rate in that window falls back
+to the last committed rate when no new commit landed. Verdicts are unchanged:
+dev 100/100, final 130/130 judgeable plus 10 report-only.
+
+The ten final `s3_tv_and_gaming` FAILs were the bulk stress law applied to a
+shape with no bulk source (`game` + `tv1`/`tv2`/`tv3`, no `bulk.sink.log`).
+They are `NOT APPLICABLE`/report-only; the full per-seed analysis is in
+`docs/evidence/final-s3tv-analysis.md`.

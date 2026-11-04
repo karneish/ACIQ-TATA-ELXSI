@@ -141,7 +141,8 @@ produced.
 
 Round-3 shapes: **100/100 PASS**. Additional shipped bulk shapes
 (`s1_iso_during_call`, `s2_wan_drop`, `s4_capacity_recovery`): **30/30 PASS**.
-The 10 `s3_tv_and_gaming` runs are report-only.
+The 10 `s3_tv_and_gaming` runs are report-only; per-seed evidence is in
+[`docs/evidence/final-s3tv-analysis.md`](evidence/final-s3tv-analysis.md).
 
 ## 5. What to run (privileged, ONE script, resumed freely)
 

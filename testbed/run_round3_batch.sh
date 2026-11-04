@@ -4,6 +4,7 @@
 #
 #   sudo env ACIQ_VENV=/home/mekarz/aciq-venv ./testbed/run_round3_batch.sh dev    # tuning band, seeds 1000-1009
 #   sudo env ACIQ_VENV=/home/mekarz/aciq-venv ./testbed/run_round3_batch.sh final  # FROZEN band, seeds 1100-1109
+#   sudo env ACIQ_VENV=/home/mekarz/aciq-venv ./testbed/run_round3_batch.sh s3tv   # diagnostic: re-run the 10 interactive-only cells only
 #
 # Only run `final` AFTER the agent has frozen constants from the dev band
 # (docs/evidence/round3-params.md: the final band runs ONCE, never for
@@ -53,6 +54,14 @@ s7_up_20to60 s7_up_30to100 s7_rampup_30to100 s7_down_100to15 s7_down_100to8 \
 s3_stress"
     ARMS="aciq b1_cake_cons b1_cake_auto"
     ;;
+  s3tv)
+    # DIAGNOSTIC ONLY -- never a band. Re-executes the ten s3_tv_and_gaming
+    # ACIQ seeds into a separate root so the frozen final artefacts are not
+    # touched. The verifier must report 10 NOT APPLICABLE, not 10 FAIL.
+    SEED0=1100; RUNS_DIR=data/runs_rerun_s3tv; EST_TOTAL=12  # minutes
+    SCENARIOS="s3_tv_and_gaming"
+    ARMS="aciq"
+    ;;
   final)
     SEED0=1100; RUNS_DIR=data/runs_final3; EST_TOTAL=840  # minutes
     # THE declared frozen band: every shipped scenario except s6_intent_expire
@@ -71,7 +80,7 @@ esac
 # The band's OWN seed range, labelled by its role. Passing the same range as
 # both --dev-seeds and --eval-seeds (the old line) duplicated every run under
 # two family names and printed a dev band as "primary band: EVAL".
-if [ "$BAND" = final ]; then
+if [ "$BAND" = final ] || [ "$BAND" = s3tv ]; then
   BAND_SEEDS=(--eval-seeds "${SEED0}-$((SEED0+9))")
 else
   BAND_SEEDS=(--dev-seeds "${SEED0}-$((SEED0+9))")
@@ -155,11 +164,13 @@ step provenance 1 sh -c '
   fi
 '
 
-# ---------- reports (disk only) ----------
-step report_band 2 "$PY" tools/build_report.py \
-  --runs-root "$RUNS_DIR" \
-  "${BAND_SEEDS[@]}" \
-  --out "data/experiments/RESULTS_$(echo $BAND | tr a-z A-Z)3.md"
+# ---------- reports (disk only; the diagnostic lane has no report) ----------
+if [ "$BAND" != s3tv ]; then
+  step report_band 2 "$PY" tools/build_report.py \
+    --runs-root "$RUNS_DIR" \
+    "${BAND_SEEDS[@]}" \
+    --out "data/experiments/RESULTS_$(echo $BAND | tr a-z A-Z)3.md"
+fi
 
 if [ "$BAND" = final ]; then
   # The every-run provenance check the FIX_REPORT binds to.
