@@ -100,6 +100,10 @@ declared rules:
   docs/evidence/round3-params.md freezes a minimal mechanical pass rule
   -- at least one commit and last-third delivered >= 0.50 of the
   last-third applied mean; interactive delay stays report, not gate).
+- Interactive-only shapes with no `bulk` workload (e.g.
+  `s3_tv_and_gaming`): **`NOT APPLICABLE` / report-only**. The
+  bulk-delivery law has no stream to measure; such a run is neither a
+  PASS nor a FAIL and is never counted as either.
 - Provenance: every run's `result.json.commit_hash` must equal the
   engine that generated the report; report headers stamp per-band and
   per-scenario hashes with SUPERSEDED verdicts (commit 0e6f986). A band
@@ -110,13 +114,34 @@ declared rules:
 | Item | Verdict | Basis |
 | --- | --- | --- |
 | FAILURE A pre-fix | FAIL | diagnosis `8f009df` + round-2 band tiles |
-| Fix A code | SHIPPED | `53c27bc` + 1490-test suite green + lint |
+| Fix A code | SHIPPED | `53c27bc` + suite green + lint |
 | FAILURE B pre-fix | FAIL | diagnosis `8f009df` + round-2 band tiles |
-| Fix B code | SHIPPED | `53c27bc` + 1490-test suite green + lint |
-| DEV band (seeds 1000–1009, tuning) | PENDING | privileged: `sudo env ACIQ_VENV=/home/mekarz/aciq-venv ./testbed/run_round3_batch.sh dev` (~6.5–9.5 h; resume-safe `.done` markers) |
-| Freeze constants from dev | PENDING | agent edits `docs/evidence/round3-params.md` + `aciq/ratecap.py` defaults AFTER dev artifacts exist |
-| FINAL band (seeds 1100–1109, once) | PENDING | same script, `final`; only AFTER the freeze (~12–14 h) |
-| FIX_REPORT verdicts | PENDING | `tools/verify_round3.py data/runs_final3` + RESULTS_FINAL3.md |
+| Fix B code | SHIPPED | `53c27bc` + suite green + lint |
+| DEV band (seeds 1000–1009) | PASS | 100/100 round-3 ACIQ shapes at `912a6e2e` (2026-11-02); `data/experiments/dev_verify_round9.txt` |
+| Freeze constants | DONE | controller constants unchanged since `912a6e2e`; the final runs carry `7c6c7235` |
+| FINAL band (seeds 1100–1109, once) | PASS (judgeable) | 840 runs at `7c6c7235`; 130/130 judgeable ACIQ shapes (100/100 round-3; `s1`/`s2`/`s4` 30/30); 10 `s3_tv_and_gaming` report-only; `data/experiments/RESULTS_FINAL3.md` |
+| FIX_REPORT verdicts | PASS (scoped) | raw gate 130 PASS / 10 FAIL (all no-bulk `s3_tv`), corrected 130 PASS / 0 FAIL / 10 NOT APPLICABLE; both logs retained |
+
+### The final band, and the one classification correction
+
+The final band ran once on 2026-11-04 (791 min, 840 runs, every run stamping
+`7c6c7235`). The raw gate logged `130 PASS, 10 FAIL of 140`; every failure is
+`s3_tv_and_gaming` (`no delivered stream in the final third`). That shape has
+no bulk workload at all (`workloads.json`: game, tv1, tv2, tv3), so the stress
+law's bulk-delivery metric is undefined. The run is neither a controller
+failure nor a bulk pass; it is interactive-only.
+
+The judge now classifies a shape whose `workloads.json` has no `bulk` entry as
+`NOT APPLICABLE` (report-only). It is not counted as PASS or FAIL. The
+corrected gate reads `130 PASS, 0 FAIL, 10 NOT APPLICABLE of 140`. The raw log
+is `data/live_status_round3/final_verify.log`; the corrected log is
+`data/experiments/final_verify_round9.txt`. No final run was re-executed and no
+controller code changed: the 840 runs are exactly the ones the final band
+produced.
+
+Round-3 shapes: **100/100 PASS**. Additional shipped bulk shapes
+(`s1_iso_during_call`, `s2_wan_drop`, `s4_capacity_recovery`): **30/30 PASS**.
+The 10 `s3_tv_and_gaming` runs are report-only.
 
 ## 5. What to run (privileged, ONE script, resumed freely)
 

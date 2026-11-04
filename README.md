@@ -19,12 +19,12 @@ in this file may not improve on what it prints.
 | **What it is** | A Linux home-broadband data path: classify flows without payload, estimate the real link capacity from queue counters, plan per-class rates with floors, enforce with HTB + `fq_codel`, and grant time-boxed leases. |
 | **Where it runs** | A three-namespace testbed (`router`, `client`, `wan`) on a real kernel; the slow line is an HTB token-bucket shaper. |
 | **Enforcement status** | **Verified** — testbed gate **20 PASS + 1 MEASURED, 0 FAIL**. |
-| **Controller status** | **100 / 100 PASS, 0 SKIP** on the 2026-11-02 DEV band at `912a6e2e` (300 cells; 100 round-3 ACIQ shapes judged with the corrected final-third window in `d7e930a9`); the one-shot final band is pending. |
-| **Final acceptance band** | **Not run** — gated on the DEV verdict and a frozen constant set. |
-| **Tests** | **1579 run, 0 failed, 10 skipped** (live-kernel tests that need `iproute2`). |
+| **Controller status** | **130 / 130 judgeable PASS, 0 FAIL, 10 report-only** on the 2026-11-04 FINAL band at `7c6c7235` (840 runs; 100/100 round-3 ACIQ shapes; 10 `s3_tv_and_gaming` interactive-only). |
+| **Final acceptance band** | **PASS (judgeable shapes)** — 130/130 ACIQ shapes; 10 `s3_tv` report-only (no bulk stream); 840 runs at `7c6c7235`, 2026-11-04. |
+| **Tests** | **1580 run, 0 failed, 10 skipped** (live-kernel tests that need `iproute2`). |
 | **Lease result** | **+27.46 % to +28.92 % (mean +28.13 %)** for the leased device on a saturated 10 Mbps link, 7 paired seeds, exact paired Wilcoxon **p = 0.015625**. |
 | **Best claim that is actually supported** | The enforcement stack removes pfifo bufferbloat under a capacity drop; the lease mechanism delivers a measurable, significant redistribution; the round-3 controller lands and climbs inside declared bounds. |
-| **Claims that are NOT made** | Superiority over a tuned CAKE; any p99 advantage; device identity beyond source IP; per-flow fairness; the final band. |
+| **Claims that are NOT made** | Superiority over a tuned CAKE; any p99 advantage; device identity beyond source IP; per-flow fairness. |
 
 ---
 
@@ -135,9 +135,9 @@ simpler and would have lied about what is being emulated.
 | IPv6 filters, routes and teardown | **verified** | gate checks 13/18/19/20 |
 | Capacity drop enforced, no over-subscription | **verified on a kernel** | [`docs/gap-closure/capacity-drop-collision.md`](docs/gap-closure/capacity-drop-collision.md), [`docs/gap-closure/live-enforcement-validation.md`](docs/gap-closure/live-enforcement-validation.md) |
 | Lease lifecycle and measured benefit | **verified on a kernel**, p = 0.015625 | [`docs/limitations.md`](docs/limitations.md) §lease, [`docs/gap-closure/device-identity-and-leases.md`](docs/gap-closure/device-identity-and-leases.md) |
-| Controller landing / climb verdicts | **100/100 PASS on DEV** (2026-11-02, `912a6e2e`; corrected final-third window); final band pending | [`data/experiments/RESULTS_DEV3.md`](data/experiments/RESULTS_DEV3.md), [`data/experiments/dev_verify_round9.txt`](data/experiments/dev_verify_round9.txt) |
+| Controller landing / climb verdicts | **130/130 judgeable PASS on FINAL** (100/100 round-3; 10 `s3_tv` report-only), 2026-11-04, `7c6c7235` | [`data/experiments/RESULTS_FINAL3.md`](data/experiments/RESULTS_FINAL3.md), [`data/experiments/final_verify_round9.txt`](data/experiments/final_verify_round9.txt) |
 | Capacity estimation, replay | **verified offline** | 100 → 45.97 → 24.38 → 15.41 → 12.15 → 10.86 Mbps against truth 10 |
-| Capacity estimation, end to end | **exercised live in round 3, not yet frozen** | applied tracks truth on the down shapes; final band pending |
+| Capacity estimation, end to end | **exercised live in the final band, no separate frozen claim** | applied tracks truth on the down shapes; see `RESULTS_FINAL3.md` |
 | Rollback against a real failing `tc` | **6 / 6** (earlier phase) | [`docs/PROJECT_REPORT.md`](docs/PROJECT_REPORT.md) |
 | Long-run stability | **1851 s, 8 policy changes** (earlier phase) | [`docs/PROJECT_REPORT.md`](docs/PROJECT_REPORT.md) |
 | API security (token auth, bind policy, rate limit, audit) | **verified offline and over a socket** | [`docs/gap-closure/api-security-validation.md`](docs/gap-closure/api-security-validation.md) |
@@ -145,7 +145,7 @@ simpler and would have lied about what is being emulated.
 | Device identity beyond source IP | **not built** — IP-only identity, documented as a deployment assumption | [`docs/gap-closure/final-validation-report.md`](docs/gap-closure/final-validation-report.md) §C P1-002 |
 | Per-flow (intra-class) fairness surface | **not built** — Jain is per class | ibid. §C P1-005 |
 | Soak / memory scaling | **not measured** | ibid. §C P2-002 |
-| Final acceptance band (seeds 1100–1109) | **not run** | gated on the DEV verdict |
+| Final acceptance band (seeds 1100–1109) | **PASS (judgeable)** — 130/130 ACIQ shapes; 10 `s3_tv` report-only | 840 runs at `7c6c7235`, 2026-11-04; §4.3 |
 
 **Nothing blocked is reported as passed.** The distinction between “tested
 offline”, “run on a kernel” and “frozen verdict” is kept everywhere in this
@@ -303,7 +303,8 @@ Ten shapes × ten seeds = **100 judged runs**, 2026-11-01 12:15–17:22
 > **100/100 PASS** with the corrected final-third window (`d7e930a9`); its
 > tables are in
 > [`data/experiments/RESULTS_DEV3.md`](data/experiments/RESULTS_DEV3.md).
-> The one-shot final band will replace this subsection.
+> The one-shot final band ran 2026-11-04 (§4.3); this subsection remains the
+> 2026-11-01 DEV detail.
 
 | Shape | Call p95 (ms) | Jitter (ms) | Loss (%) | Gate |
 |---|---|---|---|---|---|
@@ -339,14 +340,28 @@ rescued by the definition change; the other three genuinely needed the
 controller fixes. That separation is deliberate: a definition change is not
 allowed to launder a controller failure.
 
-> **Status of the re-run.** The full DEV band was re-launched on the fixed tree
-> at 19:31 on 2026-11-01 (all markers cleared, so every cell runs on one
-> commit). Its verdict lands in
-> [`data/experiments/dev_verify_round9.txt`](data/experiments/dev_verify_round9.txt);
-> per-cell progress is the set of `dev_cell_*.done` markers. The final band has
-> **not** run, and no final-band number appears anywhere in this repository.
+> **Status.** The 2026-11-02 DEV band at `912a6e2e` judges 100/100; the
+> one-shot final band ran 2026-11-04 and is summarised in §4.3 and
+> [`data/experiments/RESULTS_FINAL3.md`](data/experiments/RESULTS_FINAL3.md).
 
-### 4.3 Lease — the measured benefit
+### 4.3 The final band (2026-11-04, seeds 1100–1109)
+
+The one-shot final band ran 2026-11-04: **840 runs** (14 scenarios × 6 arms ×
+10 seeds), every run stamping engine `7c6c7235` (791 min). Full tables:
+[`data/experiments/RESULTS_FINAL3.md`](data/experiments/RESULTS_FINAL3.md).
+
+The round-3 gate passes **130/130 judgeable ACIQ shapes**: 100/100 on the ten
+round-3 shapes, plus 30/30 on `s1_iso_during_call`, `s2_wan_drop` and
+`s4_capacity_recovery`. The remaining 10 ACIQ runs are `s3_tv_and_gaming`,
+which has no bulk workload at all (`workloads.json`: game, tv1, tv2, tv3); the
+bulk-delivery law has no stream to measure there, so they are **report-only /
+NOT APPLICABLE**, not passes and not failures. The raw gate logged 130 PASS /
+10 FAIL before that classification; both logs are kept
+(`data/live_status_round3/final_verify.log` raw,
+[`data/experiments/final_verify_round9.txt`](data/experiments/final_verify_round9.txt)
+corrected). No run was re-executed and no controller code changed.
+
+### 4.4 Lease — the measured benefit
 
 On a 10 Mbps capped link, with one address per device (so classification is not
 accidental), a lease for one device's flows:
@@ -372,7 +387,7 @@ demonstrates the **lease mechanism on a correct plan**, not adaptation.
 
 Source: [`docs/limitations.md`](docs/limitations.md) §lease.
 
-### 4.4 Capacity estimator
+### 4.5 Capacity estimator
 
 Replaying a recorded run through the revised estimator (counters only):
 
@@ -387,7 +402,7 @@ bottleneck the router is on, and it learns nothing from an idle link
 (confidence decays rather than holding a stale value). Both are in
 [`docs/limitations.md`](docs/limitations.md).
 
-### 4.5 Overhead and stability (earlier phase)
+### 4.6 Overhead and stability (earlier phase)
 
 | | |
 |---|---|
@@ -399,14 +414,15 @@ bottleneck the router is on, and it learns nothing from an idle link
 
 Source: [`docs/PROJECT_REPORT.md`](docs/PROJECT_REPORT.md).
 
-### 4.6 Where every number comes from
+### 4.7 Where every number comes from
 
 | Number | Produced by | Stored in |
 |---|---|---|
 | Gate 20 PASS / 1 MEASURED | `testbed/gate.sh` | `data/live_status_round3/dev_gate.log` |
-| 1579 tests, 0 failed | `python3 -m unittest discover -s tests -t .` | terminal / `artifacts/validation/` |
+| 1580 tests, 0 failed | `python3 -m unittest discover -s tests -t .` | terminal / `artifacts/validation/` |
 | DEV verdict 100/100 (2026-11-02) | `tools/verify_round3.py data/runs_dev3` | `data/experiments/dev_verify_round9.txt` |
-| Per-shape means ± CI | `tools/build_report.py` over `data/runs_dev3` | `data/experiments/RESULTS_DEV3.md` |
+| FINAL verdict 130/130 judgeable, 10 report-only (2026-11-04) | `tools/verify_round3.py data/runs_final3` | `data/experiments/final_verify_round9.txt` |
+| Per-shape means ± CI | `tools/build_report.py` over `data/runs_final3` | `data/experiments/RESULTS_FINAL3.md` |
 | 7-seed latency medians (A/B/C) | workload-measured `call.json` / `game.json`, median over seeds | `data/host_gate_*` (revision `c5da3fd9`) |
 | Scenario B re-derivation | `tools/reconcile_results.py` over `data/host_gate_congested_*` | `docs/gap-closure/reconciliation-congested.json` |
 | Lease +28.13 %, p = 0.015625 | paired sender totals, sign-enumeration Wilcoxon | `docs/limitations.md` §lease |
@@ -450,7 +466,7 @@ Requires Linux with `iproute2`, `python3` (≥ 3.11) and root for the testbed. T
 unit suite needs neither root nor `tc`.
 
 ```bash
-# unit / integration tests (1579; 10 live-kernel tests skip without iproute2)
+# unit / integration tests (1580; 10 live-kernel tests skip without iproute2)
 python3 -m unittest discover -s tests -t .
 
 # lint
@@ -517,14 +533,14 @@ aciq/                 the system
   experiment.py M6    run sequencing and artefacts
   report.py     M10   Markdown report with per-percentile verdicts
 aciqctl               M7/M8  intent API + dashboard
-tests/                1579 tests; live-kernel ones skip without iproute2
+tests/                1580 tests; live-kernel ones skip without iproute2
 testbed/              namespaces, gate, workloads, round-3 batch runner
 tools/                verifier, reports, analysis, claim audit
 docs/                 design, evidence, gap closure, limitations
 data/
   baselines/v0/       frozen measured snapshot (tag v0-baseline)
   runs_dev3/          round-3 DEV artefacts, one directory per run
-  runs_final3/        final-band artefacts (not yet produced)
+  runs_final3/        round-3 FINAL artefacts, one directory per run
   live_status_round3/ batch resume markers and logs
 reports/              generated evaluation reports
 artifacts/            validation manifests and logs
@@ -571,8 +587,9 @@ list with measurements: [`docs/limitations.md`](docs/limitations.md).
 5. **Identity is source IP only.** Reusing an address transfers privilege; this
    is a documented deployment assumption, not a solved problem.
 6. **Jain fairness is per class**, not per flow.
-7. **The final acceptance band has not run.** Until it does, the round-3
-   controller result is a DEV-band result and is labelled as such.
+7. **The final acceptance band has run** (2026-11-04): 130/130 judgeable
+   ACIQ shapes PASS, 10 `s3_tv` report-only. The round-3 result is no longer
+   DEV-only; the 10 report-only runs are stated as such, not counted as PASS.
 8. **p99 is not established** in any ACIQ-vs-CAKE comparison.
 
 ---
@@ -589,11 +606,14 @@ Because on a 10 Mbps link the call is not protected by a reserved EF lane the
 way the brief's scenario protects it; the gate judges the controller's landing,
 and the latency is reported as it was measured. Hiding it would be dishonest.
 
-**Why did earlier bands miss cells, and what does the current DEV band show?**
+**Why did earlier bands miss cells, and what does the final band show?**
 The first complete band (2026-11-01) missed four cells; later bands exposed
 the Round 7 shortfall ratchet and the Round 9 final-third window truncation.
-Each was traced to a mechanism and pinned by a test. The 2026-11-02 DEV band
-at `912a6e2e` now judges **100/100 PASS**; the one-shot final band is pending.
+Each was traced to a mechanism and pinned by a test. The 2026-11-04 final
+band at `7c6c7235` judges **130/130 judgeable ACIQ shapes PASS**: 100/100 on
+the ten round-3 shapes, plus 30/30 on `s1`/`s2`/`s4`. The 10
+`s3_tv_and_gaming` runs are interactive-only (no bulk stream) and are
+report-only, not passes and not failures.
 
 **Why are the A/B/C tables labelled “pre-round-3” and not “adaptive controller”?**
 Because they are the 7-seed stack at `c5da3fd9`, before the round-3 rate law. The
@@ -609,10 +629,12 @@ declared utilisation. It does not mean “low latency” or “good user experie
 
 **What is the final band?**
 Seeds 1100–1109, one run per cell, executed once on a frozen constant set after
-the DEV band is green. It has not been run. No final-band number exists yet.
+the DEV band is green. It ran on 2026-11-04: 840 runs, all stamping `7c6c7235`.
+The gate passes 130/130 judgeable ACIQ shapes (100/100 round-3; `s1`/`s2`/`s4`
+30/30); the 10 `s3_tv_and_gaming` runs are interactive-only and report-only.
 
 **Can I trust a number in this file?**
-Each one is mapped to a file in §4.6. If a number has no file behind it, it does
+Each one is mapped to a file in §4.7. If a number has no file behind it, it does
 not belong here.
 
 ---

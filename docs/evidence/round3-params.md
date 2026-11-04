@@ -731,3 +731,24 @@ commit is pinned by
 
 Judged on the existing `912a6e2e` runs: 100/100 PASS. The final band runs the
 same controller at the new pin with this judge; nothing in `aciq/` changed.
+
+## Round 10 -- the final band and the interactive-only N/A
+
+The one-shot final band ran 2026-11-04 (791 min, 840 runs, every run stamping
+`7c6c7235`). The raw gate logged `130 PASS, 10 FAIL of 140`. All ten failures
+are `s3_tv_and_gaming`, each `no delivered stream in the final third`.
+
+That shape carries TV and game flows only: its `workloads.json` has game, tv1,
+tv2 and tv3, and no bulk. The stress law measures the receiver's bulk sink
+against the applied rate; with no bulk stream the metric is undefined, so the
+run is interactive-only, not a controller failure. The judge now marks a shape
+whose `workloads.json` has no `bulk` entry as `NOT APPLICABLE` (report-only).
+It is not counted as PASS or FAIL. A run with a bulk manifest but no sink still
+fails the stress law as before.
+
+Corrected gate: `130 PASS, 0 FAIL, 10 NOT APPLICABLE of 140`. Raw log
+`data/live_status_round3/final_verify.log`; corrected log
+`data/experiments/final_verify_round9.txt`. The 100 round-3 shapes are
+100/100 PASS; the additional bulk shapes `s1`, `s2_wan_drop` and
+`s4_capacity_recovery` are 30/30. No final run was re-executed and no controller
+code changed; the 840 runs are exactly the final band's output.

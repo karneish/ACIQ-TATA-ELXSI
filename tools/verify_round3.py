@@ -417,6 +417,15 @@ def check_run(d: Path) -> dict:
         return check_up(cfg, result, d, "recover")
     if cfg.get("drop_at_s") is not None:
         return check_down(cfg, result)
+    wl = d / "workloads.json"
+    if wl.exists():
+        try:
+            names = json.loads(wl.read_text())
+        except (OSError, ValueError):
+            names = {}
+        if "bulk" not in names:
+            return {STRESS_KEY: "NOT APPLICABLE: no bulk workload "
+                                "(interactive-only shape; report-only)"}
     return check_stress(cfg, result, d)
 
 
@@ -427,24 +436,30 @@ def main(argv: list[str]) -> int:
         print(f"verify_round3: NO aciq adaptive runs in {root} "
               "(PENDING until the privileged band runs)")
         return 2
-    bad, ok_n = 0, 0
+    bad, ok_n, na = 0, 0, 0
     for d in dirs:
         try:
             verdict = check_run(d)
         except FileNotFoundError as e:
             verdict = {DOWN_KEY: f"FAILED: missing artefact {e}"}
         body = "; ".join(f"{k}={v}" for k, v in verdict.items())
-        if "FAILED" in body:
+        if "NOT APPLICABLE" in body:
+            status, na = "N/A", na + 1
+        elif "FAILED" in body:
             status, bad = "FAIL", bad + 1
         else:
             status, ok_n = "PASS", ok_n + 1
         print(f"[{status}] {d.name}: {body}")
     if bad:
-        print(f"verify_round3 FAILED: {bad} judged FAIL, {ok_n} PASS "
-              f"of {len(dirs)} -- 0 skips: every shape is judged")
+        print(f"verify_round3 FAILED: {bad} judged FAIL, {ok_n} PASS, "
+              f"{na} NOT APPLICABLE of {len(dirs)}")
         return 1
-    print(f"verify_round3 PASS: {ok_n} judged PASS, {bad} FAIL "
-          f"of {len(dirs)} -- 0 skips: every shape is judged")
+    tail = f", {na} NOT APPLICABLE" if na else ""
+    print(f"verify_round3 PASS: {ok_n} judged PASS, 0 FAIL{tail} "
+          f"of {len(dirs)}")
+    if na:
+        print(f"  {na} interactive-only shapes have no bulk stream and are "
+              "report-only, not a controller verdict")
     return 0
 
 

@@ -11,7 +11,7 @@ from pathlib import Path
 from tools.verify_round3 import check_run
 
 
-def write_run(root, name, cfg, result, sink_lines=None):
+def write_run(root, name, cfg, result, sink_lines=None, workloads=None):
     d = root / name
     d.mkdir(parents=True)
     (d / "config.json").write_text(json.dumps(cfg))
@@ -19,6 +19,8 @@ def write_run(root, name, cfg, result, sink_lines=None):
     if sink_lines is not None:
         (d / "bulk.sink.log").write_text(
             "bulk sink listening on :1\n" + "".join(sink_lines))
+    if workloads is not None:
+        (d / "workloads.json").write_text(json.dumps(workloads))
     return d
 
 
@@ -62,6 +64,25 @@ class TestRound3Gate(unittest.TestCase):
             verdict = check_run(d)
             self.assertEqual(verdict["util_delivered"], 0.5)
             self.assertEqual(verdict["up_util_applied"], 1.0)
+
+    def test_interactive_only_shape_without_bulk_is_report_only(self):
+        """s3_tv_and_gaming carries TV/game flows and no bulk sink. The
+        bulk-delivery law is undefined there: report-only, never a FAIL."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = write_run(Path(tmp),
+                          "s3_tv_and_gaming__aciq__adaptive__seed1103",
+                          {"scenario": "s3_tv_and_gaming",
+                           "link_mbps": 100.0, "duration_s": 40.0},
+                          {"governor": {"decisions": [{"t": 0.0}]},
+                           "samples": [{"t": 1.0}, {"t": 39.0}],
+                           "policy_change_log": [
+                               {"committed": True, "ok": True, "t": 5.0,
+                                "applied_state": {"classes": {
+                                    "1:1": {"rate": 100.0}}}}]},
+                          workloads={"game": {}, "tv1": {}, "tv2": {},
+                                     "tv3": {}})
+            verdict = check_run(d)
+            self.assertIn("NOT APPLICABLE", verdict["stress_deliver"])
 
     def test_up_run_fails_when_the_tree_never_climbed(self):
         with tempfile.TemporaryDirectory() as tmp:
