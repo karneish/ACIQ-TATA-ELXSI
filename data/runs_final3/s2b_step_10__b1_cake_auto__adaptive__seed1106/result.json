@@ -1,0 +1,3807 @@
+{
+  "scenario": "s2b_step_10",
+  "system": "b1_cake_auto",
+  "capacity_mode": "adaptive",
+  "seed": 1106,
+  "link_start_mbps": 100.0,
+  "link_end_mbps": 10.0,
+  "capacity_change_applied": true,
+  "capacity_change_error": "",
+  "capacity_recovered": false,
+  "capacity_recover_to_mbps": null,
+  "capacity_ramp_to_mbps": null,
+  "capacity_ramp_duration_s": null,
+  "policy_change_log": [
+    {
+      "t": 17456.25,
+      "intended_capacity_mbps": 100.741,
+      "intended_parent_rate_mbps": 88.853,
+      "governor": {
+        "rate": 90.667,
+        "reason": "belief fell below applied: ceiling binds",
+        "ceiling_mbps": 90.667,
+        "delay_ema_ms": 0.73
+      },
+      "law_bound_reason": "within step bound",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 88.85300000000001,
+            "ceil": 88.85300000000001
+          },
+          "1:1": {
+            "rate": 88.85300000000001,
+            "ceil": 88.85300000000001
+          }
+        }
+      }
+    },
+    {
+      "t": 17461.58,
+      "intended_capacity_mbps": 93.837,
+      "intended_parent_rate_mbps": 125.0,
+      "governor": {
+        "rate": 125.0,
+        "reason": "demand-probe up: pipe-limited demand evidence (offered 89.5 >= 0.85x applied 100.0 for 5 s; step 0.25)",
+        "ceiling_mbps": 84.453,
+        "delay_ema_ms": 1.59
+      },
+      "law_bound_reason": "within step bound",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 125.0,
+            "ceil": 125.0
+          },
+          "1:1": {
+            "rate": 125.0,
+            "ceil": 125.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17462.67,
+      "intended_capacity_mbps": 93.837,
+      "intended_parent_rate_mbps": 82.764,
+      "governor": {
+        "rate": 84.453,
+        "reason": "belief fell below applied: severe drop landing 84.45 in one commit",
+        "ceiling_mbps": 84.453,
+        "delay_ema_ms": 5.81
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 82.764,
+            "ceil": 82.764
+          },
+          "1:1": {
+            "rate": 82.764,
+            "ceil": 82.764
+          }
+        }
+      }
+    },
+    {
+      "t": 17465.79,
+      "intended_capacity_mbps": 93.837,
+      "intended_parent_rate_mbps": 32.843,
+      "governor": {
+        "rate": 32.843,
+        "reason": "capacity collapse: ceiling 84.45 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 84.453,
+        "delay_ema_ms": 27.77
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 32.842,
+            "ceil": 32.842
+          },
+          "1:1": {
+            "rate": 32.842,
+            "ceil": 32.842
+          }
+        }
+      }
+    },
+    {
+      "t": 17466.83,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 49.19
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17467.87,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 47.41
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17468.92,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 53.01
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17469.96,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 52.3
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17471.02,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 57.47
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17472.06,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 64.2
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17473.1,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 59.24
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17474.14,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 53.9
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17475.18,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 56.12
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17476.24,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 63.33
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17477.27,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 63.33
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17478.33,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 58.79
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17479.37,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 61.31
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17480.41,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 58.45
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17481.44,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 54.68
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17482.48,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 51.43
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17483.52,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 55.67
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17484.58,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 62.57
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17485.63,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 70.32
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17486.68,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 68.99
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17487.73,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 63.75
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17488.77,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 58.39
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17489.81,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 52.64
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17490.85,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 56.96
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17491.89,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 54.9
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17492.93,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 57.74
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17493.98,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 57.03
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17495.03,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 28.52
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    },
+    {
+      "t": 17496.07,
+      "intended_capacity_mbps": 10.395,
+      "intended_parent_rate_mbps": 14.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ema_ms": 28.52
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "kernel_touched": true,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:50": {
+            "rate": 14.0,
+            "ceil": 14.0
+          },
+          "1:1": {
+            "rate": 14.0,
+            "ceil": 14.0
+          }
+        }
+      }
+    }
+  ],
+  "estimator_mbps": 10.39,
+  "samples": [
+    {
+      "t": 0.0,
+      "bottleneck_backlog_bytes": null,
+      "bottleneck_drop_rate_per_s": null,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 48448,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 11203862,
+        "tx_bytes": 11203862,
+        "drops": 0,
+        "overlimits": 143,
+        "backlog_bytes": 59046
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 416 rate 100Mbit\n Sent 83075572472 bytes 55661602 pkt (dropped 108199, overlimits 0 requeues 0) \n backlog 21196b 2p requeues 0",
+      "estimator_saturated": false,
+      "estimator_confidence": 0.0,
+      "fairness": null,
+      "cpu_fraction": 0.002167200091892942,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": null,
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 1.02,
+      "bottleneck_backlog_bytes": 6056,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 94.99957849861126,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 229.59496447951736,
+          "backlog_bytes": 60560,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 23410086,
+        "tx_bytes": 23410086,
+        "drops": 0,
+        "overlimits": 367,
+        "backlog_bytes": 60560
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 416 rate 100Mbit\n Sent 83088325548 bytes 55670068 pkt (dropped 108199, overlimits 0 requeues 0) \n backlog 27550b 3p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 0.0,
+      "fairness": 1.0,
+      "cpu_fraction": 0.002376181566213972,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 100.0,
+        "reason": "delay 0.5 ms between clear and inflation thresholds: hold",
+        "ceiling_mbps": null,
+        "delay_ms": 0.5,
+        "delay_ema_ms": 0.5,
+        "changed": false
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 2.09,
+      "bottleneck_backlog_bytes": 12112,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 95.16409321303227,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 206.18285323564783,
+          "backlog_bytes": 74186,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 36045070,
+        "tx_bytes": 36045070,
+        "drops": 0,
+        "overlimits": 580,
+        "backlog_bytes": 74186
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 416 rate 100Mbit\n Sent 83101568540 bytes 55678860 pkt (dropped 108199, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 0.2,
+      "fairness": 1.0,
+      "cpu_fraction": 0.003398809273287709,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 90.667,
+        "reason": "belief fell below applied: ceiling binds",
+        "ceiling_mbps": 90.667,
+        "delay_ms": 0.96,
+        "delay_ema_ms": 0.73,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 3.21,
+      "bottleneck_backlog_bytes": 3028,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 68130,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 10802746,
+        "tx_bytes": 10802746,
+        "drops": 0,
+        "overlimits": 196,
+        "backlog_bytes": 74186
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 416 rate 100Mbit\n Sent 83112622908 bytes 55686204 pkt (dropped 108199, overlimits 0 requeues 0) \n backlog 22710b 2p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 0.3,
+      "fairness": null,
+      "cpu_fraction": 0.006011160869574361,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 90.667,
+        "reason": "belief fell below applied: ceiling binds",
+        "ceiling_mbps": 90.667,
+        "delay_ms": 0.25,
+        "delay_ema_ms": 0.49,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 4.26,
+      "bottleneck_backlog_bytes": 13626,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 84.4364573954907,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 102.47131833722622,
+          "backlog_bytes": 63588,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 21926758,
+        "tx_bytes": 21926758,
+        "drops": 0,
+        "overlimits": 303,
+        "backlog_bytes": 63588
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 416 rate 100Mbit\n Sent 83123740864 bytes 55693590 pkt (dropped 108199, overlimits 0 requeues 0) \n backlog 10598b 1p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 0.4,
+      "fairness": 1.0,
+      "cpu_fraction": 0.005972986029681772,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 90.667,
+        "reason": "belief fell below applied: ceiling binds",
+        "ceiling_mbps": 90.667,
+        "delay_ms": 1.22,
+        "delay_ema_ms": 0.86,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 5.32,
+      "bottleneck_backlog_bytes": 10598,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 84.45933422717005,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 66.7269909804187,
+          "backlog_bytes": 72672,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 33002024,
+        "tx_bytes": 33002024,
+        "drops": 0,
+        "overlimits": 373,
+        "backlog_bytes": 72672
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 416 rate 100Mbit\n Sent 83134808560 bytes 55700942 pkt (dropped 108199, overlimits 0 requeues 0) \n backlog 19682b 3p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 0.5,
+      "fairness": 1.0,
+      "cpu_fraction": 0.0058601467934329314,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 90.667,
+        "reason": "belief fell below applied: ceiling binds",
+        "ceiling_mbps": 90.667,
+        "delay_ms": 0.96,
+        "delay_ema_ms": 0.91,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 6.37,
+      "bottleneck_backlog_bytes": 12112,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 84.19944590687889,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 223.96086436469022,
+          "backlog_bytes": 36336,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 44092728,
+        "tx_bytes": 44092728,
+        "drops": 0,
+        "overlimits": 606,
+        "backlog_bytes": 36336
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 416 rate 100Mbit\n Sent 83146003730 bytes 55708379 pkt (dropped 108199, overlimits 0 requeues 0) \n backlog 16654b 2p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 0.6,
+      "fairness": 1.0,
+      "cpu_fraction": 0.005901852193685646,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 125.0,
+        "reason": "demand-probe up: pipe-limited demand evidence (offered 88.7 >= 0.85x applied 100.0 for 5 s; step 0.25)",
+        "ceiling_mbps": 90.667,
+        "delay_ms": 1.09,
+        "delay_ema_ms": 1.0,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 7.43,
+      "bottleneck_backlog_bytes": 24224,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 84.56641368028538,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 237.03347942968352,
+          "backlog_bytes": 56018,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 55286384,
+        "tx_bytes": 55286384,
+        "drops": 0,
+        "overlimits": 857,
+        "backlog_bytes": 56018
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 416 rate 100Mbit\n Sent 83157537118 bytes 55716041 pkt (dropped 108199, overlimits 0 requeues 0) \n backlog 39364b 4p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 0.8,
+      "fairness": 1.0,
+      "cpu_fraction": 0.005884836187100862,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 125.0,
+        "reason": "demand-probe up: pipe-limited demand evidence (offered 89.5 >= 0.85x applied 100.0 for 5 s; step 0.25)",
+        "ceiling_mbps": 84.453,
+        "delay_ms": 2.17,
+        "delay_ema_ms": 1.59,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 8.51,
+      "bottleneck_backlog_bytes": 134746,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 4542,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 12773378,
+        "tx_bytes": 12773378,
+        "drops": 0,
+        "overlimits": 212,
+        "backlog_bytes": 3028
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 416 rate 100Mbit\n Sent 83170873084 bytes 55724892 pkt (dropped 108199, overlimits 0 requeues 0) \n backlog 42392b 28p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 0.9,
+      "fairness": null,
+      "cpu_fraction": 0.0062462889641293545,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 84.453,
+        "reason": "belief fell below applied: severe drop landing 84.45 in one commit",
+        "ceiling_mbps": 84.453,
+        "delay_ms": 10.04,
+        "delay_ema_ms": 5.81,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 9.58,
+      "bottleneck_backlog_bytes": 9084,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 65102,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 9981860,
+        "tx_bytes": 9981860,
+        "drops": 0,
+        "overlimits": 94,
+        "backlog_bytes": 65102
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 416 rate 100Mbit\n Sent 83180970008 bytes 55731602 pkt (dropped 108199, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": null,
+      "cpu_fraction": 0.006450107083641795,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 84.453,
+        "reason": "belief fell below applied: ceiling binds",
+        "ceiling_mbps": 84.453,
+        "delay_ms": 0.86,
+        "delay_ema_ms": 3.33,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 10.6,
+      "bottleneck_backlog_bytes": 10598,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 78.61732624653231,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 156.31125935952417,
+          "backlog_bytes": 45420,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 20040934,
+        "tx_bytes": 20040934,
+        "drops": 0,
+        "overlimits": 246,
+        "backlog_bytes": 45420
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 416 rate 100Mbit\n Sent 83190960952 bytes 55738242 pkt (dropped 108199, overlimits 0 requeues 0) \n backlog 10598b 1p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": 1.0,
+      "cpu_fraction": 0.006294220168913957,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 84.453,
+        "reason": "belief fell below applied: ceiling binds",
+        "ceiling_mbps": 84.453,
+        "delay_ms": 1.05,
+        "delay_ema_ms": 2.19,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 11.63,
+      "bottleneck_backlog_bytes": 75080,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 11.59214670290494,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1.9420375963308383,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 21533200,
+        "tx_bytes": 21533200,
+        "drops": 0,
+        "overlimits": 248,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83192317256 bytes 55739178 pkt (dropped 108199, overlimits 0 requeues 0) \n backlog 79622b 31p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": 1.0,
+      "cpu_fraction": 0.006138484721773492,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 32.843,
+        "reason": "capacity collapse: ceiling 84.45 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 84.453,
+        "delay_ms": 53.35,
+        "delay_ema_ms": 27.77,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 12.67,
+      "bottleneck_backlog_bytes": 91734,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1268492,
+        "tx_bytes": 1268492,
+        "drops": 0,
+        "overlimits": 1,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83193617840 bytes 55740078 pkt (dropped 108199, overlimits 0 requeues 0) \n backlog 78406b 35p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": null,
+      "cpu_fraction": 0.006185017513790938,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 70.6,
+        "delay_ema_ms": 49.19,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 13.71,
+      "bottleneck_backlog_bytes": 59642,
+      "bottleneck_drop_rate_per_s": 5.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.027757851954300312,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.9574314277835373,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1272116,
+        "tx_bytes": 1272116,
+        "drops": 0,
+        "overlimits": 1,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83194929916 bytes 55740988 pkt (dropped 108204, overlimits 0 requeues 0) \n backlog 59642b 23p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": 1.0,
+      "cpu_fraction": 0.006166815547269887,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 45.62,
+        "delay_ema_ms": 47.41,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 14.77,
+      "bottleneck_backlog_bytes": 76594,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 1514,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1266978,
+        "tx_bytes": 1266978,
+        "drops": 0,
+        "overlimits": 1,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83196233528 bytes 55741890 pkt (dropped 108204, overlimits 0 requeues 0) \n backlog 65996b 31p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": null,
+      "cpu_fraction": 0.006186317658468293,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 58.61,
+        "delay_ema_ms": 53.01,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 15.81,
+      "bottleneck_backlog_bytes": 67510,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.037094964494358014,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1270304,
+        "tx_bytes": 1270304,
+        "drops": 0,
+        "overlimits": 1,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83197559230 bytes 55742809 pkt (dropped 108204, overlimits 0 requeues 0) \n backlog 65698b 23p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": 1.0,
+      "cpu_fraction": 0.006235129238772743,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 51.6,
+        "delay_ema_ms": 52.3,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 16.87,
+      "bottleneck_backlog_bytes": 82650,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.043502848943709246,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1.8888003188480913,
+          "backlog_bytes": 1514,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1276062,
+        "tx_bytes": 1276062,
+        "drops": 0,
+        "overlimits": 4,
+        "backlog_bytes": 1514
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83198855272 bytes 55743706 pkt (dropped 108204, overlimits 0 requeues 0) \n backlog 82650b 31p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": 1.0,
+      "cpu_fraction": 0.00632414765876835,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 62.64,
+        "delay_ema_ms": 57.47,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 17.91,
+      "bottleneck_backlog_bytes": 92032,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1271520,
+        "tx_bytes": 1271520,
+        "drops": 0,
+        "overlimits": 2,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83200154342 bytes 55744605 pkt (dropped 108204, overlimits 0 requeues 0) \n backlog 93546b 34p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": null,
+      "cpu_fraction": 0.006304276641200835,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 70.93,
+        "delay_ema_ms": 64.2,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 18.94,
+      "bottleneck_backlog_bytes": 70538,
+      "bottleneck_drop_rate_per_s": 1.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1270304,
+        "tx_bytes": 1270304,
+        "drops": 0,
+        "overlimits": 1,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83201452494 bytes 55745505 pkt (dropped 108205, overlimits 0 requeues 0) \n backlog 62968b 31p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": null,
+      "cpu_fraction": 0.00628162952418137,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 54.29,
+        "delay_ema_ms": 59.24,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 19.98,
+      "bottleneck_backlog_bytes": 62968,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1265762,
+        "tx_bytes": 1265762,
+        "drops": 0,
+        "overlimits": 1,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83202758216 bytes 55746410 pkt (dropped 108205, overlimits 0 requeues 0) \n backlog 62670b 23p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": null,
+      "cpu_fraction": 0.006247751194420066,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 48.56,
+        "delay_ema_ms": 53.9,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 21.03,
+      "bottleneck_backlog_bytes": 76594,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.043916302726918315,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.953375797301978,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1271520,
+        "tx_bytes": 1271520,
+        "drops": 0,
+        "overlimits": 2,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83204074238 bytes 55747321 pkt (dropped 108205, overlimits 0 requeues 0) \n backlog 78108b 29p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": 1.0,
+      "cpu_fraction": 0.006287496131725312,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 58.34,
+        "delay_ema_ms": 56.12,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 22.08,
+      "bottleneck_backlog_bytes": 92074,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1268790,
+        "tx_bytes": 1268790,
+        "drops": 0,
+        "overlimits": 2,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83205370280 bytes 55748218 pkt (dropped 108205, overlimits 0 requeues 0) \n backlog 84Kb 39p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": null,
+      "cpu_fraction": 0.00631956812307892,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 70.53,
+        "delay_ema_ms": 63.33,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 23.12,
+      "bottleneck_backlog_bytes": null,
+      "bottleneck_drop_rate_per_s": 7.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.007068520936822235,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.9624892343167532,
+          "backlog_bytes": 1514,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1269708,
+        "tx_bytes": 1269708,
+        "drops": 0,
+        "overlimits": 1,
+        "backlog_bytes": 1514
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83206689074 bytes 55749131 pkt (dropped 108212, overlimits 0 requeues 0) \n backlog 69322b 34p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": 1.0,
+      "cpu_fraction": 0.006322309170403536,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": null,
+        "delay_ema_ms": 63.33,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 24.17,
+      "bottleneck_backlog_bytes": 71754,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.13264855557498562,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 1514,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1287256,
+        "tx_bytes": 1287256,
+        "drops": 0,
+        "overlimits": 2,
+        "backlog_bytes": 1514
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83207990254 bytes 55750033 pkt (dropped 108212, overlimits 0 requeues 0) \n backlog 69024b 26p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": 1.0,
+      "cpu_fraction": 0.0064240975264582435,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 54.26,
+        "delay_ema_ms": 58.79,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 25.21,
+      "bottleneck_backlog_bytes": 82650,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 1812,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1269750,
+        "tx_bytes": 1269750,
+        "drops": 0,
+        "overlimits": 2,
+        "backlog_bytes": 1514
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83209284782 bytes 55750929 pkt (dropped 108212, overlimits 0 requeues 0) \n backlog 78108b 34p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": null,
+      "cpu_fraction": 0.006420058437382595,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 63.83,
+        "delay_ema_ms": 61.31,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 26.25,
+      "bottleneck_backlog_bytes": 72052,
+      "bottleneck_drop_rate_per_s": 1.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.9638206637565013,
+          "backlog_bytes": 1514,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1266978,
+        "tx_bytes": 1266978,
+        "drops": 0,
+        "overlimits": 3,
+        "backlog_bytes": 1514
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83210582338 bytes 55751827 pkt (dropped 108213, overlimits 0 requeues 0) \n backlog 69024b 31p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": null,
+      "cpu_fraction": 0.006410663749300065,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 55.59,
+        "delay_ema_ms": 58.45,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 27.29,
+      "bottleneck_backlog_bytes": 65996,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.002297961528360287,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1.9278200741277574,
+          "backlog_bytes": 1514,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1267276,
+        "tx_bytes": 1267276,
+        "drops": 0,
+        "overlimits": 5,
+        "backlog_bytes": 1514
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83211880490 bytes 55752727 pkt (dropped 108213, overlimits 0 requeues 0) \n backlog 61156b 27p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": 1.0,
+      "cpu_fraction": 0.006375119011999289,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 50.91,
+        "delay_ema_ms": 54.68,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 28.32,
+      "bottleneck_backlog_bytes": 62670,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.02331758372881053,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1270304,
+        "tx_bytes": 1270304,
+        "drops": 0,
+        "overlimits": 2,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83213178344 bytes 55753626 pkt (dropped 108213, overlimits 0 requeues 0) \n backlog 62670b 23p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": 1.0,
+      "cpu_fraction": 0.0063814264191219255,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 48.18,
+        "delay_ema_ms": 51.43,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 29.36,
+      "bottleneck_backlog_bytes": 78108,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1.9255055502721687,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1265464,
+        "tx_bytes": 1265464,
+        "drops": 0,
+        "overlimits": 4,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83214507992 bytes 55754546 pkt (dropped 108213, overlimits 0 requeues 0) \n backlog 75080b 29p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": null,
+      "cpu_fraction": 0.006357206415882939,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 59.9,
+        "delay_ema_ms": 55.67,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 30.43,
+      "bottleneck_backlog_bytes": 91734,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.07066330669489372,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1274846,
+        "tx_bytes": 1274846,
+        "drops": 0,
+        "overlimits": 1,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83215822500 bytes 55755456 pkt (dropped 108213, overlimits 0 requeues 0) \n backlog 90518b 34p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": 1.0,
+      "cpu_fraction": 0.006395508427521258,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 69.47,
+        "delay_ema_ms": 62.57,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 31.48,
+      "bottleneck_backlog_bytes": 102630,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.9521722507335947,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1273034,
+        "tx_bytes": 1273034,
+        "drops": 0,
+        "overlimits": 2,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83217129438 bytes 55756361 pkt (dropped 108214, overlimits 0 requeues 0) \n backlog 92032b 41p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": null,
+      "cpu_fraction": 0.006428880785102575,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 78.07,
+        "delay_ema_ms": 70.32,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 32.52,
+      "bottleneck_backlog_bytes": 88706,
+      "bottleneck_drop_rate_per_s": 14.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1271222,
+        "tx_bytes": 1271222,
+        "drops": 0,
+        "overlimits": 2,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83218442134 bytes 55757269 pkt (dropped 108227, overlimits 0 requeues 0) \n backlog 81434b 37p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": null,
+      "cpu_fraction": 0.0064519487490381664,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 67.65,
+        "delay_ema_ms": 68.99,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 33.57,
+      "bottleneck_backlog_bytes": 76594,
+      "bottleneck_drop_rate_per_s": 3.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 1514,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1268790,
+        "tx_bytes": 1268790,
+        "drops": 0,
+        "overlimits": 2,
+        "backlog_bytes": 1514
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83219741842 bytes 55758171 pkt (dropped 108230, overlimits 0 requeues 0) \n backlog 67510b 31p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": null,
+      "cpu_fraction": 0.0064632933125559665,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 58.52,
+        "delay_ema_ms": 63.75,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 34.61,
+      "bottleneck_backlog_bytes": 68726,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1.925124739347776,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1268790,
+        "tx_bytes": 1268790,
+        "drops": 0,
+        "overlimits": 3,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83221039696 bytes 55759070 pkt (dropped 108230, overlimits 0 requeues 0) \n backlog 60Kb 27p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": null,
+      "cpu_fraction": 0.006451846299948961,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 53.02,
+        "delay_ema_ms": 58.39,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 35.65,
+      "bottleneck_backlog_bytes": 61156,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 1514,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1266978,
+        "tx_bytes": 1266978,
+        "drops": 0,
+        "overlimits": 2,
+        "backlog_bytes": 1514
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83222340578 bytes 55759971 pkt (dropped 108230, overlimits 0 requeues 0) \n backlog 64482b 24p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": null,
+      "cpu_fraction": 0.00643133832475052,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 46.89,
+        "delay_ema_ms": 52.64,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 36.69,
+      "bottleneck_backlog_bytes": 79622,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.011654907309121356,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1268492,
+        "tx_bytes": 1268492,
+        "drops": 0,
+        "overlimits": 2,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83223642974 bytes 55760873 pkt (dropped 108230, overlimits 0 requeues 0) \n backlog 72052b 35p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": 1.0,
+      "cpu_fraction": 0.0064258300544493266,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 61.29,
+        "delay_ema_ms": 56.96,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 37.73,
+      "bottleneck_backlog_bytes": 68726,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 1514,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1267276,
+        "tx_bytes": 1267276,
+        "drops": 0,
+        "overlimits": 1,
+        "backlog_bytes": 1514
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83224943856 bytes 55761774 pkt (dropped 108230, overlimits 0 requeues 0) \n backlog 69024b 26p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": null,
+      "cpu_fraction": 0.006435894674766668,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 52.83,
+        "delay_ema_ms": 54.9,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 38.77,
+      "bottleneck_backlog_bytes": 78728,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1267270,
+        "tx_bytes": 1267270,
+        "drops": 0,
+        "overlimits": 0,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83226260790 bytes 55762665 pkt (dropped 108230, overlimits 0 requeues 0) \n backlog 71158b 31p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": null,
+      "cpu_fraction": 0.006441793654748084,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 60.59,
+        "delay_ema_ms": 57.74,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 39.83,
+      "bottleneck_backlog_bytes": 74186,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.011104863380637526,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.9494582233787214,
+          "backlog_bytes": 1514,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1268732,
+        "tx_bytes": 1268732,
+        "drops": 0,
+        "overlimits": 1,
+        "backlog_bytes": 1514
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83227564344 bytes 55763526 pkt (dropped 108230, overlimits 0 requeues 0) \n backlog 54408b 20p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": 1.0,
+      "cpu_fraction": 0.006464554512552157,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 56.32,
+        "delay_ema_ms": 57.03,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 40.87,
+      "bottleneck_backlog_bytes": 0,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.9586219730901966,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 68100,
+        "tx_bytes": 68100,
+        "drops": 0,
+        "overlimits": 1,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83227618818 bytes 55763563 pkt (dropped 108230, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0",
+      "estimator_saturated": false,
+      "estimator_confidence": 0.85,
+      "fairness": null,
+      "cpu_fraction": 0.00647048523171551,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": 0.0,
+        "delay_ema_ms": 28.52,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    },
+    {
+      "t": 41.91,
+      "bottleneck_backlog_bytes": 0,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 0,
+        "tx_bytes": 0,
+        "drops": 0,
+        "overlimits": 0,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83227618818 bytes 55763563 pkt (dropped 108230, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0",
+      "estimator_saturated": false,
+      "estimator_confidence": 0.7,
+      "fairness": null,
+      "cpu_fraction": 0.006482393426707442,
+      "max_rss_bytes": 28274688,
+      "capacity_mbps": 100.0,
+      "governor": {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "ceiling_mbps": 9.355,
+        "delay_ms": null,
+        "delay_ema_ms": 28.52,
+        "changed": true
+      },
+      "policy_outcome": null,
+      "verdicts": {},
+      "lease_active": false,
+      "filters_installed": 0,
+      "filters_json": -1,
+      "filters_text": -1
+    }
+  ],
+  "policy_changes": 0,
+  "bottleneck_state": "qdisc netem 8001: root refcnt 5 limit 41 rate 10Mbit\n Sent 83227618818 bytes 55763563 pkt (dropped 108230, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0",
+  "duration_s": 41.91,
+  "notes": [
+    "per-flow enforcement OFF (b1_cake_auto is a baseline, not ACIQ)",
+    "workload start offsets (seeded): {'call': 0.285, 'bulk': 0.842}"
+  ],
+  "commit_hash": "7c6c7235780a",
+  "resources": {
+    "cpu_mean_frac": 0.006031,
+    "cpu_ticks": 41,
+    "rss_max_bytes": 28274688,
+    "decision_ms": {
+      "n": 41,
+      "p50_ms": 32.736,
+      "p95_ms": 55.782,
+      "max_ms": 102.692
+    }
+  },
+  "governor": {
+    "config": {
+      "cap_fraction": 0.9,
+      "inflation_threshold_ms": 20.0,
+      "clear_threshold_ms": 10.0,
+      "hold_clear_s": 10.0,
+      "down_step_frac": 0.1,
+      "up_step_frac": 0.02,
+      "probe_ratio": 1.05,
+      "max_changes_per_min": 12,
+      "delay_alpha": 0.5,
+      "delay_emergency_ms": 100.0,
+      "delay_emergency_cooldown_s": 20.0,
+      "probe_hold_s": 5.0,
+      "probe_up_frac": 0.25,
+      "probe_demand_frac": 0.85,
+      "probe_demand_gap_s": 3.0,
+      "probe_backoff_s": 18.0,
+      "probe_overlimit_min": 50.0,
+      "probe_running_frac": 0.6,
+      "severe_drop_frac": 0.9,
+      "severe_drop_conf": 0.45
+    },
+    "decisions": [
+      {
+        "rate": 100.0,
+        "reason": "delay 0.5 ms between clear and inflation thresholds: hold",
+        "belief_mbps": 0.0,
+        "ceiling_mbps": null,
+        "delay_ms": 0.4961403297203132,
+        "delay_ema_ms": 0.4961403297203132,
+        "changed": false,
+        "delivered_mbps": 97.649792,
+        "delay_emergency": false,
+        "t": 17455.178186669,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 236.0
+      },
+      {
+        "rate": 90.6666624,
+        "reason": "belief fell below applied: ceiling binds",
+        "belief_mbps": 100.740736,
+        "ceiling_mbps": 90.6666624,
+        "delay_ms": 0.9618353393804865,
+        "delay_ema_ms": 0.7289878345503998,
+        "changed": true,
+        "delivered_mbps": 100.740736,
+        "delay_emergency": false,
+        "t": 17456.250966479,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 1.0727798100015207,
+        "overlimit_per_s": 219.0
+      },
+      {
+        "rate": 90.6666624,
+        "reason": "belief fell below applied: ceiling binds",
+        "belief_mbps": 100.740736,
+        "ceiling_mbps": 90.6666624,
+        "delay_ms": 0.25467901192617737,
+        "delay_ema_ms": 0.4918334232382886,
+        "changed": true,
+        "delivered_mbps": 95.115808,
+        "delay_emergency": false,
+        "t": 17457.370455143,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 2.1922684739984106,
+        "overlimit_per_s": 0.0
+      },
+      {
+        "rate": 90.6666624,
+        "reason": "belief fell below applied: ceiling binds",
+        "belief_mbps": 100.740736,
+        "ceiling_mbps": 90.6666624,
+        "delay_ms": 1.2222561488651658,
+        "delay_ema_ms": 0.8570447860517272,
+        "changed": true,
+        "delivered_mbps": 89.185888,
+        "delay_emergency": false,
+        "t": 17458.420229699,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 3.2420430300007865,
+        "overlimit_per_s": 108.0
+      },
+      {
+        "rate": 90.6666624,
+        "reason": "belief fell below applied: ceiling binds",
+        "belief_mbps": 100.740736,
+        "ceiling_mbps": 90.6666624,
+        "delay_ms": 0.9580599710466647,
+        "delay_ema_ms": 0.9075523785491959,
+        "changed": true,
+        "delivered_mbps": 88.495504,
+        "delay_emergency": false,
+        "t": 17459.474956309,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 4.296769640001003,
+        "overlimit_per_s": 70.0
+      },
+      {
+        "rate": 125.0,
+        "reason": "demand-probe up: pipe-limited demand evidence (offered 88.7 >= 0.85x applied 100.0 for 5 s; step 0.25)",
+        "belief_mbps": 100.740736,
+        "ceiling_mbps": 90.6666624,
+        "delay_ms": 1.0898833414498688,
+        "delay_ema_ms": 0.9987178599995323,
+        "changed": true,
+        "delivered_mbps": 88.904928,
+        "delay_emergency": false,
+        "t": 17460.521716551,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 5.343529882000439,
+        "overlimit_per_s": 236.0
+      },
+      {
+        "rate": 125.0,
+        "reason": "demand-probe up: pipe-limited demand evidence (offered 89.5 >= 0.85x applied 100.0 for 5 s; step 0.25)",
+        "belief_mbps": 93.836896,
+        "ceiling_mbps": 84.4532064,
+        "delay_ms": 2.1717200876577376,
+        "delay_ema_ms": 1.5852189738286349,
+        "changed": true,
+        "delivered_mbps": 89.234336,
+        "delay_emergency": false,
+        "t": 17461.584718589,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 6.406531920001726,
+        "overlimit_per_s": 251.0
+      },
+      {
+        "rate": 84.4532064,
+        "reason": "belief fell below applied: severe drop landing 84.45 in one commit",
+        "belief_mbps": 93.836896,
+        "ceiling_mbps": 84.4532064,
+        "delay_ms": 10.036504913378108,
+        "delay_ema_ms": 5.8108619436033715,
+        "changed": true,
+        "delivered_mbps": 107.40472,
+        "delay_emergency": true,
+        "t": 17462.670895176,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 7.492708507001225,
+        "overlimit_per_s": 0.0
+      },
+      {
+        "rate": 84.4532064,
+        "reason": "belief fell below applied: ceiling binds",
+        "belief_mbps": 93.836896,
+        "ceiling_mbps": 84.4532064,
+        "delay_ms": 0.8559894763425012,
+        "delay_ema_ms": 3.3334257099729365,
+        "changed": true,
+        "delivered_mbps": 84.89824,
+        "delay_emergency": false,
+        "t": 17463.735920094,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 8.55773342500106,
+        "overlimit_per_s": 0.0
+      },
+      {
+        "rate": 84.4532064,
+        "reason": "belief fell below applied: ceiling binds",
+        "belief_mbps": 93.836896,
+        "ceiling_mbps": 84.4532064,
+        "delay_ms": 1.0533863518580768,
+        "delay_ema_ms": 2.1934060309155066,
+        "changed": true,
+        "delivered_mbps": 80.487088,
+        "delay_emergency": false,
+        "t": 17464.759053448,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 9.580866779000644,
+        "overlimit_per_s": 160.0
+      },
+      {
+        "rate": 32.8429136,
+        "reason": "capacity collapse: ceiling 84.45 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 93.836896,
+        "ceiling_mbps": 84.4532064,
+        "delay_ms": 53.35478515958112,
+        "delay_ema_ms": 27.774095595248312,
+        "changed": true,
+        "delivered_mbps": 11.257472,
+        "delay_emergency": true,
+        "t": 17465.789428983,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 2.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 70.5989373295325,
+        "delay_ema_ms": 49.18651646239041,
+        "changed": true,
+        "delivered_mbps": 10.394944,
+        "delay_emergency": true,
+        "t": 17466.83029165,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 0.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 45.62450850496773,
+        "delay_ema_ms": 47.40551248367907,
+        "changed": true,
+        "delivered_mbps": 10.457888,
+        "delay_emergency": true,
+        "t": 17467.86970919,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 1.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 58.605687492444176,
+        "delay_ema_ms": 53.00559998806162,
+        "changed": true,
+        "delivered_mbps": 10.455504,
+        "delay_emergency": true,
+        "t": 17468.92137592,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 0.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 51.59532027158811,
+        "delay_ema_ms": 52.30046012982486,
+        "changed": true,
+        "delivered_mbps": 10.467616,
+        "delay_emergency": true,
+        "t": 17469.962711959,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 0.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 62.64457898901579,
+        "delay_ema_ms": 57.47251955942033,
+        "changed": true,
+        "delivered_mbps": 10.554784,
+        "delay_emergency": true,
+        "t": 17471.023765923,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 2.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 70.92718926967314,
+        "delay_ema_ms": 64.19985441454673,
+        "changed": true,
+        "delivered_mbps": 10.380448,
+        "delay_emergency": true,
+        "t": 17472.061537068,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 0.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 54.28639153804002,
+        "delay_ema_ms": 59.24312297629338,
+        "changed": true,
+        "delivered_mbps": 10.394944,
+        "delay_emergency": true,
+        "t": 17473.09972455,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 0.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 48.56251320723286,
+        "delay_ema_ms": 53.90281809176312,
+        "changed": true,
+        "delivered_mbps": 10.373104,
+        "delay_emergency": true,
+        "t": 17474.137708838,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 0.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 58.335377008577346,
+        "delay_ema_ms": 56.11909755017024,
+        "changed": true,
+        "delivered_mbps": 10.503952,
+        "delay_emergency": true,
+        "t": 17475.182501015,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 1.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 70.53187316917722,
+        "delay_ema_ms": 63.32548535967373,
+        "changed": true,
+        "delivered_mbps": 10.443392,
+        "delay_emergency": true,
+        "t": 17476.235156564,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 0.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": null,
+        "delay_ema_ms": 63.32548535967373,
+        "changed": true,
+        "delivered_mbps": 10.414736,
+        "delay_emergency": true,
+        "t": 17477.273804682,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 1.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 54.26142035245649,
+        "delay_ema_ms": 58.79345285606511,
+        "changed": true,
+        "delivered_mbps": 10.579008,
+        "delay_emergency": true,
+        "t": 17478.330177685,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 0.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 63.830970338871786,
+        "delay_ema_ms": 61.31221159746845,
+        "changed": true,
+        "delivered_mbps": 10.358608,
+        "delay_emergency": true,
+        "t": 17479.367672022,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 0.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 55.593877358912756,
+        "delay_ema_ms": 58.453044478190606,
+        "changed": true,
+        "delivered_mbps": 10.368336,
+        "delay_emergency": true,
+        "t": 17480.405058041,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 1.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 50.909483623123556,
+        "delay_ema_ms": 54.68126405065708,
+        "changed": true,
+        "delivered_mbps": 10.37072,
+        "delay_emergency": true,
+        "t": 17481.443215679,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 2.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 48.17500741804406,
+        "delay_ema_ms": 51.42813573435057,
+        "changed": true,
+        "delivered_mbps": 10.407056,
+        "delay_emergency": true,
+        "t": 17482.481200382,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 0.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 59.902907409253714,
+        "delay_ema_ms": 55.665521571802145,
+        "changed": true,
+        "delivered_mbps": 10.43128,
+        "delay_emergency": true,
+        "t": 17483.518841215,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 2.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 69.46577371486728,
+        "delay_ema_ms": 62.565647643334714,
+        "changed": true,
+        "delivered_mbps": 10.564512,
+        "delay_emergency": true,
+        "t": 17484.583775082,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 0.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 78.07483864685494,
+        "delay_ema_ms": 70.32024314509482,
+        "changed": true,
+        "delivered_mbps": 10.516064,
+        "delay_emergency": true,
+        "t": 17485.634239534,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 1.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 67.65346077051088,
+        "delay_ema_ms": 68.98685195780286,
+        "changed": true,
+        "delivered_mbps": 10.489456,
+        "delay_emergency": true,
+        "t": 17486.680246144,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 0.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 58.52266823146841,
+        "delay_ema_ms": 63.75476009463563,
+        "changed": true,
+        "delivered_mbps": 10.470336,
+        "delay_emergency": true,
+        "t": 17487.730228419,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 0.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 53.015412623231555,
+        "delay_ema_ms": 58.38508635893359,
+        "changed": true,
+        "delivered_mbps": 10.37072,
+        "delay_emergency": true,
+        "t": 17488.769122913,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 2.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 46.89129341332057,
+        "delay_ema_ms": 52.63818988612708,
+        "changed": true,
+        "delivered_mbps": 10.433664,
+        "delay_emergency": true,
+        "t": 17489.808815039,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 0.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 61.29153933198365,
+        "delay_ema_ms": 56.96486460905537,
+        "changed": true,
+        "delivered_mbps": 10.39256,
+        "delay_emergency": true,
+        "t": 17490.849424914,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 0.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 52.83031051240619,
+        "delay_ema_ms": 54.897587560730784,
+        "changed": true,
+        "delivered_mbps": 10.407056,
+        "delay_emergency": true,
+        "t": 17491.89083624,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 0.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 60.58973557792209,
+        "delay_ema_ms": 57.743661569326434,
+        "changed": true,
+        "delivered_mbps": 10.394896,
+        "delay_emergency": true,
+        "t": 17492.931187737,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 0.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 56.32183908045977,
+        "delay_ema_ms": 57.0327503248931,
+        "changed": true,
+        "delivered_mbps": 10.53744,
+        "delay_emergency": true,
+        "t": 17493.984292611,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 1.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": 0.0,
+        "delay_ema_ms": 28.51637516244655,
+        "changed": true,
+        "delivered_mbps": 0.799152,
+        "delay_emergency": true,
+        "t": 17495.027621965,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 1.0
+      },
+      {
+        "rate": 14.0,
+        "reason": "capacity collapse: ceiling 9.36 < 0.50x applied 100.00: land at max(ceiling, floor) in one commit (cooldown bypassed)",
+        "belief_mbps": 10.394943999999995,
+        "ceiling_mbps": 9.355449599999996,
+        "delay_ms": null,
+        "delay_ema_ms": 28.51637516244655,
+        "changed": true,
+        "delivered_mbps": 0.0,
+        "delay_emergency": true,
+        "t": 17496.065194811,
+        "probe_known_good": 100.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 0.0
+      }
+    ]
+  },
+  "intent": {
+    "requested": false,
+    "via": null,
+    "label": null,
+    "weight": null,
+    "ttl_s": null,
+    "fired_at_run_t_s": null,
+    "expiry_run_t_s": null,
+    "note": null,
+    "in_effect_s": null,
+    "supported": false
+  }
+}
