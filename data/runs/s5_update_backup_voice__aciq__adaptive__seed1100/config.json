@@ -1,0 +1,70 @@
+{
+  "scenario": "s5_update_backup_voice",
+  "system": "aciq",
+  "mode": "adaptive",
+  "seed": 1100,
+  "link_mbps": 100.0,
+  "drop_mbps": 20.0,
+  "drop_at_s": null,
+  "recover_at_s": null,
+  "recover_to_mbps": null,
+  "ramp_at_s": null,
+  "ramp_duration_s": null,
+  "ramp_to_mbps": null,
+  "cake_rate_at_apply": null,
+  "oracle_from_start": false,
+  "duration_s": 40.0,
+  "settle_s": 4.0,
+  "workloads": [
+    {
+      "kind": "update",
+      "label": "update",
+      "dscp": null
+    },
+    {
+      "kind": "backup",
+      "label": "backup",
+      "dscp": null
+    },
+    {
+      "kind": "voice",
+      "label": "voice",
+      "dscp": 46
+    }
+  ],
+  "ports": [
+    {
+      "label": "update",
+      "port": 5113,
+      "dscp": null
+    },
+    {
+      "label": "backup",
+      "port": 5462,
+      "dscp": null
+    },
+    {
+      "label": "voice",
+      "port": 5213,
+      "dscp": 46
+    }
+  ],
+  "floor_mbps": 5.0,
+  "enforce_requested": false,
+  "enforcement_note": "not requested",
+  "lease_ips": [],
+  "device_ips": {
+    "update": "203.0.113.3",
+    "backup": "203.0.113.4",
+    "voice": "203.0.113.5"
+  },
+  "lease_weight": null,
+  "lease_ttl_s": null,
+  "inject_fail_apply": false,
+  "api_intent_requested": false,
+  "intent_at_s": null,
+  "intent_ttl_s": null,
+  "intent_weight": null,
+  "intent_label": null,
+  "commit_hash": "bcbcaab82c4a"
+}

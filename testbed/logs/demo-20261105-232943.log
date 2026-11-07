@@ -1,0 +1,74 @@
+== demo: s2_wan_drop x 4 arms x 3 seeds ==
+[setup] loading kernel modules
+[setup] creating namespaces
+[setup] installing nft rule to activate conntrack accounting
+[setup] nf_conntrack_acct=1
+[setup] done
+-- arm b0_fifo
+note: s2_wan_drop/s4_capacity_recovery needs --drop-at to be meaningful; using the midpoint of the run
+evidence stamped with revision bcbcaab8
+
+=== s2_wan_drop / b0_fifo / static / seed 42 ===
+      per-flow enforcement OFF (not requested)
+      workload start offsets (seeded): {'call': 0.28, 'bulk': 0.135}
+    estimator=None policy_changes=0
+
+=== s2_wan_drop / b0_fifo / static / seed 43 ===
+      per-flow enforcement OFF (not requested)
+      workload start offsets (seeded): {'call': 0.398, 'bulk': 0.294}
+    estimator=None policy_changes=0
+
+=== s2_wan_drop / b0_fifo / static / seed 44 ===
+      per-flow enforcement OFF (not requested)
+      workload start offsets (seeded): {'call': 0.846, 'bulk': 0.774}
+    estimator=None policy_changes=0
+
+report written to /home/mekarz/Desktop/Full-projects/TATA-ELXSI/data/REPORT.md
+-- arm b1_cake95
+note: s4_capacity_recovery/s2_wan_drop needs --drop-at to be meaningful; using the midpoint of the run
+evidence stamped with revision bcbcaab8
+
+=== s2_wan_drop / b1_cake95 / static / seed 42 ===
+      per-flow enforcement OFF (not requested)
+      workload start offsets (seeded): {'call': 0.28, 'bulk': 0.135}
+    estimator=None policy_changes=0
+
+=== s2_wan_drop / b1_cake95 / static / seed 43 ===
+      per-flow enforcement OFF (not requested)
+      workload start offsets (seeded): {'call': 0.398, 'bulk': 0.294}
+    estimator=None policy_changes=0
+
+=== s2_wan_drop / b1_cake95 / static / seed 44 ===
+      per-flow enforcement OFF (not requested)
+      workload start offsets (seeded): {'call': 0.846, 'bulk': 0.774}
+    estimator=None policy_changes=0
+
+report written to /home/mekarz/Desktop/Full-projects/TATA-ELXSI/data/REPORT.md
+-- arm aciq
+note: s2_wan_drop/s4_capacity_recovery needs --drop-at to be meaningful; using the midpoint of the run
+evidence stamped with revision bcbcaab8
+
+=== s2_wan_drop / aciq / adaptive / seed 42 ===
+      per-flow enforcement OFF (not requested)
+      workload start offsets (seeded): {'call': 0.28, 'bulk': 0.135}
+    estimator=22.6 policy_changes=12
+
+=== s2_wan_drop / aciq / adaptive / seed 43 ===
+      per-flow enforcement OFF (not requested)
+      workload start offsets (seeded): {'call': 0.398, 'bulk': 0.294}
+    estimator=22.01 policy_changes=11
+
+=== s2_wan_drop / aciq / adaptive / seed 44 ===
+      per-flow enforcement OFF (not requested)
+      workload start offsets (seeded): {'call': 0.846, 'bulk': 0.774}
+    estimator=20.35 policy_changes=9
+
+report written to /home/mekarz/Desktop/Full-projects/TATA-ELXSI/data/REPORT.md
+-- offline report (reads raw artefacts only)
+report written: /home/mekarz/Desktop/Full-projects/TATA-ELXSI/data/experiments/RESULTS.md (+html)
+-- dashboard evidence for the last ACIQ run
+[dash] one ACIQ run (s2_wan_drop, seed 42), then render the page
+[dash] run dir: data/experiments/dashboard/dashboard_run/s2_wan_drop__aciq__adaptive__seed42
+rendered data/experiments/dashboard/dashboard.html bytes: -
+[dash] evidence in data/experiments/dashboard
+-- demo log: testbed/logs/demo-20261105-232943.log

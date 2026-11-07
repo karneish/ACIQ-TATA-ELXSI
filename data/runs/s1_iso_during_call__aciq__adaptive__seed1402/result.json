@@ -1,0 +1,5468 @@
+{
+  "scenario": "s1_iso_during_call",
+  "system": "aciq",
+  "capacity_mode": "adaptive",
+  "seed": 1402,
+  "link_start_mbps": 100.0,
+  "link_end_mbps": 100.0,
+  "capacity_change_applied": true,
+  "capacity_change_error": "",
+  "capacity_recovered": false,
+  "capacity_recover_to_mbps": null,
+  "capacity_ramp_to_mbps": null,
+  "capacity_ramp_duration_s": null,
+  "policy_change_log": [
+    {
+      "t": 6567.7,
+      "intended_capacity_mbps": 20.923,
+      "intended_parent_rate_mbps": 20.26,
+      "governor": {
+        "rate": 20.673,
+        "reason": "capacity emergency: ceiling 18.83 < 0.50x applied 90.00: land at max(ceiling, floor) in one commit",
+        "ceiling_mbps": 18.83,
+        "delay_ema_ms": 60.37
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:10": {
+            "rate": 3.976,
+            "ceil": 20.259
+          },
+          "1:1": {
+            "rate": 20.259,
+            "ceil": 20.259
+          },
+          "1:20": {
+            "rate": 3.757,
+            "ceil": 20.259
+          },
+          "1:30": {
+            "rate": 2.658,
+            "ceil": 17.22
+          },
+          "1:50": {
+            "rate": 2.439,
+            "ceil": 20.259
+          },
+          "1:60": {
+            "rate": 2.329,
+            "ceil": 20.259
+          },
+          "1:70": {
+            "rate": 2.219,
+            "ceil": 20.259
+          },
+          "1:25": {
+            "rate": 2.878,
+            "ceil": 20.259
+          }
+        }
+      }
+    },
+    {
+      "t": 6568.82,
+      "intended_capacity_mbps": 20.923,
+      "intended_parent_rate_mbps": 17.869,
+      "governor": {
+        "rate": 18.234,
+        "reason": "delay inflated 30.5 ms > 20 ms: ratchet down one step",
+        "ceiling_mbps": 18.83,
+        "delay_ema_ms": 30.49
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:10": {
+            "rate": 3.221,
+            "ceil": 17.869
+          },
+          "1:1": {
+            "rate": 17.869,
+            "ceil": 17.869
+          },
+          "1:20": {
+            "rate": 3.086,
+            "ceil": 17.869
+          },
+          "1:30": {
+            "rate": 2.407,
+            "ceil": 15.188
+          },
+          "1:50": {
+            "rate": 2.271,
+            "ceil": 17.869
+          },
+          "1:60": {
+            "rate": 2.203,
+            "ceil": 17.869
+          },
+          "1:70": {
+            "rate": 2.1350000000000002,
+            "ceil": 17.869
+          },
+          "1:25": {
+            "rate": 2.543,
+            "ceil": 17.869
+          }
+        }
+      }
+    },
+    {
+      "t": 6576.19,
+      "intended_capacity_mbps": 20.923,
+      "intended_parent_rate_mbps": 22.336,
+      "governor": {
+        "rate": 22.336,
+        "reason": "demand-probe up: pipe-limited demand evidence (offered 16.0 >= 0.85x applied 17.9 for 5 s; step 0.25)",
+        "ceiling_mbps": 18.83,
+        "delay_ema_ms": 1.73
+      },
+      "law_bound_reason": "within step bound",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:10": {
+            "rate": 4.632,
+            "ceil": 22.336000000000002
+          },
+          "1:1": {
+            "rate": 22.336000000000002,
+            "ceil": 22.336000000000002
+          },
+          "1:20": {
+            "rate": 4.34,
+            "ceil": 22.336000000000002
+          },
+          "1:30": {
+            "rate": 2.8770000000000002,
+            "ceil": 18.986
+          },
+          "1:50": {
+            "rate": 2.585,
+            "ceil": 22.336000000000002
+          },
+          "1:60": {
+            "rate": 2.438,
+            "ceil": 22.336000000000002
+          },
+          "1:70": {
+            "rate": 2.2920000000000003,
+            "ceil": 22.336000000000002
+          },
+          "1:25": {
+            "rate": 3.17,
+            "ceil": 22.336000000000002
+          }
+        }
+      }
+    },
+    {
+      "t": 6581.53,
+      "intended_capacity_mbps": 20.923,
+      "intended_parent_rate_mbps": 27.921,
+      "governor": {
+        "rate": 27.921,
+        "reason": "demand-probe up: pipe-limited demand evidence (offered 20.4 >= 0.85x applied 22.3 for 5 s; step 0.25)",
+        "ceiling_mbps": 18.83,
+        "delay_ema_ms": 2.21
+      },
+      "law_bound_reason": "step-clamped",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:10": {
+            "rate": 6.396,
+            "ceil": 27.92
+          },
+          "1:1": {
+            "rate": 27.92,
+            "ceil": 27.92
+          },
+          "1:20": {
+            "rate": 5.907,
+            "ceil": 27.92
+          },
+          "1:30": {
+            "rate": 3.465,
+            "ceil": 23.732
+          },
+          "1:50": {
+            "rate": 2.976,
+            "ceil": 27.92
+          },
+          "1:60": {
+            "rate": 2.732,
+            "ceil": 27.92
+          },
+          "1:70": {
+            "rate": 2.488,
+            "ceil": 27.92
+          },
+          "1:25": {
+            "rate": 3.9530000000000003,
+            "ceil": 27.92
+          }
+        }
+      }
+    },
+    {
+      "t": 6583.68,
+      "intended_capacity_mbps": 20.923,
+      "intended_parent_rate_mbps": 20.428,
+      "governor": {
+        "rate": 20.845,
+        "reason": "probe overshoot: delay inflated 24.4 ms, wire carries 20.8 of applied 27.9: land at known-good 20.8 Mbps",
+        "ceiling_mbps": 18.83,
+        "delay_ema_ms": 24.43
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:10": {
+            "rate": 4.03,
+            "ceil": 20.428
+          },
+          "1:1": {
+            "rate": 20.428,
+            "ceil": 20.428
+          },
+          "1:20": {
+            "rate": 3.8040000000000003,
+            "ceil": 20.428
+          },
+          "1:30": {
+            "rate": 2.676,
+            "ceil": 17.364
+          },
+          "1:50": {
+            "rate": 2.451,
+            "ceil": 20.428
+          },
+          "1:60": {
+            "rate": 2.338,
+            "ceil": 20.428
+          },
+          "1:70": {
+            "rate": 2.225,
+            "ceil": 20.428
+          },
+          "1:25": {
+            "rate": 2.902,
+            "ceil": 20.428
+          }
+        }
+      }
+    },
+    {
+      "t": 6587.92,
+      "intended_capacity_mbps": 19.367,
+      "intended_parent_rate_mbps": 17.082,
+      "governor": {
+        "rate": 17.431,
+        "reason": "belief fell below applied: severe drop landing 17.43 in one commit",
+        "ceiling_mbps": 17.431,
+        "delay_ema_ms": 3.28
+      },
+      "law_bound_reason": "delay emergency: descent lands at want in one commit",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:10": {
+            "rate": 2.973,
+            "ceil": 17.082
+          },
+          "1:1": {
+            "rate": 17.082,
+            "ceil": 17.082
+          },
+          "1:20": {
+            "rate": 2.865,
+            "ceil": 17.082
+          },
+          "1:30": {
+            "rate": 2.324,
+            "ceil": 14.519
+          },
+          "1:50": {
+            "rate": 2.216,
+            "ceil": 17.082
+          },
+          "1:60": {
+            "rate": 2.162,
+            "ceil": 17.082
+          },
+          "1:70": {
+            "rate": 2.108,
+            "ceil": 17.082
+          },
+          "1:25": {
+            "rate": 2.432,
+            "ceil": 17.082
+          }
+        }
+      }
+    },
+    {
+      "t": 6593.25,
+      "intended_capacity_mbps": 16.971,
+      "intended_parent_rate_mbps": 14.968,
+      "governor": {
+        "rate": 15.274,
+        "reason": "belief fell below applied: ceiling binds",
+        "ceiling_mbps": 15.274,
+        "delay_ema_ms": 1.91
+      },
+      "law_bound_reason": "within step bound",
+      "committed": true,
+      "ok": true,
+      "rolled_back": false,
+      "reason": "",
+      "violations": [],
+      "mismatches": [],
+      "applied_state": {
+        "readable": true,
+        "source": "tc-text",
+        "classes": {
+          "1:10": {
+            "rate": 2.305,
+            "ceil": 14.968
+          },
+          "1:1": {
+            "rate": 14.968,
+            "ceil": 14.968
+          },
+          "1:20": {
+            "rate": 2.271,
+            "ceil": 14.968
+          },
+          "1:30": {
+            "rate": 2.101,
+            "ceil": 12.723
+          },
+          "1:50": {
+            "rate": 2.067,
+            "ceil": 14.968
+          },
+          "1:60": {
+            "rate": 2.051,
+            "ceil": 14.968
+          },
+          "1:70": {
+            "rate": 2.033,
+            "ceil": 14.968
+          },
+          "1:25": {
+            "rate": 2.1350000000000002,
+            "ceil": 14.968
+          }
+        }
+      }
+    }
+  ],
+  "estimator_mbps": 16.97,
+  "samples": [
+    {
+      "t": 0.01,
+      "bottleneck_backlog_bytes": null,
+      "bottleneck_drop_rate_per_s": null,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 2499652,
+        "tx_bytes": 2499652,
+        "drops": 0,
+        "overlimits": 998,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 745102662 bytes 497521 pkt (dropped 13, overlimits 0 requeues 0) \n backlog 207096b 57p requeues 0",
+      "estimator_saturated": false,
+      "estimator_confidence": 0.0,
+      "fairness": null,
+      "cpu_fraction": 0.00378452965814626,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 90.0,
+      "governor": null,
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "unknown",
+          "confidence": 0.35,
+          "tier": "C",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.35,
+          "tier": "C",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 1,
+      "filters_json": 0,
+      "filters_text": 1
+    },
+    {
+      "t": 1.04,
+      "bottleneck_backlog_bytes": 148050,
+      "bottleneck_drop_rate_per_s": null,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.11534812046308618,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 19.88987122716429,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 994.7807704366828,
+          "backlog_bytes": 0,
+          "rtt_p50": 61.849,
+          "rtt_p95": 108.405,
+          "rtt_p99": 108.405,
+          "jitter_ms": 1.8046,
+          "loss_ratio": 0.05825,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 5083810,
+        "tx_bytes": 5083810,
+        "drops": 0,
+        "overlimits": 1994,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 747717398 bytes 499289 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 147752b 59p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 0.0,
+      "fairness": 0.1445140413407815,
+      "cpu_fraction": 0.004011751647024625,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 90.0,
+      "governor": {
+        "rate": 90.0,
+        "reason": "delay inflated 57.3 ms but no ceiling to obey without an estimate: hold",
+        "ceiling_mbps": null,
+        "delay_ms": 57.29,
+        "delay_ema_ms": 57.29,
+        "changed": false
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "unknown",
+          "confidence": 0.35,
+          "tier": "C",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.35,
+          "tier": "C",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 1,
+      "filters_json": 0,
+      "filters_text": 1
+    },
+    {
+      "t": 2.09,
+      "bottleneck_backlog_bytes": 165920,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.11850480421420402,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 19.868245060906247,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 764.744477376123,
+          "backlog_bytes": 1514,
+          "rtt_p50": 108.405,
+          "rtt_p95": 113.982,
+          "rtt_p99": 113.982,
+          "jitter_ms": 1.8467,
+          "loss_ratio": 0.03896,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 1514,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 7697330,
+        "tx_bytes": 7697330,
+        "drops": 0,
+        "overlimits": 2790,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 750510762 bytes 501179 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 161378b 57p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 0.2,
+      "fairness": 0.14456123453157038,
+      "cpu_fraction": 0.00485117049125051,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 20.25979872,
+      "governor": {
+        "rate": 20.673,
+        "reason": "capacity emergency: ceiling 18.83 < 0.50x applied 90.00: land at max(ceiling, floor) in one commit",
+        "ceiling_mbps": 18.83,
+        "delay_ms": 63.44,
+        "delay_ema_ms": 60.37,
+        "changed": true
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": true,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 3.2,
+      "bottleneck_backlog_bytes": 1514,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 15.680522749750553,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1291.94295140311,
+          "backlog_bytes": 19682,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 110.942,
+          "rtt_p95": 113.982,
+          "rtt_p99": 113.982,
+          "jitter_ms": 1.7964,
+          "loss_ratio": 0.01463,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 19682,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 2348844,
+        "tx_bytes": 2348844,
+        "drops": 0,
+        "overlimits": 104,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 752743326 bytes 502701 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 0.3,
+      "fairness": 0.14285714285714285,
+      "cpu_fraction": 0.007403928734871847,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 17.86914247104,
+      "governor": {
+        "rate": 18.234,
+        "reason": "delay inflated 30.5 ms > 20 ms: ratchet down one step",
+        "ceiling_mbps": 18.83,
+        "delay_ms": 0.61,
+        "delay_ema_ms": 30.49,
+        "changed": true
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": true,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 4.31,
+      "bottleneck_backlog_bytes": 1514,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 10598,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 108.642,
+          "rtt_p95": 113.982,
+          "rtt_p99": 113.982,
+          "jitter_ms": 1.5371,
+          "loss_ratio": 0.00781,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 10598,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1690576,
+        "tx_bytes": 1690576,
+        "drops": 0,
+        "overlimits": 24,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 754525702 bytes 503921 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 3028b 1p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 0.4,
+      "fairness": null,
+      "cpu_fraction": 0.008680990496241157,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 17.86914247104,
+      "governor": {
+        "rate": 17.869,
+        "reason": "delay 15.7 ms between clear and inflation thresholds: hold",
+        "ceiling_mbps": 18.83,
+        "delay_ms": 0.87,
+        "delay_ema_ms": 15.68,
+        "changed": false
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 5.35,
+      "bottleneck_backlog_bytes": 0,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.11877625611289105,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 15.155807356215908,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1248.4307378928195,
+          "backlog_bytes": 12112,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 108.405,
+          "rtt_p95": 113.982,
+          "rtt_p99": 113.982,
+          "jitter_ms": 1.3726,
+          "loss_ratio": 0.00651,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 12112,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 3683356,
+        "tx_bytes": 3683356,
+        "drops": 0,
+        "overlimits": 53,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 756535178 bytes 505291 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 1514b 1p requeues 0",
+      "estimator_saturated": false,
+      "estimator_confidence": 0.25,
+      "fairness": 0.14509615185176078,
+      "cpu_fraction": 0.008262412135121001,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 17.86914247104,
+      "governor": {
+        "rate": 17.869,
+        "reason": "delay 7.8 ms between clear and inflation thresholds: hold",
+        "ceiling_mbps": 18.83,
+        "delay_ms": 0.0,
+        "delay_ema_ms": 7.84,
+        "changed": false
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 6.4,
+      "bottleneck_backlog_bytes": 0,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.11889423489460343,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 15.182477685917105,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1252.5480024873523,
+          "backlog_bytes": 16654,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 108.405,
+          "rtt_p95": 113.982,
+          "rtt_p99": 113.982,
+          "jitter_ms": 1.2023,
+          "loss_ratio": 0.00522,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 16654,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 5677650,
+        "tx_bytes": 5677650,
+        "drops": 0,
+        "overlimits": 77,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 758535528 bytes 506654 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 3028b 1p requeues 0",
+      "estimator_saturated": false,
+      "estimator_confidence": 0.1,
+      "fairness": 0.1450944389716593,
+      "cpu_fraction": 0.007974515607940661,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 17.86914247104,
+      "governor": {
+        "rate": 17.869,
+        "reason": "delay 3.9 ms between clear and inflation thresholds: hold",
+        "ceiling_mbps": 18.83,
+        "delay_ms": 0.0,
+        "delay_ema_ms": 3.92,
+        "changed": false
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 7.44,
+      "bottleneck_backlog_bytes": 0,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.11896756859992864,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 15.16859531573832,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1251.401244307458,
+          "backlog_bytes": 12112,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 108.405,
+          "rtt_p95": 113.982,
+          "rtt_p99": 113.982,
+          "jitter_ms": 1.1324,
+          "loss_ratio": 0.0046,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 12112,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 7668916,
+        "tx_bytes": 7668916,
+        "drops": 0,
+        "overlimits": 99,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 760544962 bytes 508023 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 3028b 1p requeues 0",
+      "estimator_saturated": false,
+      "estimator_confidence": 0.0,
+      "fairness": 0.14509786735648186,
+      "cpu_fraction": 0.007749922547254579,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 17.86914247104,
+      "governor": {
+        "rate": 17.869,
+        "reason": "delay 2.0 ms between clear and inflation thresholds: hold",
+        "ceiling_mbps": 18.83,
+        "delay_ms": 0.0,
+        "delay_ema_ms": 1.96,
+        "changed": false
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 8.48,
+      "bottleneck_backlog_bytes": 4542,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.12094087486615979,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 15.187215066294122,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1253.8982056055254,
+          "backlog_bytes": 12112,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 107.655,
+          "rtt_p95": 113.982,
+          "rtt_p99": 113.982,
+          "jitter_ms": 1.0755,
+          "loss_ratio": 0.00411,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 12112,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 9668050,
+        "tx_bytes": 9668050,
+        "drops": 0,
+        "overlimits": 116,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 762566806 bytes 509401 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 3028b 1p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 0.0,
+      "fairness": 0.1451322370333127,
+      "cpu_fraction": 0.007588906295598728,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 17.86914247104,
+      "governor": {
+        "rate": 17.869,
+        "reason": "delay 2.1 ms between clear and inflation thresholds: hold",
+        "ceiling_mbps": 18.83,
+        "delay_ms": 2.26,
+        "delay_ema_ms": 2.11,
+        "changed": false
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 9.53,
+      "bottleneck_backlog_bytes": 0,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.11871402575767973,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 15.194261476912526,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1254.4799766275203,
+          "backlog_bytes": 16654,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 103.082,
+          "rtt_p95": 113.982,
+          "rtt_p99": 113.982,
+          "jitter_ms": 1.0199,
+          "loss_ratio": 0.00371,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 16654,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 11666886,
+        "tx_bytes": 11666886,
+        "drops": 0,
+        "overlimits": 131,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 764568670 bytes 510765 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 1514b 1p requeues 0",
+      "estimator_saturated": false,
+      "estimator_confidence": 0.0,
+      "fairness": 0.14508931601898095,
+      "cpu_fraction": 0.007385398770129626,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 17.86914247104,
+      "governor": {
+        "rate": 17.869,
+        "reason": "delay 1.1 ms between clear and inflation thresholds: hold",
+        "ceiling_mbps": 18.83,
+        "delay_ms": 0.0,
+        "delay_ema_ms": 1.05,
+        "changed": false
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 10.57,
+      "bottleneck_backlog_bytes": 4840,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.11877027908050723,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 15.189857195986406,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1254.1163470926688,
+          "backlog_bytes": 10598,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 103.082,
+          "rtt_p95": 113.982,
+          "rtt_p99": 113.982,
+          "jitter_ms": 0.9858,
+          "loss_ratio": 0.00339,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 10598,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 13664208,
+        "tx_bytes": 13664208,
+        "drops": 0,
+        "overlimits": 150,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 766707688 bytes 512222 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 16952b 6p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 0.0,
+      "fairness": 0.14509102106126012,
+      "cpu_fraction": 0.007334739725997891,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 22.336428088799998,
+      "governor": {
+        "rate": 22.336,
+        "reason": "demand-probe up: pipe-limited demand evidence (offered 16.0 >= 0.85x applied 17.9 for 5 s; step 0.25)",
+        "ceiling_mbps": 18.83,
+        "delay_ms": 2.41,
+        "delay_ema_ms": 1.73,
+        "changed": true
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": true,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 11.69,
+      "bottleneck_backlog_bytes": 6056,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 18168,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 1.070476255324462,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 70.66711916282765,
+          "backlog_bytes": 0,
+          "rtt_p50": 103.082,
+          "rtt_p95": 110.942,
+          "rtt_p99": 113.982,
+          "jitter_ms": 0.9842,
+          "loss_ratio": 0.00312,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 18168,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 2573238,
+        "tx_bytes": 2573238,
+        "drops": 0,
+        "overlimits": 97,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 769229152 bytes 513930 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 1514b 1p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 0.1,
+      "fairness": 0.14285714285714285,
+      "cpu_fraction": 0.007971854088809186,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 22.336428088799998,
+      "governor": {
+        "rate": 22.336,
+        "reason": "pierce probe verifying: hold at probe rate until the window concludes (3.9s left)",
+        "ceiling_mbps": 18.83,
+        "delay_ms": 2.3,
+        "delay_ema_ms": 2.02,
+        "changed": false
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 12.73,
+      "bottleneck_backlog_bytes": 3326,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.11895410721992562,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 18.978937431238368,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1566.9532225262853,
+          "backlog_bytes": 16654,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 101.236,
+          "rtt_p95": 110.942,
+          "rtt_p99": 113.982,
+          "jitter_ms": 0.9666,
+          "loss_ratio": 0.00289,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 16654,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 5061096,
+        "tx_bytes": 5061096,
+        "drops": 0,
+        "overlimits": 113,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 771730636 bytes 515624 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 6056b 2p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 0.2,
+      "fairness": 0.1446478412465372,
+      "cpu_fraction": 0.0077734307686950785,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 22.336428088799998,
+      "governor": {
+        "rate": 27.921,
+        "reason": "demand-probe up: pipe-limited demand evidence (offered 19.9 >= 0.85x applied 22.3 for 5 s; step 0.25)",
+        "ceiling_mbps": 18.83,
+        "delay_ms": 1.33,
+        "delay_ema_ms": 1.67,
+        "changed": true
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 13.78,
+      "bottleneck_backlog_bytes": 4542,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.11864442580068062,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 18.975895747552354,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1566.7020927635695,
+          "backlog_bytes": 15140,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 98.719,
+          "rtt_p95": 110.942,
+          "rtt_p99": 113.982,
+          "jitter_ms": 0.9461,
+          "loss_ratio": 0.00403,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 15140,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 7555010,
+        "tx_bytes": 7555010,
+        "drops": 0,
+        "overlimits": 129,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 774258156 bytes 517336 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 6056b 1p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 0.3,
+      "fairness": 0.14464346602792091,
+      "cpu_fraction": 0.007646965125292422,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 22.336428088799998,
+      "governor": {
+        "rate": 27.921,
+        "reason": "demand-probe up: pipe-limited demand evidence (offered 20.0 >= 0.85x applied 22.3 for 5 s; step 0.25)",
+        "ceiling_mbps": 18.83,
+        "delay_ms": 1.81,
+        "delay_ema_ms": 1.74,
+        "changed": true
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 14.84,
+      "bottleneck_backlog_bytes": 6056,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.12002129717953515,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 18.82390694947823,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1552.2888687230147,
+          "backlog_bytes": 13626,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 98.719,
+          "rtt_p95": 110.942,
+          "rtt_p99": 113.982,
+          "jitter_ms": 0.9304,
+          "loss_ratio": 0.00252,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 13626,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 10094940,
+        "tx_bytes": 10094940,
+        "drops": 0,
+        "overlimits": 164,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 776843506 bytes 519087 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 6056b 2p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 0.4,
+      "fairness": 0.14467878409580315,
+      "cpu_fraction": 0.007692290017526005,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 22.336428088799998,
+      "governor": {
+        "rate": 27.921,
+        "reason": "demand-probe up: pipe-limited demand evidence (offered 20.3 >= 0.85x applied 22.3 for 5 s; step 0.25)",
+        "ceiling_mbps": 18.83,
+        "delay_ms": 2.36,
+        "delay_ema_ms": 2.05,
+        "changed": true
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 15.91,
+      "bottleneck_backlog_bytes": 6056,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.11845379140122178,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 19.030785826523353,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1571.2339685042398,
+          "backlog_bytes": 21196,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 98.719,
+          "rtt_p95": 110.942,
+          "rtt_p99": 113.982,
+          "jitter_ms": 0.9214,
+          "loss_ratio": 0.00236,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 21196,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 12648198,
+        "tx_bytes": 12648198,
+        "drops": 0,
+        "overlimits": 176,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 779515452 bytes 520896 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 21196b 9p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 0.5,
+      "fairness": 0.14463545246402404,
+      "cpu_fraction": 0.007671720026802448,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 27.920535111,
+      "governor": {
+        "rate": 27.921,
+        "reason": "demand-probe up: pipe-limited demand evidence (offered 20.4 >= 0.85x applied 22.3 for 5 s; step 0.25)",
+        "ceiling_mbps": 18.83,
+        "delay_ms": 2.38,
+        "delay_ema_ms": 2.21,
+        "changed": true
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": true,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 17.03,
+      "bottleneck_backlog_bytes": 66914,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 96.526,
+          "rtt_p95": 110.942,
+          "rtt_p99": 113.982,
+          "jitter_ms": 0.9227,
+          "loss_ratio": 0.00446,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 2671052,
+        "tx_bytes": 2671052,
+        "drops": 0,
+        "overlimits": 1151,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 782121104 bytes 522658 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 62670b 19p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 0.6,
+      "fairness": null,
+      "cpu_fraction": 0.00800674948720697,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 27.920535111,
+      "governor": {
+        "rate": 18.83,
+        "reason": "belief fell below applied: ceiling binds",
+        "ceiling_mbps": 18.83,
+        "delay_ms": 24.17,
+        "delay_ema_ms": 13.19,
+        "changed": true
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 18.07,
+      "bottleneck_backlog_bytes": 92950,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.11902045466866908,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 19.884926168682508,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1303.80241223584,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 95.438,
+          "rtt_p95": 110.942,
+          "rtt_p99": 113.982,
+          "jitter_ms": 0.9239,
+          "loss_ratio": 0.00422,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 5275488,
+        "tx_bytes": 5275488,
+        "drops": 0,
+        "overlimits": 2231,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 784893272 bytes 524534 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 42690b 17p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 0.7,
+      "fairness": 0.1445672133729442,
+      "cpu_fraction": 0.007869806002227373,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 20.42831168,
+      "governor": {
+        "rate": 20.845,
+        "reason": "probe overshoot: delay inflated 24.4 ms, wire carries 20.8 of applied 27.9: land at known-good 20.8 Mbps",
+        "ceiling_mbps": 18.83,
+        "delay_ms": 35.67,
+        "delay_ema_ms": 24.43,
+        "changed": true
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": true,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 19.18,
+      "bottleneck_backlog_bytes": 1514,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 21196,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.010924662968548304,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 14.431523076021538,
+          "backlog_bytes": 0,
+          "rtt_p50": 95.438,
+          "rtt_p95": 110.942,
+          "rtt_p99": 113.982,
+          "jitter_ms": 0.9464,
+          "loss_ratio": 0.003,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 21196,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 2357034,
+        "tx_bytes": 2357034,
+        "drops": 0,
+        "overlimits": 108,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 787198234 bytes 526099 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 3028b 1p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 0.8,
+      "fairness": 0.14285714285714285,
+      "cpu_fraction": 0.00811222408941895,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 20.42831168,
+      "governor": {
+        "rate": 18.83,
+        "reason": "belief fell below applied: ceiling binds",
+        "ceiling_mbps": 18.83,
+        "delay_ms": 0.61,
+        "delay_ema_ms": 12.52,
+        "changed": true
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 20.22,
+      "bottleneck_backlog_bytes": 3028,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.11871768599957318,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 17.363748656119043,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1433.5987992172259,
+          "backlog_bytes": 16654,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 95.438,
+          "rtt_p95": 110.942,
+          "rtt_p99": 113.982,
+          "jitter_ms": 0.9274,
+          "loss_ratio": 0.0019,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 16654,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 4638988,
+        "tx_bytes": 4638988,
+        "drops": 0,
+        "overlimits": 138,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 789502898 bytes 527663 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 3028b 1p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": 0.14481050868911866,
+      "cpu_fraction": 0.008023776450076557,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 20.42831168,
+      "governor": {
+        "rate": 17.431,
+        "reason": "belief fell below applied: ceiling binds",
+        "ceiling_mbps": 17.431,
+        "delay_ms": 1.32,
+        "delay_ema_ms": 6.92,
+        "changed": true
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 21.26,
+      "bottleneck_backlog_bytes": 4542,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.12078826887720469,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 17.36799788654754,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1433.9496273569632,
+          "backlog_bytes": 13626,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 92.779,
+          "rtt_p95": 110.942,
+          "rtt_p99": 113.982,
+          "jitter_ms": 0.9033,
+          "loss_ratio": 0.00181,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 13626,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 6925782,
+        "tx_bytes": 6925782,
+        "drops": 0,
+        "overlimits": 167,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 791792720 bytes 529218 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 3028b 1p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": 0.14484408833453563,
+      "cpu_fraction": 0.00795609110301909,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 20.42831168,
+      "governor": {
+        "rate": 17.431,
+        "reason": "belief fell below applied: ceiling binds",
+        "ceiling_mbps": 17.431,
+        "delay_ms": 1.98,
+        "delay_ema_ms": 4.45,
+        "changed": true
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 22.31,
+      "bottleneck_backlog_bytes": 4840,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.11870914419492462,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 17.362499324583148,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1433.495650972849,
+          "backlog_bytes": 18168,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 90.599,
+          "rtt_p95": 110.942,
+          "rtt_p99": 113.982,
+          "jitter_ms": 0.899,
+          "loss_ratio": 0.00173,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 18168,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 9207736,
+        "tx_bytes": 9207736,
+        "drops": 0,
+        "overlimits": 198,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 794304480 bytes 530922 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 3028b 1p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": 0.14481050868911863,
+      "cpu_fraction": 0.007883878299945834,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 17.082113126399996,
+      "governor": {
+        "rate": 17.431,
+        "reason": "belief fell below applied: severe drop landing 17.43 in one commit",
+        "ceiling_mbps": 17.431,
+        "delay_ms": 2.11,
+        "delay_ema_ms": 3.28,
+        "changed": true
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": true,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 23.44,
+      "bottleneck_backlog_bytes": 3028,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 13626,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 2.6542682986806976,
+          "backlog_bytes": 0,
+          "rtt_p50": 90.599,
+          "rtt_p95": 110.942,
+          "rtt_p99": 113.982,
+          "jitter_ms": 0.8838,
+          "loss_ratio": 0.00163,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 13626,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 2010030,
+        "tx_bytes": 2010030,
+        "drops": 0,
+        "overlimits": 106,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 796255166 bytes 532253 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": null,
+      "cpu_fraction": 0.00828373812930466,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 17.082113126399996,
+      "governor": {
+        "rate": 17.082,
+        "reason": "delay 2.3 ms between clear and inflation thresholds: hold",
+        "ceiling_mbps": 17.431,
+        "delay_ms": 1.41,
+        "delay_ema_ms": 2.34,
+        "changed": false
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 24.5,
+      "bottleneck_backlog_bytes": 3028,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.11876828121942645,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 14.504529344950846,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1197.5337966438942,
+          "backlog_bytes": 10598,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 90.599,
+          "rtt_p95": 110.942,
+          "rtt_p99": 113.982,
+          "jitter_ms": 0.8657,
+          "loss_ratio": 0.00156,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 10598,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 3954660,
+        "tx_bytes": 3954660,
+        "drops": 0,
+        "overlimits": 127,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 798196768 bytes 533578 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 1514b 1p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": 0.14519651690683413,
+      "cpu_fraction": 0.008419964499427677,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 17.082113126399996,
+      "governor": {
+        "rate": 17.082,
+        "reason": "delay 1.9 ms between clear and inflation thresholds: hold",
+        "ceiling_mbps": 17.431,
+        "delay_ms": 1.54,
+        "delay_ema_ms": 1.94,
+        "changed": false
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 25.55,
+      "bottleneck_backlog_bytes": 3028,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.12077459606162198,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 14.541157368446457,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1200.5579069060814,
+          "backlog_bytes": 13626,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 87.671,
+          "rtt_p95": 110.942,
+          "rtt_p99": 113.982,
+          "jitter_ms": 0.8478,
+          "loss_ratio": 0.0015,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 13626,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 5872038,
+        "tx_bytes": 5872038,
+        "drops": 0,
+        "overlimits": 137,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 800107792 bytes 534882 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": 0.14523003837547396,
+      "cpu_fraction": 0.00831420289313167,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 17.082113126399996,
+      "governor": {
+        "rate": 15.274,
+        "reason": "belief fell below applied: ceiling binds",
+        "ceiling_mbps": 15.274,
+        "delay_ms": 1.58,
+        "delay_ema_ms": 1.76,
+        "changed": true
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 26.59,
+      "bottleneck_backlog_bytes": 4542,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.11910119159003893,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 14.452533005395592,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1190.3586117389827,
+          "backlog_bytes": 18168,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 85.636,
+          "rtt_p95": 110.942,
+          "rtt_p99": 113.982,
+          "jitter_ms": 0.8273,
+          "loss_ratio": 0.00217,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 18168,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 7767922,
+        "tx_bytes": 7767922,
+        "drops": 0,
+        "overlimits": 165,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 802008218 bytes 536179 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 3028b 1p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": 0.14521151223084292,
+      "cpu_fraction": 0.00819647096054522,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 17.082113126399996,
+      "governor": {
+        "rate": 15.274,
+        "reason": "belief fell below applied: ceiling binds",
+        "ceiling_mbps": 15.274,
+        "delay_ms": 2.37,
+        "delay_ema_ms": 2.07,
+        "changed": true
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 27.63,
+      "bottleneck_backlog_bytes": 3326,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.11888916701649538,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 14.438420314060188,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1189.1985601159515,
+          "backlog_bytes": 7570,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 85.636,
+          "rtt_p95": 110.942,
+          "rtt_p99": 113.982,
+          "jitter_ms": 0.8098,
+          "loss_ratio": 0.00209,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 7570,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 9665320,
+        "tx_bytes": 9665320,
+        "drops": 0,
+        "overlimits": 197,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 804017032 bytes 537550 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 1514b 1p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": 0.14520961838530555,
+      "cpu_fraction": 0.008097277327684522,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 14.96822414976,
+      "governor": {
+        "rate": 15.274,
+        "reason": "belief fell below applied: ceiling binds",
+        "ceiling_mbps": 15.274,
+        "delay_ms": 1.75,
+        "delay_ema_ms": 1.91,
+        "changed": true
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": true,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 28.75,
+      "bottleneck_backlog_bytes": 3028,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 13626,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 85.636,
+          "rtt_p95": 110.942,
+          "rtt_p99": 113.982,
+          "jitter_ms": 0.8076,
+          "loss_ratio": 0.00135,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 13626,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 1729642,
+        "tx_bytes": 1729642,
+        "drops": 0,
+        "overlimits": 77,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 805723070 bytes 538717 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 3028b 1p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": null,
+      "cpu_fraction": 0.008281819304933722,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 14.96822414976,
+      "governor": {
+        "rate": 14.968,
+        "reason": "delay 1.8 ms between clear and inflation thresholds: hold",
+        "ceiling_mbps": 15.274,
+        "delay_ms": 1.69,
+        "delay_ema_ms": 1.8,
+        "changed": false
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 29.8,
+      "bottleneck_backlog_bytes": 3028,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 12.697381134402788,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 1047.3819593582577,
+          "backlog_bytes": 12112,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 83.139,
+          "rtt_p95": 110.942,
+          "rtt_p99": 113.982,
+          "jitter_ms": 0.8051,
+          "loss_ratio": 0.00133,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 12112,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 3402612,
+        "tx_bytes": 3402612,
+        "drops": 0,
+        "overlimits": 83,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 807408152 bytes 539830 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 3028b 1p requeues 0",
+      "estimator_saturated": true,
+      "estimator_confidence": 1.0,
+      "fairness": 0.14285714285714285,
+      "cpu_fraction": 0.008224988103210755,
+      "max_rss_bytes": 26726400,
+      "capacity_mbps": 14.96822414976,
+      "governor": {
+        "rate": 14.968,
+        "reason": "delay 1.8 ms between clear and inflation thresholds: hold",
+        "ceiling_mbps": 15.274,
+        "delay_ms": 1.79,
+        "delay_ema_ms": 1.8,
+        "changed": false
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 30.85,
+      "bottleneck_backlog_bytes": 0,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 2.0453330866007837,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 169.46066347744343,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 79.398,
+          "rtt_p95": 110.942,
+          "rtt_p99": 113.982,
+          "jitter_ms": 0.8051,
+          "loss_ratio": 0.00133,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 3671162,
+        "tx_bytes": 3671162,
+        "drops": 0,
+        "overlimits": 89,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 807594946 bytes 539955 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0",
+      "estimator_saturated": false,
+      "estimator_confidence": 0.85,
+      "fairness": 0.14285714285714285,
+      "cpu_fraction": 0.008156925825456946,
+      "max_rss_bytes": 26988544,
+      "capacity_mbps": 14.96822414976,
+      "governor": {
+        "rate": 14.968,
+        "reason": "clear for 10 s but offered 2.1 does not demand it",
+        "ceiling_mbps": 15.274,
+        "delay_ms": 0.0,
+        "delay_ema_ms": 0.9,
+        "changed": false
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    },
+    {
+      "t": 31.89,
+      "bottleneck_backlog_bytes": 0,
+      "bottleneck_drop_rate_per_s": 0.0,
+      "per_class": {
+        "video_call_voice": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "interactive_gaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "bulk_download": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "software_update": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "cloud_backup": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        },
+        "unknown": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": 79.398,
+          "rtt_p95": 108.642,
+          "rtt_p99": 113.982,
+          "jitter_ms": 0.8051,
+          "loss_ratio": 0.00133,
+          "metric_status": "valid"
+        },
+        "adaptive_video_streaming": {
+          "goodput_mbps": 0.0,
+          "drop_rate_per_s": 0.0,
+          "overlimit_rate_per_s": 0.0,
+          "backlog_bytes": 0,
+          "rtt_p50": null,
+          "rtt_p95": null,
+          "rtt_p99": null,
+          "jitter_ms": null,
+          "loss_ratio": null,
+          "metric_status": "no_probe"
+        }
+      },
+      "link": {
+        "cls": null,
+        "handle": "1:1",
+        "rx_bytes": 3671162,
+        "tx_bytes": 3671162,
+        "drops": 0,
+        "overlimits": 89,
+        "backlog_bytes": 0
+      },
+      "bottleneck": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 807594946 bytes 539955 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0",
+      "estimator_saturated": false,
+      "estimator_confidence": 0.7,
+      "fairness": null,
+      "cpu_fraction": 0.008087501043034734,
+      "max_rss_bytes": 26988544,
+      "capacity_mbps": 14.96822414976,
+      "governor": {
+        "rate": 14.968,
+        "reason": "belief fell below applied on an idle wire: hold (no demand to protect, no evidence to shrink)",
+        "ceiling_mbps": 15.274,
+        "delay_ms": null,
+        "delay_ema_ms": 0.9,
+        "changed": false
+      },
+      "policy_outcome": {
+        "ok": true,
+        "committed": true,
+        "rolled_back": false,
+        "kernel_touched": true,
+        "reason": ""
+      },
+      "verdicts": {
+        "bulk": {
+          "class": "bulk_download",
+          "confidence": 0.75,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": false,
+          "strict_class": null
+        },
+        "call": {
+          "class": "unknown",
+          "confidence": 0.55,
+          "tier": "B",
+          "corrected": false,
+          "changed": false,
+          "hedged": true,
+          "strict_class": "VIDEO_CALL"
+        }
+      },
+      "lease_active": false,
+      "filters_installed": 2,
+      "filters_json": 1,
+      "filters_text": 2
+    }
+  ],
+  "policy_changes": 7,
+  "bottleneck_state": "qdisc netem 8003: root refcnt 5 limit 83 rate 20Mbit\n Sent 807594946 bytes 539955 pkt (dropped 26, overlimits 0 requeues 0) \n backlog 0b 0p requeues 0",
+  "duration_s": 31.88,
+  "notes": [
+    "no capacity drop in this run",
+    "per-flow enforcement ON (7/31 ticks changed a filter)",
+    "workload start offsets (seeded): {'call': 0.04, 'bulk': 0.293}"
+  ],
+  "commit_hash": "bcbcaab82c4a",
+  "resources": {
+    "cpu_mean_frac": 0.007603,
+    "cpu_ticks": 31,
+    "rss_max_bytes": 26988544,
+    "decision_ms": {
+      "n": 31,
+      "p50_ms": 9.792,
+      "p95_ms": 71.231,
+      "max_ms": 76.494
+    }
+  },
+  "governor": {
+    "config": {
+      "cap_fraction": 0.9,
+      "inflation_threshold_ms": 20.0,
+      "clear_threshold_ms": 10.0,
+      "hold_clear_s": 10.0,
+      "down_step_frac": 0.1,
+      "up_step_frac": 0.02,
+      "probe_ratio": 1.05,
+      "max_changes_per_min": 12,
+      "delay_alpha": 0.5,
+      "delay_emergency_ms": 100.0,
+      "delay_emergency_cooldown_s": 20.0,
+      "probe_hold_s": 5.0,
+      "probe_up_frac": 0.25,
+      "probe_demand_frac": 0.85,
+      "probe_demand_gap_s": 3.0,
+      "probe_backoff_s": 18.0,
+      "probe_overlimit_min": 50.0,
+      "probe_running_frac": 0.6,
+      "severe_drop_frac": 0.9,
+      "severe_drop_conf": 0.45
+    },
+    "decisions": [
+      {
+        "rate": 90.0,
+        "reason": "delay inflated 57.3 ms but no ceiling to obey without an estimate: hold",
+        "belief_mbps": 0.0,
+        "ceiling_mbps": null,
+        "delay_ms": 57.29138852964873,
+        "delay_ema_ms": 57.29138852964873,
+        "changed": false,
+        "delivered_mbps": 20.673264,
+        "delay_emergency": false,
+        "t": 6566.655454755,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 1028.0
+      },
+      {
+        "rate": 20.673264,
+        "reason": "capacity emergency: ceiling 18.83 < 0.50x applied 90.00: land at max(ceiling, floor) in one commit",
+        "belief_mbps": 20.922656,
+        "ceiling_mbps": 18.8303904,
+        "delay_ms": 63.44127628920535,
+        "delay_ema_ms": 60.36633240942704,
+        "changed": true,
+        "delivered_mbps": 20.922656,
+        "delay_emergency": true,
+        "t": 6567.701143709,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 800.0
+      },
+      {
+        "rate": 18.233818848,
+        "reason": "delay inflated 30.5 ms > 20 ms: ratchet down one step",
+        "belief_mbps": 20.922656,
+        "ceiling_mbps": 18.8303904,
+        "delay_ms": 0.6099000392366339,
+        "delay_ema_ms": 30.488116224331836,
+        "changed": true,
+        "delivered_mbps": 19.858992,
+        "delay_emergency": false,
+        "t": 6568.818301426,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 1444.0
+      },
+      {
+        "rate": 17.86914247104,
+        "reason": "delay 15.7 ms between clear and inflation thresholds: hold",
+        "belief_mbps": 20.922656,
+        "ceiling_mbps": 18.8303904,
+        "delay_ms": 0.870433100834558,
+        "delay_ema_ms": 15.679274662583197,
+        "changed": false,
+        "delivered_mbps": 13.914912,
+        "delay_emergency": false,
+        "t": 6569.924341607,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 0.0
+      },
+      {
+        "rate": 17.86914247104,
+        "reason": "delay 7.8 ms between clear and inflation thresholds: hold",
+        "belief_mbps": 20.922656,
+        "ceiling_mbps": 18.8303904,
+        "delay_ms": 0.0,
+        "delay_ema_ms": 7.839637331291598,
+        "changed": false,
+        "delivered_mbps": 16.051584,
+        "delay_emergency": false,
+        "t": 6570.969439852,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 1303.0
+      },
+      {
+        "rate": 17.86914247104,
+        "reason": "delay 3.9 ms between clear and inflation thresholds: hold",
+        "belief_mbps": 20.922656,
+        "ceiling_mbps": 18.8303904,
+        "delay_ms": 0.0,
+        "delay_ema_ms": 3.919818665645799,
+        "changed": false,
+        "delivered_mbps": 16.099696,
+        "delay_emergency": false,
+        "t": 6572.011612759,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 1.0421729070003494,
+        "overlimit_per_s": 1306.0
+      },
+      {
+        "rate": 17.86914247104,
+        "reason": "delay 2.0 ms between clear and inflation thresholds: hold",
+        "belief_mbps": 20.922656,
+        "ceiling_mbps": 18.8303904,
+        "delay_ms": 0.0,
+        "delay_ema_ms": 1.9599093328228996,
+        "changed": false,
+        "delivered_mbps": 15.966464,
+        "delay_emergency": false,
+        "t": 6573.053800449,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 2.084360597000341,
+        "overlimit_per_s": 1304.0
+      },
+      {
+        "rate": 17.86914247104,
+        "reason": "delay 2.1 ms between clear and inflation thresholds: hold",
+        "belief_mbps": 20.922656,
+        "ceiling_mbps": 18.8303904,
+        "delay_ms": 2.2566028736660106,
+        "delay_ema_ms": 2.108256103244455,
+        "changed": false,
+        "delivered_mbps": 16.10208,
+        "delay_emergency": false,
+        "t": 6574.096907008,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 3.127467156000421,
+        "overlimit_per_s": 1310.0
+      },
+      {
+        "rate": 17.86914247104,
+        "reason": "delay 1.1 ms between clear and inflation thresholds: hold",
+        "belief_mbps": 20.922656,
+        "ceiling_mbps": 18.8303904,
+        "delay_ms": 0.0,
+        "delay_ema_ms": 1.0541280516222276,
+        "changed": false,
+        "delivered_mbps": 16.136032,
+        "delay_emergency": false,
+        "t": 6575.144306982,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 4.174867130000166,
+        "overlimit_per_s": 1310.0
+      },
+      {
+        "rate": 22.336428088799998,
+        "reason": "demand-probe up: pipe-limited demand evidence (offered 16.0 >= 0.85x applied 17.9 for 5 s; step 0.25)",
+        "belief_mbps": 20.922656,
+        "ceiling_mbps": 18.8303904,
+        "delay_ms": 2.414095123328339,
+        "delay_ema_ms": 1.7341115874752835,
+        "changed": true,
+        "delivered_mbps": 16.039136,
+        "delay_emergency": false,
+        "t": 6576.186166061,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 5.216726209000626,
+        "overlimit_per_s": 1309.0
+      },
+      {
+        "rate": 22.336428088799998,
+        "reason": "pierce probe verifying: hold at probe rate until the window concludes (3.9s left)",
+        "belief_mbps": 20.922656,
+        "ceiling_mbps": 18.8303904,
+        "delay_ms": 2.3014662346477075,
+        "delay_ema_ms": 2.0177889110614955,
+        "changed": false,
+        "delivered_mbps": 21.050928,
+        "delay_emergency": false,
+        "t": 6577.305548444,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 6.336108592000528,
+        "overlimit_per_s": 79.0
+      },
+      {
+        "rate": 27.920535111,
+        "reason": "demand-probe up: pipe-limited demand evidence (offered 19.9 >= 0.85x applied 22.3 for 5 s; step 0.25)",
+        "belief_mbps": 20.922656,
+        "ceiling_mbps": 18.8303904,
+        "delay_ms": 1.33041596499158,
+        "delay_ema_ms": 1.6741024380265377,
+        "changed": true,
+        "delivered_mbps": 19.99976,
+        "delay_emergency": false,
+        "t": 6578.347847471,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 7.378407619000427,
+        "overlimit_per_s": 1633.0
+      },
+      {
+        "rate": 27.920535111,
+        "reason": "demand-probe up: pipe-limited demand evidence (offered 20.0 >= 0.85x applied 22.3 for 5 s; step 0.25)",
+        "belief_mbps": 20.922656,
+        "ceiling_mbps": 18.8303904,
+        "delay_ms": 1.8089376334698866,
+        "delay_ema_ms": 1.7415200357482121,
+        "changed": true,
+        "delivered_mbps": 20.086928,
+        "delay_emergency": false,
+        "t": 6579.391597278,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 8.422157426000012,
+        "overlimit_per_s": 1637.0
+      },
+      {
+        "rate": 27.920535111,
+        "reason": "demand-probe up: pipe-limited demand evidence (offered 20.3 >= 0.85x applied 22.3 for 5 s; step 0.25)",
+        "belief_mbps": 20.922656,
+        "ceiling_mbps": 18.8303904,
+        "delay_ms": 2.360673119277141,
+        "delay_ema_ms": 2.0510965775126766,
+        "changed": true,
+        "delivered_mbps": 20.52296,
+        "delay_emergency": false,
+        "t": 6580.453446121,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 9.48400626900002,
+        "overlimit_per_s": 1665.0
+      },
+      {
+        "rate": 27.920535111,
+        "reason": "demand-probe up: pipe-limited demand evidence (offered 20.4 >= 0.85x applied 22.3 for 5 s; step 0.25)",
+        "belief_mbps": 20.922656,
+        "ceiling_mbps": 18.8303904,
+        "delay_ms": 2.376098396212053,
+        "delay_ema_ms": 2.2135974868623647,
+        "changed": true,
+        "delivered_mbps": 20.389728,
+        "delay_emergency": false,
+        "t": 6581.529742815,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 10.56030296300014,
+        "overlimit_per_s": 1676.0
+      },
+      {
+        "rate": 18.8303904,
+        "reason": "belief fell below applied: ceiling binds",
+        "belief_mbps": 20.922656,
+        "ceiling_mbps": 18.8303904,
+        "delay_ms": 24.166781636510862,
+        "delay_ema_ms": 13.190189561686614,
+        "changed": true,
+        "delivered_mbps": 22.150736,
+        "delay_emergency": false,
+        "t": 6582.640302649,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 0.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 0.0
+      },
+      {
+        "rate": 20.845216,
+        "reason": "probe overshoot: delay inflated 24.4 ms, wire carries 20.8 of applied 27.9: land at known-good 20.8 Mbps",
+        "belief_mbps": 20.922656,
+        "ceiling_mbps": 18.8303904,
+        "delay_ms": 35.6724535739999,
+        "delay_ema_ms": 24.43132156784326,
+        "changed": true,
+        "delivered_mbps": 20.845216,
+        "delay_emergency": false,
+        "t": 6583.681612497,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 18.0,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 1358.0
+      },
+      {
+        "rate": 18.8303904,
+        "reason": "belief fell below applied: ceiling binds",
+        "belief_mbps": 20.922656,
+        "ceiling_mbps": 18.8303904,
+        "delay_ms": 0.6093031005237431,
+        "delay_ema_ms": 12.520312334183501,
+        "changed": true,
+        "delivered_mbps": 19.878448,
+        "delay_emergency": false,
+        "t": 6584.790581941,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 16.89103055600026,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 16.0
+      },
+      {
+        "rate": 17.430727679999997,
+        "reason": "belief fell below applied: ceiling binds",
+        "belief_mbps": 19.367475199999998,
+        "ceiling_mbps": 17.430727679999997,
+        "delay_ms": 1.3214997713124572,
+        "delay_ema_ms": 6.920906052747979,
+        "changed": true,
+        "delivered_mbps": 18.330688,
+        "delay_emergency": false,
+        "t": 6585.832454956,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 15.84915754099984,
+        "demand_window_s": 0.0,
+        "overlimit_per_s": 1497.0
+      },
+      {
+        "rate": 17.430727679999997,
+        "reason": "belief fell below applied: ceiling binds",
+        "belief_mbps": 19.367475199999998,
+        "ceiling_mbps": 17.430727679999997,
+        "delay_ms": 1.977280860077994,
+        "delay_ema_ms": 4.449093456412987,
+        "changed": true,
+        "delivered_mbps": 18.376752,
+        "delay_emergency": false,
+        "t": 6586.879245359,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 14.802367137999681,
+        "demand_window_s": 1.0467904030001591,
+        "overlimit_per_s": 1500.0
+      },
+      {
+        "rate": 17.430727679999997,
+        "reason": "belief fell below applied: severe drop landing 17.43 in one commit",
+        "belief_mbps": 19.367475199999998,
+        "ceiling_mbps": 17.430727679999997,
+        "delay_ms": 2.105622185252988,
+        "delay_ema_ms": 3.2773578208329877,
+        "changed": true,
+        "delivered_mbps": 18.388864,
+        "delay_emergency": true,
+        "t": 6587.922960922,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 13.75865157499993,
+        "demand_window_s": 2.0905059659999097,
+        "overlimit_per_s": 1497.0
+      },
+      {
+        "rate": 17.082113126399996,
+        "reason": "delay 2.3 ms between clear and inflation thresholds: hold",
+        "belief_mbps": 19.367475199999998,
+        "ceiling_mbps": 17.430727679999997,
+        "delay_ms": 1.4092254937641306,
+        "delay_ema_ms": 2.3432916572985594,
+        "changed": false,
+        "delivered_mbps": 17.189584,
+        "delay_emergency": false,
+        "t": 6589.055372194,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 12.626240303000486,
+        "demand_window_s": 3.2229172379993543,
+        "overlimit_per_s": 3.0
+      },
+      {
+        "rate": 17.082113126399996,
+        "reason": "delay 1.9 ms between clear and inflation thresholds: hold",
+        "belief_mbps": 19.367475199999998,
+        "ceiling_mbps": 17.430727679999997,
+        "delay_ms": 1.541506644565629,
+        "delay_ema_ms": 1.9423991509320941,
+        "changed": false,
+        "delivered_mbps": 15.714496,
+        "delay_emergency": false,
+        "t": 6590.112769035,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 11.568843461999677,
+        "demand_window_s": 4.2803140790001635,
+        "overlimit_per_s": 1274.0
+      },
+      {
+        "rate": 15.273698112,
+        "reason": "belief fell below applied: ceiling binds",
+        "belief_mbps": 16.97077568,
+        "ceiling_mbps": 15.273698112,
+        "delay_ms": 1.5757521510473966,
+        "delay_ema_ms": 1.7590756509897454,
+        "changed": true,
+        "delivered_mbps": 15.372976,
+        "delay_emergency": false,
+        "t": 6591.165366502,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 10.516245994999736,
+        "demand_window_s": 5.332911546000105,
+        "overlimit_per_s": 1256.0
+      },
+      {
+        "rate": 15.273698112,
+        "reason": "belief fell below applied: ceiling binds",
+        "belief_mbps": 16.97077568,
+        "ceiling_mbps": 15.273698112,
+        "delay_ms": 2.3729762827760164,
+        "delay_ema_ms": 2.066025966882881,
+        "changed": true,
+        "delivered_mbps": 15.312416,
+        "delay_emergency": false,
+        "t": 6592.206545924,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 9.475066572999822,
+        "demand_window_s": 6.374090968000019,
+        "overlimit_per_s": 1239.0
+      },
+      {
+        "rate": 15.273698112,
+        "reason": "belief fell below applied: ceiling binds",
+        "belief_mbps": 16.97077568,
+        "ceiling_mbps": 15.273698112,
+        "delay_ms": 1.748740759435103,
+        "delay_ema_ms": 1.907383363158992,
+        "changed": true,
+        "delivered_mbps": 15.21552,
+        "delay_emergency": false,
+        "t": 6593.248758588,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 8.432853909000187,
+        "demand_window_s": 7.416303631999654,
+        "overlimit_per_s": 1240.0
+      },
+      {
+        "rate": 14.96822414976,
+        "reason": "delay 1.8 ms between clear and inflation thresholds: hold",
+        "belief_mbps": 16.97077568,
+        "ceiling_mbps": 15.273698112,
+        "delay_ms": 1.6894379996339923,
+        "delay_ema_ms": 1.7984106813964922,
+        "changed": false,
+        "delivered_mbps": 14.338496,
+        "delay_emergency": false,
+        "t": 6594.360890831,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 7.320721666000281,
+        "demand_window_s": 8.528435874999559,
+        "overlimit_per_s": 0.0
+      },
+      {
+        "rate": 14.96822414976,
+        "reason": "delay 1.8 ms between clear and inflation thresholds: hold",
+        "belief_mbps": 16.97077568,
+        "ceiling_mbps": 15.273698112,
+        "delay_ms": 1.7937219730941705,
+        "delay_ema_ms": 1.7960663272453314,
+        "changed": false,
+        "delivered_mbps": 13.50488,
+        "delay_emergency": false,
+        "t": 6595.414984009,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 6.2666284879996965,
+        "demand_window_s": 9.582529053000144,
+        "overlimit_per_s": 1104.0
+      },
+      {
+        "rate": 14.96822414976,
+        "reason": "clear for 10 s but offered 2.1 does not demand it",
+        "belief_mbps": 16.97077568,
+        "ceiling_mbps": 15.273698112,
+        "delay_ms": 0.0,
+        "delay_ema_ms": 0.8980331636226657,
+        "changed": false,
+        "delivered_mbps": 2.003056,
+        "delay_emergency": false,
+        "t": 6596.46687839,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 5.214734107000368,
+        "demand_window_s": 10.634423433999473,
+        "overlimit_per_s": 178.0
+      },
+      {
+        "rate": 14.96822414976,
+        "reason": "belief fell below applied on an idle wire: hold (no demand to protect, no evidence to shrink)",
+        "belief_mbps": 16.97077568,
+        "ceiling_mbps": 15.273698112,
+        "delay_ms": null,
+        "delay_ema_ms": 0.8980331636226657,
+        "changed": false,
+        "delivered_mbps": 0.0,
+        "delay_emergency": false,
+        "t": 6597.506386334,
+        "probe_known_good": 90.0,
+        "probe_block_remaining_s": 4.175226162999934,
+        "demand_window_s": 11.673931377999907,
+        "overlimit_per_s": 0.0
+      }
+    ]
+  },
+  "intent": {
+    "requested": false,
+    "via": null,
+    "label": null,
+    "weight": null,
+    "ttl_s": null,
+    "fired_at_run_t_s": null,
+    "expiry_run_t_s": null,
+    "note": null,
+    "in_effect_s": null,
+    "supported": true
+  }
+}
