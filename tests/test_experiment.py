@@ -1335,3 +1335,41 @@ class TestTheGateNeverLeavesASourceToTheKernel(unittest.TestCase):
                  / "testbed" / "setup.sh").read_text()
         self.assertNotIn("fd00:2::$i", setup,
                          "extra IPv6 addresses reintroduce check 18's failure")
+
+
+
+class TestRecoverRampSeedHighWaterMocked(unittest.TestCase):
+    def test_recover_target_calls_seed_high_water(self):
+        # Unit-level: the seeding wiring exists in experiment.run() — verify by
+        # source structure + estimator contract, not a live kernel run.
+        from aciq.capacity import CapacityEstimator
+        est = CapacityEstimator(initial_mbps=20.0)
+        est.seed_high_water(100.0)
+        self.assertEqual(est._high_water, 100.0)
+        # experiment.py must call seed_high_water for recover/ramp targets.
+        src = Path("aciq/experiment.py").read_text()
+        self.assertIn("recover_to_mbps, ramp_to_mbps", src)
+        self.assertIn("seed_high_water(float(_target))", src)
+
+
+class TestRecoverRampSeedHighWaterUnit(unittest.TestCase):
+    def test_recover_target_calls_seed_high_water_unit(self):
+        from aciq.capacity import CapacityEstimator
+        est = CapacityEstimator(initial_mbps=20.0)
+        est.seed_high_water(100.0)
+        self.assertEqual(est._high_water, 100.0)
+        src = Path("aciq/experiment.py").read_text()
+        self.assertIn("recover_to_mbps, ramp_to_mbps", src)
+        self.assertIn("seed_high_water(float(_target))", src)
+
+
+class TestFairnessStarvationTelemetry(unittest.TestCase):
+    def test_starved_ticks_and_per_flow_series_exist(self):
+        from aciq.fairness import jain, starved_ticks
+        series = [(1.0, 5.0), (2.0, 0.0), (3.0, 0.0), (4.0, 6.0)]
+        self.assertEqual(starved_ticks(series), [2.0, 3.0])
+        self.assertAlmostEqual(jain([5.0, 6.0]), 1.0, delta=0.01)
+        self.assertTrue(jain([0.0, 0.0]) is None or jain([0.0, 0.0]) == 0.0)
+
+    def test_final_band_fairness_artifact_exists(self):
+        self.assertTrue(Path("data/experiments/fairness_starvation_final3.md").exists())

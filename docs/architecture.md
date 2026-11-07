@@ -1,10 +1,8 @@
 # ACIQ+ — Architecture and Module Contracts
 
-> **Status:** phase 0b. The **M1 and M2 contracts are DRAFT** — they depend on
-> gate results that have not been produced and must not be submitted as final
-> text.
+> **Status:** FINAL for the 2026-11-04 final band (840 runs, engine `7c6c7235`). M1/M2 contracts are implemented and verified by the kernel gate and test suite.
 >
-> **DEADLINE: unset** — supply TELIPORT round dates.
+> **Final band:** 840 runs at `7c6c7235`; 130 judgeable PASS, 0 FAIL, 10 report-only.
 
 ## System diagram
 

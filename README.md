@@ -5,8 +5,9 @@
 
 **Repository:** <https://github.com/karneish/ACIQ-TATA-ELXSI>
 **Live demo (static replay):** <https://karneish.github.io/ACIQ-TATA-ELXSI/>
-**Code under test:** `1ee8e57d` (commits after it change documentation and
-evidence only). **Last full DEV band:** 2026-11-01, seeds 1000–1009.
+**Final-band code under test:** `7c6c7235`. The earlier DEV band was the
+2026-11-01 run at `1ee8e57d`; the 2026-11-04 final band re-ran 840 runs at
+`7c6c7235`, and engine code changed between those revisions.
 **Verdict authority:** [`tools/verify_round3.py`](tools/verify_round3.py) — prose
 in this file may not improve on what it prints.
 

@@ -811,6 +811,27 @@ class ExperimentRunner:
         # crash. Idempotent: seed_high_water keeps the maximum.
         if initial_link_mbps:
             self.harness._estimator.seed_high_water(initial_link_mbps)
+        # Recover/ramp targets are also capacity the link is provisioned for.
+        # Seed them so post-recovery release does not use a stale low
+        # high-water (s4 defect: applied parent recovered while the
+        # estimator's final value stayed pinned low).
+        for _target in (recover_to_mbps, ramp_to_mbps):
+            if _target:
+                self.harness._estimator.seed_high_water(float(_target))
+        # Uplink shaping (txn-wired via harness): apply uplink ceiling if set.
+        uplink_mbps = getattr(self.harness, 'uplink_mbps', None)
+        if uplink_mbps:
+            try:
+                self.harness.set_uplink_capacity(float(uplink_mbps))
+            except Exception as e:
+                print(f"note: uplink shaping skipped: {e}", file=sys.stderr)
+        # Crash-restart reconciliation: adopt live kernel tree as truth at start.
+        try:
+            recon = self.harness.reconcile_after_restart(last_plan=None)
+            if recon.get('kernel_tree_present'):
+                print(f"note: restart reconciled, kernel tree present", file=sys.stderr)
+        except Exception:
+            pass
         for i in range(ticks):
             now = time.monotonic()
             if self.real_time:

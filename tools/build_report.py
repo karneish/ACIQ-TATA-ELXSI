@@ -2405,8 +2405,11 @@ def build_report(runs_root: Path, out_md: Path,
             if not d.is_dir():
                 continue
             cfg_p = d / "config.json"
-            if not cfg_p.exists() or not json.loads(
-                    cfg_p.read_text()).get("inject_fail_apply"):
+            try:
+                _cfg = json.loads(cfg_p.read_text()) if cfg_p.exists() else {}
+            except (OSError, json.JSONDecodeError):
+                _cfg = {}  # interrupted run (0-byte config): skip, don't crash
+            if not _cfg.get("inject_fail_apply"):
                 continue
             arm_t = roll_t = None
             try:

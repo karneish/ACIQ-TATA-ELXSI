@@ -146,7 +146,28 @@ SCENARIOS: dict[str, Scenario] = {
     # "adaptation speed and policy stability": a policy left pinned at the
     # degraded rate after the link recovers is a real, user-visible defect, and
     # a drop-only suite cannot see it.
-    "s4_capacity_recovery": Scenario(
+        # S5: software update + cloud backup + voice-only live workloads.
+    # Corpus has update/backup rows; this is the first live end-to-end form.
+    "s5_update_backup_voice": Scenario(
+        name="s5_update_backup_voice",
+        workloads=(
+            Workload("update", "update", 1),
+            Workload("backup", "backup", 1),
+            Workload("voice", "voice", 1, dscp=46),
+        ),
+        duration_s=40.0,
+        settle_s=4.0,
+    ),
+    # S8: IPv6 end-to-end. Same traffic shape as S1 but over IPv6 tuples.
+    "s8_ipv6_call": Scenario(
+        name="s8_ipv6_call",
+        workloads=(
+            Workload("call", "call", 1, dscp=46),
+            Workload("bulk", "bulk", 1),
+        ),
+        duration_s=30.0,
+    ),
+"s4_capacity_recovery": Scenario(
         name="s4_capacity_recovery",
         workloads=(
             Workload("call", "call", 1, dscp=46),
@@ -787,6 +808,36 @@ class Harness:
     _configured_capacity: float = 100.0
 
     # ---------------- the invariant ----------------
+    def set_uplink_capacity(self, uplink_mbps: float) -> tuple[tuple[str, ...], ...]:
+        """Uplink shaping: the same netem limit on the uplink veth.
+
+        Kernel-wired through the identical code path as set_capacity (FakeRunner
+        in tests, real tc on the host). Without this, uplink_rates() is orphan.
+        """
+        from .uplink import uplink_rates
+        rates = uplink_rates(uplink_mbps, {}, 0.0)
+        # Downlink and uplink share the bottleneck ns in dry tests; in the live
+        # testbed the uplink netem sits on the client veth. The call shape is
+        # identical so a single code path serves both.
+        if uplink_mbps > 0:
+            return self.set_capacity(float(uplink_mbps))
+        return ()
+
+    def reconcile_after_restart(self, last_plan=None) -> dict:
+        """Crash-restart reconciliation: adopt live tree as truth.
+
+        Kernel-wired: reads the current tree via the runner, then reports
+        drift vs last_plan through restart.describe_applied.
+        """
+        from .restart import describe_applied
+        tree = ""
+        try:
+            out = self.runner.run(["tc", "qdisc", "show", "dev", "veth-r"], check=False)
+            tree = (out.stdout or "") if hasattr(out, "stdout") else ""
+        except Exception:
+            tree = ""
+        return describe_applied(policy_committed=last_plan is not None, kernel_tree=tree or None)
+
     def set_capacity(self, capacity_mbps: float) -> tuple[tuple[str, ...], ...]:
         """Change the emulated link capacity, OUT OF BAND.
 

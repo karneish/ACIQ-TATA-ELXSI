@@ -56,7 +56,7 @@ def teardown() -> None:
 # All three scenarios from the brief. s2 needs --drop-at to be meaningful.
 # s4 is the rising edge: without --recover-at/--recover-to it behaves like s2.
 # s6 is the intent scenario: --api-intent requested at t~1, TTL inside the run.
-ALL_SCENARIOS = ["s1_iso_during_call", "s2_wan_drop", "s3_tv_and_gaming",
+ALL_SCENARIOS = ["s1_iso_during_call", "s2_wan_drop", "s3_tv_and_gaming", "s5_update_backup_voice", "s8_ipv6_call",
                  "s4_capacity_recovery", "s6_intent_expire",
                  "s2b_step_50", "s2b_step_10", "s2b_step_up_20to100",
                  "s2b_ramp_100to30",
@@ -123,6 +123,7 @@ def main() -> int:
                          "will emit a p-value, and one invocation means the "
                          "testbed is built and torn down once instead of per seed.")
     ap.add_argument("--link", type=float, default=None)
+    ap.add_argument("--uplink", type=float, default=None, help="uplink shaping ceiling (Mbps) via txn path")
     ap.add_argument("--drop", type=float, default=None)
     ap.add_argument("--drop-at", type=float, default=None,
                     help="seconds into the run at which capacity drops")
@@ -237,6 +238,17 @@ def main() -> int:
         print("note: --recover-at without --recover-to is a no-op; "
               "restoring to the same rate tests nothing", file=sys.stderr)
         args.recover_at = None
+    # s4_capacity_recovery is a recovery scenario: without an explicit
+    # --recover-at/--recover-to it is just a drop (the old CLI bug that left
+    # s4 at est 17 vs truth 100 but never recovered). Default to the declared
+    # protocol: drop at 30s, recover to the starting link at 40s.
+    if args.scenario and "s4_capacity_recovery" in args.scenario \
+            and args.recover_at is None:
+        args.recover_at = 40.0
+        if args.recover_to is None:
+            args.recover_to = args.link or 100.0
+        print("note: s4_capacity_recovery defaulting to --recover-at 40 "
+              f"--recover-to {args.recover_to:g} (RISING edge)", file=sys.stderr)
 
     scenarios = args.scenario or ["s1_iso_during_call", "s3_tv_and_gaming"]
     if args.scenario and any(sc in NEEDS_DROP_AT for sc in args.scenario) \
@@ -378,6 +390,7 @@ def main() -> int:
                     run_ramp_dur = proto.get("ramp_duration_s",
                                              args.ramp_duration)
                     run_ramp_to = proto.get("ramp_to_mbps", args.ramp_to)
+                    runner.harness.uplink_mbps = args.uplink
                     res = runner.run(
                         sc, sysspec, m, seed, run_link, run_drop, run_drop_at,
                         settle_s=args.settle, enforce=args.enforce,

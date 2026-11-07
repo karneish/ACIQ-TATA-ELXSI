@@ -48,7 +48,7 @@ See `docs/licenses.md` — the ACIQ runtime itself has **no** pip dependencies.
 ```bash
 chmod +x testbed/*.sh
 bash -n testbed/*.sh                        # syntax
-python3 -m unittest discover -s tests       # 445 tests, no root needed
+python3 -m unittest discover -s tests       # 1586 tests, no root needed
 
 # bridge syntax probe — seconds, not minutes. Run this FIRST when the gate
 # fails on a bridge check: the gate stops at the first failure, so one wrong

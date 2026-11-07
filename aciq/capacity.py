@@ -51,7 +51,7 @@ from dataclasses import dataclass, field, replace
 #: Asymmetric smoothing. Capacity falling is urgent (users are already hurting),
 #: capacity rising is taken on trust more slowly.
 ALPHA_DOWN = 0.6
-ALPHA_UP = 0.1
+ALPHA_UP = 0.35
 
 #: Consecutive non-saturated samples before the estimate is released back
 #: toward the high-water mark. Long enough that a momentary lull does not undo a
@@ -62,7 +62,7 @@ IDLE_STREAK_RELEASE = 10
 #: Fraction of the gap to the high-water mark closed per released tick. Much
 #: slower than ALPHA_DOWN, because a wrong release costs a moment of
 #: under-shaping while a wrong collapse costs a sustained one.
-RELEASE_ALPHA = 0.2
+RELEASE_ALPHA = 0.35
 
 #: Below this fraction of the current estimate, a reading is treated as a STEP
 #: change and adopted outright rather than smoothed.
@@ -83,6 +83,9 @@ RELEASE_ALPHA = 0.2
 #: exists to prevent. Half is the line between "the link changed" and "this
 #: sample is low", which is the distinction that matters.
 FAST_DROP_RATIO = 0.5
+
+#: Symmetric step-up: a reading >2x EWMA on a saturated link is a step, not noise.
+FAST_UP_RATIO = 2.0
 
 #: Minimum external-queue depth for `_emergency_drop` to believe congestion
 #: without a two-sample streak, when there are no bottleneck drops.
@@ -442,6 +445,9 @@ class CapacityEstimator:
                 # A step, not noise: take the reading as the new capacity and
                 # let the normal smoothing resume from there.
                 alpha = 1.0
+            elif target >= self._ewma * FAST_UP_RATIO:
+                # Step-up and saturated: the link really is bigger now.
+                alpha = 0.5
             new = self._ewma + alpha * (target - self._ewma)
 
         # Hysteresis: below the band, do not move at all.

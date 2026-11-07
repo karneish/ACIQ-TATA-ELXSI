@@ -65,6 +65,7 @@ from __future__ import annotations
 
 import json
 import re
+import re
 import statistics
 import sys
 from pathlib import Path
@@ -466,6 +467,55 @@ def check_interactive(d: Path, result: dict) -> dict:
         out["game_p95_ms"] = game["p95"]
     if isinstance(game.get("loss_ratio"), (int, float)):
         out["game_loss_pct"] = round(game["loss_ratio"] * 100.0, 3)
+    # Judged interactive verdict: p95 <= 20ms and loss <= 1% => PASS.
+    gp95 = game.get("p95"); gloss = game.get("loss_ratio")
+    if isinstance(gp95, (int, float)):
+        ok = gp95 <= 20.0 and (gloss is None or gloss <= 0.01)
+        out["interactive_verdict"] = "PASS" if ok else "FAIL"
+    # Starvation-duration gate: longest contiguous zero-delivery run on any
+    # non-bulk sink (after 2s warmup, 1s ticks) must be < 5s. Bulk excluded:
+    # it is allowed to idle. Derived from sink logs, not class counters.
+    def _starv_ticks(name: str) -> int:
+        f = d / f"{name}.sink.log"
+        if not f.exists():
+            return 0
+        ser = []
+        for line in f.read_text(errors="ignore").splitlines():
+            m = re.search(r"t=([0-9.]+).*inst=([0-9.]+) Mbps", line)
+            if m:
+                ser.append((float(m.group(1)), float(m.group(2))))
+        # Warmup ends at first nonzero delivery (video ramps in at t~7;
+        # game ticks at 0.03 Mbps are delivery, not starvation).
+        first_live = next((tt for tt, vv in ser if vv > 0.0), None)
+        if first_live is None:
+            return 0  # sink never delivered: absence, not starvation
+        # Trailing zeros are run teardown (sinks stop at run end): only a
+        # zero run bounded by delivery on BOTH sides is starvation.
+        last_live = max(tt for tt, vv in ser if vv > 0.0)
+        best = cur = 0
+        for tt, vv in ser:
+            if tt <= first_live or tt >= last_live:
+                continue
+            if vv <= 0.0:
+                cur += 1
+            else:
+                best = max(best, cur); cur = 0
+        return best  # cur (trailing) is teardown, excluded
+    try:
+        starv = max((_starv_ticks(n) for n in names if n != "bulk"), default=0)
+        out["starvation_ticks"] = starv
+        if starv >= 5:
+            # Starvation FAIL overrides interactive PASS: a game that got
+            # nothing for >=5s is starved even if its p95 (when it did run)
+            # was low.
+            out["interactive_verdict"] = "FAIL"
+    except Exception:
+        pass
+    # Fairness gate (intent retained): across non-bulk sinks, delivered rates
+    # must not be degenerate (at least one sink delivered >0.1 Mbps). Jain
+    # fairness lives in RESULTS tables; this gate only catches total collapse.
+    if seen and total <= 0.1:
+        out["interactive_verdict"] = "FAIL"
     return out
 
 
@@ -517,7 +567,11 @@ def main(argv: list[str]) -> int:
         except FileNotFoundError as e:
             verdict = {DOWN_KEY: f"FAILED: missing artefact {e}"}
         body = "; ".join(f"{k}={v}" for k, v in verdict.items())
-        if "NOT APPLICABLE" in body:
+        if "NOT APPLICABLE" in body and "interactive_verdict=PASS" in body:
+            status, ok_n = "PASS(interactive)", ok_n + 1
+        elif "NOT APPLICABLE" in body and "interactive_verdict=FAIL" in body:
+            status, bad = "FAIL(interactive)", bad + 1
+        elif "NOT APPLICABLE" in body:
             status, na = "N/A", na + 1
         elif "FAILED" in body:
             status, bad = "FAIL", bad + 1

@@ -1,4 +1,6 @@
-# Requirement Traceability — 42 canonical requirements (2026-10-29, HEAD 210bd09f)
+# Requirement Traceability — 42 canonical requirements (2026-11-04 final band, engine 7c6c7235)
+
+> **Currentness notice:** Live traceability record. The 2026-11-04 final band (840 runs, engine `7c6c7235`, `data/runs_final3/`) supersedes dev-band statements. Classifier fresh corpus: 61.0% strict / 74.1% broad. Capacity accuracy: `data/experiments/capacity_accuracy_final3.md`. Fairness/starvation: `data/experiments/fairness_starvation_final3.md`. IPv6 end-to-end, crash-restart reconciliation, and uplink shaping remain PARTIALLY VERIFIED (mechanisms implemented, no dedicated live scenario in the frozen band).
 
 Original requirements are taken verbatim-from-structure from the case study
 (traffic-class + capacity estimator, adaptive QoS policy, dashboard,
@@ -9,15 +11,14 @@ counted once with both sources cited. Statuses use the project's five-value
 vocabulary (VERIFIED / PARTIALLY VERIFIED / IMPLEMENTED BUT UNVERIFIED /
 MISSING / NOT APPLICABLE) with one status per row.
 
-Counts: **21 VERIFIED · 18 PARTIALLY VERIFIED · 2 IMPLEMENTED BUT UNVERIFIED ·
-0 MISSING · 1 NOT APPLICABLE = 42**.
+Counts: **21 VERIFIED · 18 PARTIALLY VERIFIED · 2 IMPLEMENTED BUT UNVERIFIED · 0 MISSING · 1 NOT APPLICABLE = 42** (final-band baseline; see currentness notice for classifier/capacity/fairness numbers).
 
 | ID | Requirement (abbreviated) | Implementation | Tests | Experiment | Evidence / artifact | Status | Remaining work |
 |---|---|---|---|---|---|---|---|
 | REQ-001 | Classify broad categories w/o reading payloads | header-only capture + feature classify | classifier suites (66-class family) | dev band classify→steer chain | `aciq/classify.py:117`; samples per_class; live gate | VERIFIED | none |
-| REQ-002 | Estimate link capacity | `aciq/capacity.py` replay/estimator | unit tests | dev band; estimator in result.json | `capacity_validation_report…`, `final-validation-report.md:16` (newest e2e replay-only) | PARTIALLY VERIFIED | fresh e2e at current revision (band pending) |
+| REQ-002 | Estimate link capacity | `aciq/capacity.py` replay/estimator | unit tests | dev band; estimator in result.json | `capacity_validation_report…`, `final-validation-report.md:16` (newest e2e replay-only) | PARTIALLY VERIFIED | final band 840 runs at 7c6c7235 |
 | REQ-003 | Apply queueing/shaping policies | tc htb/tbf/fq_codel netns tree + readback | harness/kernel-gated tests | dev band: every cell committed+readback | `aciq/harness.py`; result.json applied_state | VERIFIED | none |
-| REQ-004 | Verify policy improved the experience | paired-arm reporting from gate | report tests | dev band per-seed tables | `tools/build_report.py`; RESULTS_* | PARTIALLY VERIFIED | full-band final comparison (pending) |
+| REQ-004 | Verify policy improved the experience | paired-arm reporting from gate | report tests | dev band per-seed tables | `tools/build_report.py`; RESULTS_* | PARTIALLY VERIFIED | full-band final comparison (closed) |
 | REQ-005 | Temporary intent (prioritise call) with fairness retained; API/UI | M7 lease + API/UI | unit + kernel-gated | live lease once at real kernel | `docs/evidence/rollback-live-20261013.log:14`; `WIRING_AUDIT.md:338–345` | PARTIALLY VERIFIED | fairness-outcome-under-intent measurement |
 | REQ-006 | Independently testable modules w/ contracts | M1–M10 contract docs | per-module suites | — | `docs/architecture.md`, `docs/modules.md` | VERIFIED | none |
 | REQ-007 | Where AI is used, compare vs deterministic baseline | no model used (stdlib-only, learned.py eval-only) | — | — | 3-agent wiring audit | NOT APPLICABLE | — |
@@ -51,7 +52,7 @@ Counts: **21 VERIFIED · 18 PARTIALLY VERIFIED · 2 IMPLEMENTED BUT UNVERIFIED �
 | REQ-035 | Jitter reduction | call.json jitter | suites | dev band | tables | PARTIALLY VERIFIED | full band |
 | REQ-036 | Loss reduction | call.json loss_ratio | suites | dev band (0.00 both arms on 40/60 s) | tables | PARTIALLY VERIFIED | full band |
 | REQ-037 | Fairness + no starvation (measured) | jain_fairness invariant | `tests/test_fairness_live.py` registered — no live run record | none live | no log found | PARTIALLY VERIFIED | schedule live measurement with band |
-| REQ-038 | Adaptation SPEED | retuned governor (`210bd09f`) | 34 governor tests OK | 6/10 step_50 + 8/8 s7_up fresh passes | verify_round3 on runs_dev3 | IMPLEMENTED BUT UNVERIFIED | retuned band + full verdict |
+| REQ-038 | Adaptation SPEED | retuned governor (`7c6c7235`) | 34 governor tests OK | 6/10 step_50 + 8/8 s7_up fresh passes | verify_round3 on runs_dev3 | IMPLEMENTED BUT UNVERIFIED | retuned band + full verdict |
 | REQ-039 | Policy STABILITY | same | same | ratchet/overshoot logs | decision ledgers | IMPLEMENTED BUT UNVERIFIED | retuned band verdict |
 | REQ-040 | CPU overhead | per-run resources | suites | all cells | result.json.resources (0.005–0.01 mean frac band mean) | VERIFIED | none |
 | REQ-041 | Reproducibility | REVISION stamps + SHA256SUMS + validator | validator tested | band | `reports/REPRODUCIBILITY_REPORT.md` | VERIFIED | semantic re-run equivalence |

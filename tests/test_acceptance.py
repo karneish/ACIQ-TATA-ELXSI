@@ -342,7 +342,8 @@ class TestCitedCliValues(unittest.TestCase):
                                 "s2b_step_up_20to100", "s2b_ramp_100to30",
                                 "s7_up_20to60", "s7_up_30to100",
                                 "s7_rampup_30to100", "s7_down_100to15",
-                                "s7_down_100to8", "s3_stress"})
+                                "s7_down_100to8", "s3_stress",
+                                "s5_update_backup_voice", "s8_ipv6_call"})
         # Still not a scenario. It was invented by an earlier report and cited
         # in the docs as if it existed; that report was wrong.
         self.assertNotIn("s4_voip_under_load", real)

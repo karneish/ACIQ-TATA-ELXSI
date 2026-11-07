@@ -57,3 +57,9 @@ command-line tools; none of their source is included.
 ## This project's own licence
 
 MIT — see `LICENSE` at the repository root.
+## Case-study brief assets (TATA — removed)
+
+The TATA Case Study 3 brief PDF and layout image have been removed from tracked
+files (staged deletions). Nothing from the brief is redistributed. All scenario
+definitions, thresholds and evaluation criteria in this repository are
+original implementations measured on the testbed, not copies of the brief.

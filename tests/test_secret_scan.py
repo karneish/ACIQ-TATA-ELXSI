@@ -58,6 +58,19 @@ class ScanVerdicts(unittest.TestCase):
     def test_empty_text(self):
         self.assertEqual(ss.scan_text(""), [])
 
+    def test_embedded_prose_slash_list_is_not_a_hit(self):
+        self.assertFalse(ss.scan_text(
+            "evaluation E1-E11 (latency/jitter/loss/fairness/stability/CPU/reproducibility/dashboard clarity)\n"))
+
+    def test_embedded_prose_slash_list_with_digits_heading_is_not_a_hit(self):
+        self.assertFalse(ss.scan_text(
+            "`config.json` per run stores the full scenario/system/mode/seed/ports/dscp/floors/lease/inject-fail configuration\n"))
+
+    def test_real_b64_credential_still_is_a_hit(self):
+        token = "A9bC8dE7fG6hH5iJ4kL3mM2nN1oO0pPqQrRsStTuUvVwXx"
+        hits = ss.scan_text(f'KEY = "{token}"\n')
+        self.assertTrue(any(r == "b64-lookalike" for r, _, _ in hits), hits)
+
 
 if __name__ == "__main__":
     unittest.main()

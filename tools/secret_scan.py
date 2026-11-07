@@ -59,11 +59,48 @@ def tracked_files() -> list[str]:
     return out
 
 
+def is_plain_prose_path_list(line: str) -> bool:
+    """Recognize a prose/list fragment that only *looks* credential-shaped.
+
+    The two live false positives are slash-joined word lists inside a longer
+    sentence, not standalone token strings. A real credential shaped by the
+    b64-lookalike rule normally contains digits and uppercase letters; the
+    examples here are lowercase vocabulary joined by slashes.
+    """
+    text = line.strip()
+    return bool(
+        text
+        and re.fullmatch(r"[A-Za-z0-9+/]+(?:/[A-Za-z0-9+/]+)+={0,2}", text)
+        and "/" in text
+        and not re.search(r"\d", text)
+        and not re.search(r"[A-Z]", text)
+    )
+
+
+def _is_prose_slash_list_fragment(token: str) -> bool:
+    """Slash-joined lowercase vocabulary can masquerade as base64 if the
+    regex skips internal slashes. A real credential will not decompose into
+    short lowercase words separated by slashes.
+    """
+    return bool(
+        token
+        and "/" in token
+        and all(part.isalpha() for part in token.split("/"))
+        and all(len(part) >= 2 for part in token.split("/"))
+        and not re.search(r"\d", token)
+    )
+
+
+
+
+
 def _scan_lines(lines: list[str]) -> list[tuple[str, str, str]]:
     """(rule, line_no, snippet) for anything credential-shaped in text.
     The core verdict; file-level scan_files() wraps it."""
     hits: list[tuple[str, str, str]] = []
     for line_no, line in enumerate(lines, 1):
+        if is_plain_prose_path_list(line):
+            continue
         # Prose and code identifiers: class/def names legitimately run long,
         # URLs are not machine credentials.
         ok_meta = bool(re.match(r"^\s*(class |def |#|\*|[-a-z0-9]+:)", line)
@@ -75,6 +112,8 @@ def _scan_lines(lines: list[str]) -> list[tuple[str, str, str]]:
                 continue
             token = hit.group(0)
             if any(s.fullmatch(token) for s in SAFE_SHAPES):
+                continue
+            if rule == "b64-lookalike" and _is_prose_slash_list_fragment(token):
                 continue
             # A run quoted inside a path is preceded by "/" or ":" (the
             # line's directory part); a standalone credential is flanked

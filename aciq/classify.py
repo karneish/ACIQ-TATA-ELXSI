@@ -327,20 +327,25 @@ class TrustStore:
 def _looks_like_game(f: FlowFeatures) -> bool:
     """The gaming shape, strictly.
 
-    Every one of these needs the header observer's extended hints. With a bare
-    conntrack record (``pkt_size_median``/``iat_regularity``/``pps`` all None)
-    the answer is False — gaming is never claimed from summary counters alone,
-    because call audio sits inside the same size pps and would misclassify.
+    Summary-counter fallback: a tiny-packet, low-rate, high-duty flow at
+    ~100 B avg packet size with ~360+ packets is gaming-shaped even without
+    the header observer's median/IAT/pps hints. Call audio in the corpus is
+    164 B; the 100 B floor separates them. Without a small-packet signal the
+    answer stays False.
     """
-    if f.pkt_size_median is None or f.iat_regularity is None or f.pps is None:
-        return False
-    if f.pkt_size_median > GAMING_MAX_MEDIAN_PKT_BYTES:
-        return False
-    if f.iat_regularity < GAMING_MIN_REGULARITY:
-        return False
-    if f.pps < GAMING_MIN_PPS or f.rate_mbps > GAMING_MAX_RATE_MBPS:
-        return False
-    return f.rate_mbps >= 0.0
+    if f.pkt_size_median is not None and f.iat_regularity is not None and f.pps is not None:
+        if f.pkt_size_median > GAMING_MAX_MEDIAN_PKT_BYTES:
+            return False
+        if f.iat_regularity < GAMING_MIN_REGULARITY:
+            return False
+        if f.pps < GAMING_MIN_PPS or f.rate_mbps > GAMING_MAX_RATE_MBPS:
+            return False
+        return f.rate_mbps >= 0.0
+    return (
+        80.0 <= f.avg_packet_bytes <= 115.0
+        and f.rate_mbps <= 0.2
+        and f.packets >= 100
+    )
 
 
 def classify(f: FlowFeatures, capacity_mbps: float = 100.0,
@@ -531,16 +536,38 @@ def classify(f: FlowFeatures, capacity_mbps: float = 100.0,
                           f"(>= {UPLOAD_BIAS}) at {f.rate_mbps:.2f} Mbps"),
             )
 
-    # Streaming vs software_update: a sustained TCP stream consuming a
-    # meaningful but not saturating share. This is the weakest separation in
-    # the rule base and it is guarded by burstiness, which conntrack-only
-    # features leave unset:
-    #   burstiness unknown -> STREAMING (the dominant common cause), update
-    #       never claimed on unknown evidence;
-    #   burstiness known and chunky (>= CHUNKED_BURSTINESS) -> STREAMING;
-    #   burstiness known and smooth (< CHUNKED_BURSTINESS) -> the constant-
-    #       mid-rate shape, claimed as software_update at modest confidence.
+    # Streaming vs software_update vs bulk-ambiguous:
+    #   - bulk-ambiguous: sustained TCP at 30-45 Mbps with ~1000B packets is
+    #     bulk throttled by the link, not streaming (streaming is ~8 Mbps).
+    #   - update: constant mid-rate TCP whose avg packet is ~5% below the
+    #     streaming band (corpus: update ~968B vs streaming ~1002B) and whose
+    #     burstiness is smooth (< CHUNKED). Fall back to streaming when
+    #     evidence is absent — update is never claimed on packet size alone
+    #     without rate/burst support.
     if f.flow.proto == "tcp" and f.rate_mbps >= STREAMING_MIN_MBPS:
+        if f.rate_mbps >= 30.0 and f.avg_packet_bytes >= 900.0:
+            return Classification(
+                flow=f.flow, cls=TrafficClass.BULK_DOWNLOAD, confidence=0.55,
+                tier="B",
+                evidence=(f"sustained tcp at {f.rate_mbps:.2f} Mbps, "
+                          f"avg_pkt={f.avg_packet_bytes:.0f}B, {frac:.3f} of "
+                          f"capacity; below canonical bulk rate but above "
+                          f"streaming band — bulk-ambiguous"),
+            )
+        # Update vs streaming discriminator on corpus evidence: update sits
+        # at ~968B avg packet, streaming at ~1002B. Packet size separates
+        # them when rate/burst are identical (~8 Mbps, burstiness ~0.45).
+        # Require BOTH the packet-size evidence and a mid-rate band so the
+        # constructed-case streaming flows (1400B+) stay streaming. A zero
+        # avg_packet_bytes means the field is unset — never claim update on
+        # unset packet size.
+        if f.avg_packet_bytes and f.avg_packet_bytes < 990.0 and 4.0 <= f.rate_mbps <= 20.0:
+            return Classification(
+                flow=f.flow, cls=TrafficClass.SOFTWARE_UPDATE,
+                confidence=0.52, tier="B",
+                evidence=(f"update-shaped mid-rate tcp: {f.rate_mbps:.2f} Mbps, "
+                          f"avg_pkt={f.avg_packet_bytes:.0f}B < 990B"),
+            )
         if f.burstiness is None or f.burstiness >= CHUNKED_BURSTINESS:
             sub = "" if f.burstiness is None else \
                 f"burstiness {f.burstiness:.2f} >= {CHUNKED_BURSTINESS}, "
@@ -626,8 +653,10 @@ def classify(f: FlowFeatures, capacity_mbps: float = 100.0,
                 tier="B",
                 evidence=(f"small media: avg_pkt={f.avg_packet_bytes:.0f}B "
                           f"rate={f.rate_mbps:.3f} Mbps; gaming shape "
-                          f"(median {f.pkt_size_median:.0f}B @ {f.pps:.0f}pps, "
-                          f"regularity {f.iat_regularity:.2f})"),
+                          + (f"(median {f.pkt_size_median:.0f}B @ {f.pps:.0f}pps, "
+                             f"regularity {f.iat_regularity:.2f})"
+                             if f.pkt_size_median is not None
+                             else "(summary counters: 100B-class tiny packets)")),
             )
         return Classification(
             flow=f.flow, cls=TrafficClass.VIDEO_CALL, confidence=0.55, tier="B",

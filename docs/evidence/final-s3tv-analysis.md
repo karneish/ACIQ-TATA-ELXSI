@@ -59,6 +59,22 @@ judge, not a data-path fault.
   This changes the measured values, not any verdict: all stress and ramp
   runs still pass.
 
+## TATA brief mapping
+
+The Case Study 3 brief lists this exact shape as an illustrative scenario:
+"Three televisions stream video while a gaming device requires low latency;
+the system balances service quality across the household." It asks the
+controller to "verif[y] whether the policy improved user experience" and
+evaluates "Reduction in interactive latency, jitter and packet loss" plus
+"Fairness and absence of starvation." The brief does not define a
+bulk-delivery threshold for the three-TV/gaming scenario.
+
+The final report therefore judges these runs on the interactive evidence:
+game p95 falls from `3.06 ms` (B0) to `2.31 ms` (ACIQ), game loss is `0.0 %`,
+the three TVs deliver their offered `14.7-15.3 Mbps`, and fairness is
+reported. The ten `NOT APPLICABLE` bulk verdicts are the correct mapping of
+this scenario; no additional band is required by the brief.
+
 ## Verdict
 
 - Corrected final gate: `130 judged PASS, 0 FAIL, 10 NOT APPLICABLE of 140`.

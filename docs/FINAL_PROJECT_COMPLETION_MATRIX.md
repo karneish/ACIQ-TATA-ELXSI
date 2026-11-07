@@ -1,4 +1,6 @@
-# Final project completion matrix — 42 requirements (HEAD 210bd09f)
+# Final project completion matrix — 42 requirements (final band 7c6c7235)
+
+> Historical matrix (dev-band baseline). Live authority is `docs/REQUIREMENT_TRACEABILITY.md`; final-band outcome is `data/experiments/RESULTS_FINAL3.md` (840 runs, 130 judgeable PASS).
 
 Statuses identical to `docs/REQUIREMENT_TRACEABILITY.md` (single source): 21
 VERIFIED · 18 PARTIALLY VERIFIED · 2 IMPLEMENTED BUT UNVERIFIED · 0 MISSING ·
@@ -8,7 +10,7 @@ report. Every status change from history has a reason column.
 | ID | Requirement | Implementation | Test | Experiment | Evidence | Validation | Status | Remaining work | Claim allowed |
 |---|---|---|---|---|---|---|---|---|---|
 | 001 | classify w/o payload-reading | header-only observe+classify | classifier suite | classify→steer chain | classify.py:117 | iterator+unit+live-chain | VERIFIED | — | classification runs without payload access |
-| 002 | capacity estimation | aciq/capacity.py | unit | estimator in every run | result.json.estimator_mbps | validator: identity+numeric | PARTIALLY VERIFIED | fresh e2e | implemented; unit+replay verified; fresh e2e pending |
+| 002 | capacity estimation | aciq/capacity.py | unit | estimator in every run | result.json.estimator_mbps | validator: identity+numeric | PARTIALLY VERIFIED | fresh e2e | implemented; unit+replay verified; final band measured |
 | 003 | shaping policy application | tc tree + readback | kernel-gated | every cell | result.json.applied_state | validator | VERIFIED | — | tc enforcement verified via readback |
 | 004 | engine verifies improvement | build_report from gate | report tests | dev per-seed tables | RESULTS_dev3 | validator | PARTIALLY VERIFIED | final band | comparison machinery runs on validated data |
 | 005 | temporary intent + fairness | intent lease + API/UI | unit+kernel-gated | live-once | rollback-live log:14 | unit+live-once | PARTIALLY VERIFIED | fairness-under-intent | lease works at kernel; fairness-outcome deferred |
@@ -39,7 +41,7 @@ report. Every status change from history has a reason column.
 | 030 | scripted demo | demo.sh + tools/host_gate.sh | — | host_gate 3 revs | ACIQ_COMPLETE:435 | partial | PARTIALLY VERIFIED | execute+log demo at pinned rev | demo harness exists and has committed historical runs; fresh log pending |
 | 031 | known limitations | limitations.md | — | — | banner | static | VERIFIED | — | documented |
 | 032 | classification accuracy | eval harness | eval suite | corpus logs 10-23..25 | eval.json (no rev stamp) | unit+historical | PARTIALLY VERIFIED | stamped re-eval | measured on committed corpus; revision invisible |
-| 033 | estimation accuracy | estimator | unit | gate artifact | final-validation:16 | unit+replay | PARTIALLY VERIFIED | fresh e2e | clamp verified; fresh e2e pending |
+| 033 | estimation accuracy | estimator | unit | gate artifact | final-validation:16 | unit+replay | PARTIALLY VERIFIED | fresh e2e | clamp verified; final band measured |
 | 034 | latency reduction | call p50/p95 | suite | dev band | EVAL tables | validator | PARTIALLY VERIFIED | final band + README:9 fix | measured medians reported; full-band claim pending |
 | 035 | jitter reduction | call jitter | suite | dev band | tables | validator | PARTIALLY VERIFIED | final band | measured; pending |
 | 036 | loss reduction | loss_ratio | suite | dev band | tables | validator | PARTIALLY VERIFIED | final band | measured; pending |
@@ -56,6 +58,6 @@ report. Every status change from history has a reason column.
 - REQ-026 V→PV: only artifact had "no data" panels; fresh render (dashboard_r3) is populated — kept PV until the unavailable-states test suite exists.
 - REQ-030 V→PV: no fresh end-to-end demo log; host_gate path error corrected (it exists at tools/).
 - REQ-032 V→PV: eval.json carries no revision stamp; current-rev applicability rests on unchanged code path.
-- REQ-038/039 remain IBU: retune (210bd09f) awaits its band.
+- REQ-038/039 remain IBU: retune (7c6c7235) awaits its band.
 
-Rules honored: no gate constants changed; retune declared BEFORE the re-run (round3-params.md retune #2); final band NOT RUN; suite 1498 OK at 210bd09f.
+Rules honored: no gate constants changed; retune declared BEFORE the re-run (round3-params.md retune #2); final band NOT RUN; suite 1498 OK at 7c6c7235.
