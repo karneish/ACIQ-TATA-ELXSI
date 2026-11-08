@@ -222,6 +222,22 @@ SCENARIOS: dict[str, Scenario] = {
         duration_s=60.0,
         settle_s=4.0,
     ),
+    # S6 grid: 5 devices contending while the intent lease reserves a share
+    # for one. Same intent protocol as s6_intent_expire (real API at t=10s,
+    # TTL expires inside the run); the extra update/backup devices are what
+    # make this a contention grid rather than a 3-flow illustration.
+    "s6_intent_grid": Scenario(
+        name="s6_intent_grid",
+        workloads=(
+            Workload("call", "call", 1, dscp=46),
+            Workload("game", "game", 1, dscp=46),
+            Workload("bulk", "bulk", 1),
+            Workload("update", "update", 1),
+            Workload("backup", "backup", 1),
+        ),
+        duration_s=60.0,
+        settle_s=4.0,
+    ),
     # S2b generalization scenarios (declared docs/evidence/s2b-params.md,
     # written before the S2b dataset exists). Same workloads and settle as
     # s2/s4 so the numbers read against those tables; the link protocols

@@ -57,7 +57,7 @@ def teardown() -> None:
 # s4 is the rising edge: without --recover-at/--recover-to it behaves like s2.
 # s6 is the intent scenario: --api-intent requested at t~1, TTL inside the run.
 ALL_SCENARIOS = ["s1_iso_during_call", "s2_wan_drop", "s3_tv_and_gaming", "s5_update_backup_voice", "s8_ipv6_call",
-                 "s4_capacity_recovery", "s6_intent_expire",
+                 "s4_capacity_recovery", "s6_intent_expire", "s6_intent_grid",
                  "s2b_step_50", "s2b_step_10", "s2b_step_up_20to100",
                  "s2b_ramp_100to30",
                  "s7_up_20to60", "s7_up_30to100", "s7_rampup_30to100",
