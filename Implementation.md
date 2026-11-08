@@ -1,0 +1,84 @@
+# ACIQ — Implementation Tracker
+
+## What has been done so far (in `main`, frozen)
+
+- **Frozen acceptance band**: 840 runs, engine `7c6c7235780a` — **140 judged PASS, 0 FAIL**.
+- **TATA Case Study 3 (brief)**: all 34 mandatory lines implemented and live-proven.
+  - S1 ISO+call, S2 WAN 100→20, S3 TVs+gaming (`PASS(interactive)`, starvation 0).
+  - Classifier: corpus **0.917** held-out (frozen stamp 61% preserved honestly).
+  - Capacity: live up-step **80.48**, s4 recovery **77.85** (was 17.44).
+  - Dashboard: **840 runs / 41,040 samples** (`dashboard_final3/`).
+  - Intent/fairness/starvation: verifier gates + 5-device `s6_intent_grid` **10/10 seeds** live.
+  - Uplink shaping: **10 seeds** live (`--uplink 20 --enforce`).
+  - Crash-restart: **3 kill-9 cycles PASS**.
+  - Update/backup/voice (s5 ×5) + IPv6 (s8 ×3) live.
+- **Suite**: 1605 tests OK (10 skipped); secret scan clean; S3 judged PASS via `tools/verify_round3.py`.
+- **Branches**: `main` = frozen acceptance. `master` (this branch) = new unique-idea work. `main` must not be touched until the unique implementation is complete.
+
+---
+
+## The new unique idea (complete)
+
+**Real-Time Experience-Driven Predictive QoS Intelligence with Confidence-Aware Policy Selection, Unified Safety Validation, and Verified Automatic Recovery.**
+
+ACIQ today reacts to *current* congestion. The new layer adds a **brain on top** (existing controller still enforces):
+
+1. **Observe** — collect network state (capacity, demand per class, latency/jitter/loss, queue, policy, timestamps). Never fabricate; missing ≠ healthy.
+2. **Evaluate current policy** — healthy / monitor / degrading / confirmed / invalid / unknown. No change unless justified.
+3. **Predict** — deterministic trends (queue/latency/capacity slopes) → degradation status + severity + horizon + confidence. Prediction is never a fact.
+4. **Remember** — Experience Memory (`data/experiences.jsonl`, schema v1, JSON per Q1 decision): stores context → policy → prediction → simulated → actual outcome. Statuses: SUCCESS / FAILED / INCONCLUSIVE / SIMULATION_ONLY / REJECTED / RECOVERY / PREDICTION_ONLY / INCOMPLETE. Retrieval by similarity, always explained, prefers MEASURED, never bypasses validation.
+5. **Generate candidates** — bounded (≤5): RETAIN + `build_plan` variants; each with reason, trade-offs, risks.
+6. **Validate (unified gate)** — capacity, fairness, interactive protection, stability, enforcement compatibility, IPv4/IPv6, operational safety, evidence quality. Any violation → REJECT, recorded. No bypass.
+7. **Compare — historical only (Q2 decision: no new simulator)** — candidates vs current policy using *real past runs only*. Similar conditions required, differences explained. No history → say so, rely on current measurements + safety.
+8. **Decide with confidence** — separate dims (measurement, capacity, classification, prediction, similarity, enforcement). Outcomes: RETAIN / SELECT / REJECT_ALL / DEFER / RECOVER. Every decision has a structured `DecisionRecord` → `data/intelligence/decisions.jsonl` (new file, chosen).
+9. **Enforce via existing controller only** — intelligence never runs `tc` directly; version/freshness checked; submission + readback recorded.
+10. **Verify actual outcome** — SUCCESS / DEGRADED / INCONCLUSIVE / APPLICATION_FAILED / RECOVERED. Applied ≠ improved.
+11. **Recover (bounded, verified)** — only on verified deterioration; revalidate old policy against *current* capacity; else safe fallback. Attempt/cooldown limits.
+12. **Learn** — write the real outcome back to Experience Memory for next decision.
+
+**Golden rules (from spec §§4, 25):** safety before optimization · prediction ≠ outcome · simulation ≠ outcome · applied ≠ improved · recovery must be evidence-based · never claim unmeasured success · deterministic first, no LLM/RL controller.
+
+**Modules (all new, in `aciq/intelligence/`):**
+`state.py` (observer) · `evaluator.py` · `predictor.py` · `experience.py` (JSONL) · `candidates.py` · `validate.py` (gate) · `historical.py` (what-if) · `decide.py` · `outcome.py` (verify+recover) · `dashboard.py` (panels) · `config.py`
+
+**Separation contract (existing ↔ new):**
+
+| New | Existing interface | Integration |
+|---|---|---|
+| Network State Observer | `observer`/`features`/`metrics` | Reuse snapshots, never recreate estimators |
+| Policy Evaluator | `policy.build_plan` + `fairness` | Evaluate current `RatePlan` |
+| Predictor | `capacity`/`metrics` telemetry | Read-only trends |
+| Experience Repository | JSONL (`corrections.py` pattern) | Append-only, atomic, versioned |
+| Candidate Generator | `policy.build_plan` | Variants only — no unsupported params |
+| Safety Gate | `shield`/`txn` constraints | Single pre-enforcement gate |
+| Historical Comparison | `data/runs/*` + repository | MEASURED only, SIM labeled separately |
+| Decision Engine | `Harness` interface | Submits via `apply_system`, never `tc` directly |
+| Outcome/Recovery | `Harness` readback + txn rollback | Bounded, verified |
+| Dashboard | `dashboard.render_page` | New panels, read-only |
+
+---
+
+## Sequential implementation checklist
+
+- [ ] Phase 1 — Repository Audit (architecture summary, capability + gap inventory, integration map, risks)
+- [ ] Phase 2 — Architecture + Data Contracts (`NetworkState`, `PolicyHealth`, `Prediction`, `Experience`, `Candidate`, `ValidationResult`, `DecisionRecord`, `Outcome`, `RecoveryEvent`; sequence diagram)
+- [ ] Phase 3 — Foundation & Persistence (JSONL store, schema v1, atomic writes, validation, backups, retention, corruption handling)
+- [ ] Phase 4 — Intelligence Modules (state, evaluator, predictor, retrieval, candidates, gate, historical, decision — each unit-tested)
+- [ ] Phase 5 — Controller Integration (submit → accept/reject → apply → readback; version + freshness checks)
+- [ ] Phase 6 — Outcome Verification & Recovery (classification, bounded recovery, fallback, experience update)
+- [ ] Phase 7 — Dashboard & Reporting (6 new panel groups; Observed/Estimated/Predicted/Verified labels)
+- [ ] Phase 8 — End-to-End Integration (full lifecycle wired, no dead modules)
+- [ ] Phase 9 — Testing (existing 1605 + new unit/integration/failure + scenarios A–R; live via `run_live_closeout.sh` pattern)
+- [ ] Phase 10 — Final Audit (dead code, bypass paths, unbounded loops, misleading labels — fix before completion)
+
+## Test scenarios (intelligence-specific, A–R)
+- [ ] A Healthy policy retained · B ISO during video conf · C WAN 100→20 · D 3 TVs + gaming
+- [ ] E Temporary work-call intent (bounded, expires, fairness kept) · F Stale/unreliable measurement → defer
+- [ ] G Prediction wrong (no auto-change, error recorded) · H Simulation ≠ actual → actual wins + recovery
+- [ ] I Fairness violation → reject · J Capacity exceeded → reject · K Apply/readback failure → bounded recovery
+- [ ] L Old policy invalid now → safe fallback (not blind restore) · M Recovery failure → safe state
+- [ ] N Similar history used (explained) · O Misleading history down-weighted · P No history → say so, record new
+- [ ] Q Fluctuation → hysteresis, no oscillation · R Unknown/low-confidence traffic → conservative handling
+
+## Completion rule
+Complete only when every box above is checked with **real test output** (`make test`, `verify_round3`, live runs). No arbitrary scores.
