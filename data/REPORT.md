@@ -1,6 +1,6 @@
 # ACIQ+ experiment report
 
-Runs found: **404**
+Runs found: **437**
 
 ## Runs
 
@@ -8,6 +8,16 @@ Runs found: **404**
 |---|---|---|---|---|---|---|---|
 | s1_iso_during_call | aciq | adaptive | 1301 | 100.0 | 100.0 | 84.0 Mbps | 7 |
 | s1_iso_during_call | aciq | adaptive | 1402 | 100.0 | 100.0 | 17.0 Mbps | 7 |
+| s1_iso_during_call | aciq | adaptive | 1403 | 100.0 | 100.0 | 16.9 Mbps | 7 |
+| s1_iso_during_call | aciq | adaptive | 1404 | 100.0 | 100.0 | 18.2 Mbps | 7 |
+| s1_iso_during_call | aciq | adaptive | 1405 | 100.0 | 100.0 | 17.2 Mbps | 8 |
+| s1_iso_during_call | aciq | adaptive | 1406 | 100.0 | 100.0 | 13.5 Mbps | 5 |
+| s1_iso_during_call | aciq | adaptive | 1407 | 100.0 | 100.0 | 18.6 Mbps | 8 |
+| s1_iso_during_call | aciq | adaptive | 1408 | 100.0 | 100.0 | 18.1 Mbps | 7 |
+| s1_iso_during_call | aciq | adaptive | 1409 | 100.0 | 100.0 | 13.5 Mbps | 6 |
+| s1_iso_during_call | aciq | adaptive | 1410 | 100.0 | 100.0 | 13.8 Mbps | 6 |
+| s1_iso_during_call | aciq | adaptive | 1411 | 100.0 | 100.0 | 14.1 Mbps | 9 |
+| s1_iso_during_call | aciq | adaptive | 1412 | 100.0 | 100.0 | 13.7 Mbps | 6 |
 | s1_iso_during_call | aciq | adaptive | 200 | 100.0 | 100.0 | 95.6 Mbps | 2 |
 | s1_iso_during_call | aciq | adaptive | 201 | 100.0 | 100.0 | 95.8 Mbps | 2 |
 | s1_iso_during_call | aciq | adaptive | 202 | 100.0 | 100.0 | 95.9 Mbps | 2 |
@@ -92,6 +102,9 @@ Runs found: **404**
 | s2_wan_drop | aciq | adaptive | 1 | 100.0 | 20.0 | 23.8 Mbps | 2 |
 | s2_wan_drop | aciq | adaptive | 1302 | 100.0 | 20.0 | 19.9 Mbps | 10 |
 | s2_wan_drop | aciq | adaptive | 1403 | 100.0 | 20.0 | 19.9 Mbps | 10 |
+| s2_wan_drop | aciq | adaptive | 1500 | 100.0 | 20.0 | 66.1 Mbps | 8 |
+| s2_wan_drop | aciq | adaptive | 1501 | 100.0 | 20.0 | 66.0 Mbps | 11 |
+| s2_wan_drop | aciq | adaptive | 1502 | 100.0 | 20.0 | 65.3 Mbps | 9 |
 | s2_wan_drop | aciq | adaptive | 2 | 100.0 | 20.0 | 23.2 Mbps | 2 |
 | s2_wan_drop | aciq | adaptive | 200 | 100.0 | 20.0 | 21.6 Mbps | 3 |
 | s2_wan_drop | aciq | adaptive | 201 | 100.0 | 20.0 | 21.3 Mbps | 3 |
@@ -268,6 +281,16 @@ Runs found: **404**
 | s4_capacity_recovery | aciq | adaptive | 1200 | 100.0 | 20.0 | 17.4 Mbps | 13 |
 | s4_capacity_recovery | aciq | adaptive | 1401 | 100.0 | 100.0 | 77.8 Mbps | 14 |
 | s4_capacity_recovery | aciq | adaptive | 2 | 100.0 | 20.0 | 23.8 Mbps | 2 |
+| s4_capacity_recovery | aciq | adaptive | 200 | 100.0 | 20.0 | 21.5 Mbps | 3 |
+| s4_capacity_recovery | aciq | adaptive | 201 | 100.0 | 20.0 | 21.4 Mbps | 3 |
+| s4_capacity_recovery | aciq | adaptive | 202 | 100.0 | 20.0 | 21.4 Mbps | 3 |
+| s4_capacity_recovery | aciq | adaptive | 203 | 100.0 | 20.0 | 21.5 Mbps | 3 |
+| s4_capacity_recovery | aciq | adaptive | 204 | 100.0 | 20.0 | 21.5 Mbps | 3 |
+| s4_capacity_recovery | aciq | adaptive | 205 | 100.0 | 20.0 | 21.5 Mbps | 3 |
+| s4_capacity_recovery | aciq | adaptive | 206 | 100.0 | 20.0 | 21.4 Mbps | 3 |
+| s4_capacity_recovery | aciq | adaptive | 207 | 100.0 | 20.0 | 21.4 Mbps | 3 |
+| s4_capacity_recovery | aciq | adaptive | 208 | 100.0 | 20.0 | 20.4 Mbps | 3 |
+| s4_capacity_recovery | aciq | adaptive | 209 | 100.0 | 20.0 | 21.5 Mbps | 3 |
 | s4_capacity_recovery | aciq | adaptive | 3 | 100.0 | 20.0 | 23.6 Mbps | 2 |
 | s4_capacity_recovery | aciq | adaptive | 4 | 100.0 | 20.0 | 23.2 Mbps | 2 |
 | s4_capacity_recovery | aciq | adaptive | 5 | 100.0 | 20.0 | 23.9 Mbps | 2 |
@@ -405,6 +428,16 @@ Runs found: **404**
 | s6_intent_expire | b1_cake95 | static | 317 | 100.0 | 100.0 | n/a | 0 |
 | s6_intent_expire | b1_cake95 | static | 318 | 100.0 | 100.0 | n/a | 0 |
 | s6_intent_expire | b1_cake95 | static | 319 | 100.0 | 100.0 | n/a | 0 |
+| s6_intent_grid | aciq | adaptive | 1600 | 100.0 | 100.0 | 59.1 Mbps | 13 |
+| s6_intent_grid | aciq | adaptive | 1601 | 100.0 | 100.0 | 93.6 Mbps | 6 |
+| s6_intent_grid | aciq | adaptive | 1602 | 100.0 | 100.0 | 92.3 Mbps | 10 |
+| s6_intent_grid | aciq | adaptive | 1603 | 100.0 | 100.0 | 78.6 Mbps | 8 |
+| s6_intent_grid | aciq | adaptive | 1604 | 100.0 | 100.0 | 82.4 Mbps | 10 |
+| s6_intent_grid | aciq | adaptive | 1605 | 100.0 | 100.0 | 72.8 Mbps | 9 |
+| s6_intent_grid | aciq | adaptive | 1606 | 100.0 | 100.0 | 92.6 Mbps | 13 |
+| s6_intent_grid | aciq | adaptive | 1607 | 100.0 | 100.0 | 69.5 Mbps | 9 |
+| s6_intent_grid | aciq | adaptive | 1608 | 100.0 | 100.0 | 89.6 Mbps | 12 |
+| s6_intent_grid | aciq | adaptive | 1609 | 100.0 | 100.0 | 64.0 Mbps | 9 |
 | s8_ipv6_call | aciq | adaptive | 1100 | 100.0 | 100.0 | 86.3 Mbps | 5 |
 | s8_ipv6_call | aciq | adaptive | 1101 | 100.0 | 100.0 | 80.8 Mbps | 7 |
 | s8_ipv6_call | aciq | adaptive | 1102 | 100.0 | 100.0 | 75.8 Mbps | 6 |
@@ -421,7 +454,7 @@ Cells are **mean (min-max)** over seeds. A mean alone would hide the tails this 
 
 | system | n | p50 | p95 | p99 | jitter | loss |
 |---|---|---|---|---|---|---|
-| aciq | 22 | 71.404 (0.743-201.812) | 149.499 (8.779-239.765) | 179.409 (14.323-245.301) | 0.850 (0.452-1.330) | 0.005 (0.000-0.010) |
+| aciq | 32 | 49.398 (0.743-201.812) | 127.852 (8.779-239.765) | 155.405 (14.323-245.301) | 0.831 (0.452-1.330) | 0.004 (0.000-0.010) |
 | b0_fifo | 20 | 238.788 (238.398-239.055) | 250.692 (250.599-250.783) | 251.749 (251.662-251.854) | 3.124 (3.037-3.163) | 0.008 (0.007-0.008) |
 | b1_cake95 | 20 | 0.892 (0.823-0.944) | 1.496 (1.404-1.707) | 2.001 (1.587-2.727) | 0.462 (0.433-0.509) | 0.000 |
 | b1_cake_oracle | 20 | 0.912 (0.835-1.136) | 1.597 (1.426-2.842) | 2.029 (1.616-4.164) | 0.472 (0.427-0.709) | 0.000 |
@@ -442,7 +475,7 @@ Cells are **mean (min-max)** over seeds. A mean alone would hide the tails this 
 
 | system | n | p50 | p95 | p99 | jitter | loss |
 |---|---|---|---|---|---|---|
-| aciq | 28 | 27.302 (0.733-77.281) | 73.082 (24.533-101.171) | 106.811 (32.698-137.363) | 0.695 (0.507-0.964) | 0.002 (0.000-0.006) |
+| aciq | 31 | 24.722 (0.628-77.281) | 70.476 (24.533-101.171) | 102.986 (32.698-137.363) | 0.677 (0.463-0.964) | 0.002 (0.000-0.006) |
 | b0_fifo | 23 | 171.406 (83.099-237.832) | 250.272 (248.394-251.784) | 1146.960 (1140.205-1173.573) | 3.716 (2.700-4.529) | 0.089 (0.079-0.095) |
 | b1_cake95 | 23 | 31.546 (0.973-73.255) | 78.646 (67.039-92.281) | 85.012 (74.295-101.038) | 0.589 (0.497-0.759) | 0.003 (0.002-0.005) |
 | b1_cake_oracle | 20 | 0.679 (0.638-0.711) | 2.353 (2.256-2.485) | 3.163 (2.918-3.361) | 0.322 (0.293-0.409) | 0.000 |
@@ -494,7 +527,7 @@ Cells are **mean (min-max)** over seeds. A mean alone would hide the tails this 
 
 | system | n | p50 | p95 | p99 | jitter | loss |
 |---|---|---|---|---|---|---|
-| aciq | 12 | 67.654 (0.590-83.479) | 87.971 (40.826-99.959) | 110.391 (68.010-127.532) | 0.825 (0.430-0.908) | 0.003 (0.000-0.005) |
+| aciq | 22 | 52.650 (0.590-83.479) | 91.502 (40.826-99.959) | 116.399 (68.010-127.532) | 0.780 (0.430-0.908) | 0.003 (0.000-0.005) |
 | b0_fifo | 20 | 141.661 (80.533-204.365) | 247.749 (244.750-250.574) | 901.292 (851.583-978.226) | 2.552 (2.013-3.093) | 0.061 (0.055-0.064) |
 | b1_cake95 | 20 | 38.280 (1.424-75.743) | 89.838 (87.399-92.280) | 94.412 (90.160-100.064) | 0.732 (0.596-1.984) | 0.003 (0.001-0.018) |
 | b1_cake_oracle | 20 | 0.877 (0.834-0.928) | 2.745 (2.646-2.803) | 3.806 (3.360-4.180) | 0.485 (0.465-0.506) | 0.000 |
@@ -502,7 +535,7 @@ Cells are **mean (min-max)** over seeds. A mean alone would hide the tails this 
 **Where ACIQ wins or loses on the mean (not yet a significance claim):**
 
 - **p50: ACIQ beats b0_fifo and LOSES to b1_cake95 and b1_cake_oracle.**
-- **p95: ACIQ beats b0_fifo and b1_cake95 and LOSES to b1_cake_oracle.**
+- **p95: ACIQ beats b0_fifo and LOSES to b1_cake95 and b1_cake_oracle.**
 - **p99: ACIQ beats b0_fifo and LOSES to b1_cake95 and b1_cake_oracle.**
 - **jitter_ms: ACIQ beats b0_fifo and LOSES to b1_cake95 and b1_cake_oracle.**
 
@@ -545,6 +578,24 @@ Cells are **mean (min-max)** over seeds. A mean alone would hide the tails this 
 - **jitter_ms: ACIQ beats b0_fifo and LOSES to b1_cake95.**
 
 These lines compare means. Whether a difference is statistically distinguishable is tested separately, below, by paired exact Wilcoxon per metric; read the two together.
+### s6_intent_grid
+
+**call latency — measured by the call itself** (milliseconds, lower is better)
+
+Cells are **mean (min-max)** over seeds. A mean alone would hide the tails this project keeps getting wrong.
+
+| system | n | p50 | p95 | p99 | jitter | loss |
+|---|---|---|---|---|---|---|
+| aciq | 10 | 0.613 (0.520-0.712) | 14.194 (1.681-21.097) | 21.900 (13.060-26.172) | 0.432 (0.371-0.496) | 0.000 |
+
+**game latency — measured by the game itself** (milliseconds, lower is better)
+
+Cells are **mean (min-max)** over seeds. A mean alone would hide the tails this project keeps getting wrong.
+
+| system | n | p50 | p95 | p99 | jitter | loss |
+|---|---|---|---|---|---|---|
+| aciq | 10 | 0.625 (0.537-0.724) | 14.301 (2.111-20.888) | 21.809 (12.655-25.992) | 0.467 (0.403-0.550) | 0.000 (0.000-0.001) |
+
 ### s8_ipv6_call
 
 **call latency — measured by the call itself** (milliseconds, lower is better)
@@ -608,16 +659,21 @@ ACIQ against each rival, paired by seed. Exact, by enumerating sign flips -- 2^n
 | s3_tv_and_gaming | game | b1_cake_oracle | p95 | 20 | 0 | 88.0 | 0.5397 | -0.16 |
 | s3_tv_and_gaming | game | b1_cake_oracle | p99 | 20 | 0 | 64.0 | 0.1327 | -0.39 |
 | s3_tv_and_gaming | game | b1_cake_oracle | jitter_ms | 20 | 0 | 92.0 | 0.6477 | -0.12 |
-| s4_capacity_recovery | call | b0_fifo | p50 | 10 | 0 | 3.0 | 0.0098 | -0.89 |
-| s4_capacity_recovery | call | b0_fifo | p95 | 10 | 0 | 0.0 | 0.0020 | -1.00 |
-| s4_capacity_recovery | call | b0_fifo | p99 | 10 | 0 | 0.0 | 0.0020 | -1.00 |
-| s4_capacity_recovery | call | b0_fifo | jitter_ms | 10 | 0 | 0.0 | 0.0020 | -1.00 |
-| s4_capacity_recovery | call | b0_fifo | loss_ratio | 10 | 0 | 0.0 | 0.0020 | -1.00 |
-| s4_capacity_recovery | call | b1_cake95 | p50 | 10 | 0 | 55.0 | 0.0020 | +1.00 |
-| s4_capacity_recovery | call | b1_cake95 | p95 | 10 | 0 | 55.0 | 0.0020 | +1.00 |
-| s4_capacity_recovery | call | b1_cake95 | p99 | 10 | 0 | 54.0 | 0.0039 | +0.96 |
-| s4_capacity_recovery | call | b1_cake95 | jitter_ms | 10 | 0 | 45.0 | 0.0840 | +0.64 |
-| s4_capacity_recovery | call | b1_cake95 | loss_ratio | 9 | 1 | 36.0 | 0.1250 | +0.60 |
+| s4_capacity_recovery | call | b0_fifo | p50 | 20 | 0 | 3.0 | 0.0000 | -0.97 |
+| s4_capacity_recovery | call | b0_fifo | p95 | 20 | 0 | 0.0 | 0.0000 | -1.00 |
+| s4_capacity_recovery | call | b0_fifo | p99 | 20 | 0 | 0.0 | 0.0000 | -1.00 |
+| s4_capacity_recovery | call | b0_fifo | jitter_ms | 20 | 0 | 0.0 | 0.0000 | -1.00 |
+| s4_capacity_recovery | call | b0_fifo | loss_ratio | 20 | 0 | 0.0 | 0.0000 | -1.00 |
+| s4_capacity_recovery | call | b1_cake95 | p50 | 20 | 0 | 210.0 | 0.0000 | +1.00 |
+| s4_capacity_recovery | call | b1_cake95 | p95 | 20 | 0 | 210.0 | 0.0000 | +1.00 |
+| s4_capacity_recovery | call | b1_cake95 | p99 | 20 | 0 | 209.0 | 0.0000 | +0.99 |
+| s4_capacity_recovery | call | b1_cake95 | jitter_ms | 20 | 0 | 190.0 | 0.0007 | +0.81 |
+| s4_capacity_recovery | call | b1_cake95 | loss_ratio | 19 | 1 | 166.5 | 0.0025 | +0.75 |
+| s4_capacity_recovery | call | b1_cake_oracle | p50 | 10 | 0 | 55.0 | 0.0020 | +1.00 |
+| s4_capacity_recovery | call | b1_cake_oracle | p95 | 10 | 0 | 55.0 | 0.0020 | +1.00 |
+| s4_capacity_recovery | call | b1_cake_oracle | p99 | 10 | 0 | 55.0 | 0.0020 | +1.00 |
+| s4_capacity_recovery | call | b1_cake_oracle | jitter_ms | 10 | 0 | 55.0 | 0.0020 | +1.00 |
+| s4_capacity_recovery | call | b1_cake_oracle | loss_ratio | 10 | 0 | 55.0 | 0.0020 | +1.00 |
 | s6_intent_expire | call | b0_fifo | p50 | 20 | 0 | 0.0 | 0.0000 | -1.00 |
 | s6_intent_expire | call | b0_fifo | p95 | 20 | 0 | 0.0 | 0.0000 | -1.00 |
 | s6_intent_expire | call | b0_fifo | p99 | 20 | 0 | 0.0 | 0.0000 | -1.00 |
@@ -639,14 +695,14 @@ ACIQ against each rival, paired by seed. Exact, by enumerating sign flips -- 2^n
 | s6_intent_expire | game | b1_cake95 | jitter_ms | 20 | 0 | 209.0 | 0.0000 | +0.99 |
 | s6_intent_expire | game | b1_cake95 | loss_ratio | 12 | 8 | 78.0 | 0.0005 | +1.00 |
 
-**64 of 72 comparisons reach p < 0.05.** Each is one metric against one rival in one scenario; they are not independent of each other, so this is a count of results, not a family-wise error rate.
+**71 of 77 comparisons reach p < 0.05.** Each is one metric against one rival in one scenario; they are not independent of each other, so this is a count of results, not a family-wise error rate.
 
 23 pair(s) had zero difference and were dropped from the signed-rank test; each dropped pair lowers n and raises the smallest attainable p, which is stated per row rather than hidden.
 
 ## Reporting caveats
 
 - **1 run(s) recorded no latency at all.** Shown as n/a rather than 0, because missing is not zero.
-- **2320 latency measurements** across the matrix, each self-reported by the workload that carried it.
+- **2535 latency measurements** across the matrix, each self-reported by the workload that carried it.
 - The link is an **HTB token-bucket emulation**, not real DSL/cable/fiber.
 - Counter-based detection only sees a bottleneck **on the router**; a downstream ISP-side bottleneck stays invisible. Gate check 12 measured a validated remedy (an unmarked probe showed ~8x delay rise) that is not in the MVP.
 - Classification accuracy is measured on **self-generated** traffic.

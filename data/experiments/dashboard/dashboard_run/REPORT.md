@@ -6,7 +6,7 @@ Runs found: **1**
 
 | scenario | system | mode | seed | link start | link end | estimator | policy changes |
 |---|---|---|---|---|---|---|---|
-| s2_wan_drop | aciq | adaptive | 42 | 100.0 | 20.0 | 21.4 Mbps | 4 |
+| s2_wan_drop | aciq | adaptive | 42 | 100.0 | 20.0 | 19.9 Mbps | 10 |
 
 ## Latency, measured by each workload itself
 
@@ -18,7 +18,7 @@ Cells are **mean (min-max)** over seeds. A mean alone would hide the tails this 
 
 | system | n | p50 | p95 | p99 | jitter | loss |
 |---|---|---|---|---|---|---|
-| aciq | 1 | 1.016 | 70.312 | 130.692 | 0.605 | 0.003 |
+| aciq | 1 | 0.889 | 29.532 | 38.603 | 0.544 | 0.000 |
 
 
 **These verdicts are read per percentile, not cherry-picked.**
