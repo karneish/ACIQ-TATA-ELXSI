@@ -60,8 +60,8 @@ ACIQ today reacts to *current* congestion. The new layer adds a **brain on top**
 
 ## Sequential implementation checklist
 
-- [ ] Phase 1 — Repository Audit (architecture summary, capability + gap inventory, integration map, risks)
-- [ ] Phase 2 — Architecture + Data Contracts (`NetworkState`, `PolicyHealth`, `Prediction`, `Experience`, `Candidate`, `ValidationResult`, `DecisionRecord`, `Outcome`, `RecoveryEvent`; sequence diagram)
+- [x] Phase 1 — Repository Audit → `docs/intelligence/phase1-audit.md` (architecture summary, capability + gap inventory, integration map, risks, file plan)
+- [x] Phase 2 — Architecture + Data Contracts → `aciq/intelligence/contracts.py` (12 records, tested) + `docs/intelligence/phase2-contracts.md` (sequence diagram, module ownership, error rules)
 - [ ] Phase 3 — Foundation & Persistence (JSONL store, schema v1, atomic writes, validation, backups, retention, corruption handling)
 - [ ] Phase 4 — Intelligence Modules (state, evaluator, predictor, retrieval, candidates, gate, historical, decision — each unit-tested)
 - [ ] Phase 5 — Controller Integration (submit → accept/reject → apply → readback; version + freshness checks)
