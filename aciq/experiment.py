@@ -1613,6 +1613,15 @@ class ExperimentRunner:
             from .intelligence.contracts import DecisionAction  # noqa
 
             cfg = IntelligenceConfig()
+            # Audit-log separation (Task E): dry runs must NEVER pollute the
+            # live audit files. Dry/test runs write to a temp store whose
+            # path is recorded in the summary; live runs keep cfg paths.
+            if isinstance(self.launcher, DryLauncher):
+                import tempfile as _tf
+                _audit_dir = Path(_tf.mkdtemp(prefix="aciq-intel-dry-"))
+                cfg = IntelligenceConfig(
+                    experience_path=str(_audit_dir / "experiences.jsonl"),
+                    decisions_path=str(_audit_dir / "decisions.jsonl"))
             correlation_id = f"{scenario_name}:{seed}:{elapsed:.1f}"
 
             per_class = {k.value: {"goodput_mbps": float(getattr(v, "goodput_mbps", 0.0)),
@@ -1673,7 +1682,9 @@ class ExperimentRunner:
                     status = status_map.get(outcome_cls.value, _ES.INCONCLUSIVE)
                     if outcome_cls.value == "degraded":
                         eng = RecoveryEngine(
-                            ControllerGateway(self.harness, cfg), cfg)
+                            ControllerGateway(self.harness, cfg), cfg,
+                            log_path=str(Path(cfg.decisions_path).parent
+                                         / "recovery.jsonl"))
                         ev, _rec_app = eng.recover(
                             state, pending["previous_plan"],
                             pending["app"].decision_id,

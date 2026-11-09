@@ -484,6 +484,8 @@ class HistoricalResult(Record):
     ranking: tuple[str, ...] = ()
     limitations: tuple[str, ...] = ()
     complete: bool = False
+    # how many measured records were comparable (0 = none, never fabricated)
+    n_comparable: int = 0
     correlation_id: str = ""
     record_id: str = field(default_factory=_new_id)
     recorded_at: float = 0.0
@@ -505,9 +507,11 @@ class HistoricalResult(Record):
         return cls(candidate_id=d["candidate_id"], baseline_policy_id=d["baseline_policy_id"],
                    metrics={k: float(v) for k, v in d.get("metrics", {}).items()},
                    ranking=tuple(d.get("ranking", ())), limitations=tuple(d.get("limitations", ())),
-                   complete=bool(d.get("complete", False)), correlation_id=d.get("correlation_id", ""),
-                   record_id=d["record_id"], recorded_at=float(d["recorded_at"]),
-                   schema=int(d.get("schema", SCHEMA_VERSION)))
+                    complete=bool(d.get("complete", False)),
+                    n_comparable=int(d.get("n_comparable", 0) or 0),
+                    correlation_id=d.get("correlation_id", ""),
+                    record_id=d["record_id"], recorded_at=float(d["recorded_at"]),
+                    schema=int(d.get("schema", SCHEMA_VERSION)))
 
 
 # --------------------------------------------------------------------------
@@ -526,6 +530,10 @@ class DecisionResult(Record):
     mandatory_checks: tuple[str, ...] = ()
     relevant_experiences: tuple[str, ...] = ()
     expected_trade_offs: tuple[str, ...] = ()
+    # Historical comparison exposure (additive, optional): None means the
+    # comparison was not run for this decision. When present it always states
+    # executed/complete/n_comparable — never invented metrics.
+    historical: dict[str, Any] | None = None
     reason: str = ""
     correlation_id: str = ""
     record_id: str = field(default_factory=_new_id)
@@ -556,6 +564,7 @@ class DecisionResult(Record):
                    mandatory_checks=tuple(d.get("mandatory_checks", ())),
                    relevant_experiences=tuple(d.get("relevant_experiences", ())),
                    expected_trade_offs=tuple(d.get("expected_trade_offs", ())),
+                   historical=(dict(d["historical"]) if isinstance(d.get("historical"), dict) else None),
                    reason=d.get("reason", ""), correlation_id=d.get("correlation_id", ""),
                    record_id=d["record_id"], recorded_at=float(d["recorded_at"]),
                    schema=int(d.get("schema", SCHEMA_VERSION)))

@@ -94,7 +94,8 @@ class HistoricalComparer:
             ranking=(candidate.record_id, baseline_policy_id),
             limitations=(f"historical only: n={len(near)} comparable measured runs, "
                          "not a live prediction",),
-            complete=True, correlation_id=correlation_id,
+            complete=True, n_comparable=len(near),
+            correlation_id=correlation_id,
             recorded_at=state.recorded_at)
 
     def _load_measured(self) -> list[dict[str, Any]]:

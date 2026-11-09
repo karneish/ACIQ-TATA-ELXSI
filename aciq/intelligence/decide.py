@@ -36,6 +36,18 @@ class DecisionEngine:
                now: float | None = None) -> DecisionResult:
         accepted = [v for v in validations if v.accepted]
         rejected = [v for v in validations if not v.accepted]
+        # Historical exposure (additive): what the comparer saw, verbatim.
+        # None means "not run" — the audit can then tell the difference.
+        hist_summary = None
+        if historical:
+            h0 = historical[0]
+            hist_summary = {
+                "executed": True,
+                "complete": bool(h0.complete),
+                "n_comparable": int(getattr(h0, "n_comparable", 0) or 0),
+                "metrics": dict(h0.metrics or {}),
+                "limitations": list(h0.limitations or ()),
+            }
         conf = {
             "measurement": 1.0 if state.reliability.value == "reliable" else (
                 0.5 if state.reliability.value == "degraded" else 0.1),
@@ -55,7 +67,7 @@ class DecisionEngine:
                              selected=None, rejected=rejected, conf=conf,
                              mandatory=mandatory, retrieved=retrieved,
                              reason="confirmed degradation with reliable evidence",
-                             correlation_id=correlation_id, now=now)
+                             correlation_id=correlation_id, now=now, hist=hist_summary)
 
         # 2. No acceptable candidate → RETAIN or REJECT_ALL.
         if not accepted:
@@ -64,13 +76,13 @@ class DecisionEngine:
                                  selected=None, rejected=rejected, conf=conf,
                                  mandatory=mandatory, retrieved=retrieved,
                                  reason="no candidate passed the gate; current policy stands",
-                                 correlation_id=correlation_id, now=now)
+                                 correlation_id=correlation_id, now=now, hist=hist_summary)
             action = (DecisionAction.DEFER if not retrieved else DecisionAction.REJECT_ALL)
             return self._out(action, state, evaluation,
                              selected=None, rejected=rejected, conf=conf,
                              mandatory=mandatory, retrieved=retrieved,
                              reason="all candidates rejected by the gate",
-                             correlation_id=correlation_id, now=now)
+                             correlation_id=correlation_id, now=now, hist=hist_summary)
 
         # 3. Current policy healthy + no strong degradation forecast → RETAIN.
         if (evaluation.health.value == "healthy"
@@ -79,7 +91,7 @@ class DecisionEngine:
                              selected=None, rejected=rejected, conf=conf,
                              mandatory=mandatory, retrieved=retrieved,
                              reason="current policy healthy; change not justified",
-                             correlation_id=correlation_id, now=now)
+                             correlation_id=correlation_id, now=now, hist=hist_summary)
 
         # 4. Low confidence → DEFER instead of guessing.
         decisive = [v for v in conf.values() if v is not None]
@@ -88,7 +100,7 @@ class DecisionEngine:
                              selected=None, rejected=rejected, conf=conf,
                              mandatory=mandatory, retrieved=retrieved,
                              reason="confidence too low for aggressive change",
-                             correlation_id=correlation_id, now=now)
+                             correlation_id=correlation_id, now=now, hist=hist_summary)
 
         # 5. SELECT the first accepted candidate (bounded, gate-approved).
         winner = accepted[0]
@@ -97,11 +109,11 @@ class DecisionEngine:
                          selected=cand_id, rejected=rejected, conf=conf,
                          mandatory=mandatory, retrieved=retrieved,
                          reason=f"first gate-approved candidate {cand_id!r}",
-                         correlation_id=correlation_id, now=now)
+                         correlation_id=correlation_id, now=now, hist=hist_summary)
 
     @staticmethod
     def _out(action, state, evaluation, selected, rejected, conf, mandatory,
-             retrieved, reason, correlation_id, now) -> DecisionResult:
+             retrieved, reason, correlation_id, now, hist=None) -> DecisionResult:
         return DecisionResult(
             action=action,
             current_policy_id=evaluation.current_policy_id,
@@ -113,6 +125,7 @@ class DecisionEngine:
                 getattr(getattr(e, "experience", e), "record_id", "")
                 for e in (retrieved or [])),
             expected_trade_offs=("change cost: stability",),
+            historical=hist,
             reason=reason, correlation_id=correlation_id,
             recorded_at=now if now is not None else time.time())
 
