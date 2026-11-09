@@ -438,7 +438,7 @@ Runs found: **438**
 | s6_intent_grid | aciq | adaptive | 1607 | 100.0 | 100.0 | 69.5 Mbps | 9 |
 | s6_intent_grid | aciq | adaptive | 1608 | 100.0 | 100.0 | 89.6 Mbps | 12 |
 | s6_intent_grid | aciq | adaptive | 1609 | 100.0 | 100.0 | 64.0 Mbps | 9 |
-| s6_intent_grid | aciq | adaptive | 1700 | 100.0 | 100.0 | 89.9 Mbps | 3 |
+| s6_intent_grid | aciq | adaptive | 1700 | 100.0 | 100.0 | 95.2 Mbps | 7 |
 | s8_ipv6_call | aciq | adaptive | 1100 | 100.0 | 100.0 | 86.3 Mbps | 5 |
 | s8_ipv6_call | aciq | adaptive | 1101 | 100.0 | 100.0 | 80.8 Mbps | 7 |
 | s8_ipv6_call | aciq | adaptive | 1102 | 100.0 | 100.0 | 75.8 Mbps | 6 |
@@ -587,7 +587,7 @@ Cells are **mean (min-max)** over seeds. A mean alone would hide the tails this 
 
 | system | n | p50 | p95 | p99 | jitter | loss |
 |---|---|---|---|---|---|---|
-| aciq | 11 | 0.616 (0.520-0.712) | 13.102 (1.681-21.097) | 20.251 (3.760-26.172) | 0.446 (0.371-0.578) | 0.000 |
+| aciq | 11 | 0.616 (0.520-0.712) | 14.404 (1.681-21.097) | 22.083 (13.060-26.172) | 0.431 (0.371-0.496) | 0.000 |
 
 **game latency — measured by the game itself** (milliseconds, lower is better)
 
@@ -595,7 +595,7 @@ Cells are **mean (min-max)** over seeds. A mean alone would hide the tails this 
 
 | system | n | p50 | p95 | p99 | jitter | loss |
 |---|---|---|---|---|---|---|
-| aciq | 11 | 0.626 (0.537-0.724) | 13.200 (2.111-20.888) | 20.194 (4.046-25.992) | 0.485 (0.403-0.656) | 0.000 (0.000-0.001) |
+| aciq | 11 | 0.632 (0.537-0.724) | 14.490 (2.111-20.888) | 21.981 (12.655-25.992) | 0.466 (0.403-0.550) | 0.000 (0.000-0.001) |
 
 ### s8_ipv6_call
 
