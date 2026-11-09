@@ -65,11 +65,11 @@ ACIQ today reacts to *current* congestion. The new layer adds a **brain on top**
 - [x] Phase 3 — Foundation & Persistence → `aciq/intelligence/config.py` + `experience.py` (ExperienceStore + DecisionLogger) + `docs/intelligence/phase3-foundation.md`; 15 foundation tests; `data/intelligence/decisions.jsonl`
 - [x] Phase 4 — Intelligence Modules → `aciq/intelligence/{state,evaluator,predictor,candidates,validate,historical,decide}.py` + `docs/intelligence/phase4-modules.md`; 21 module tests
 - [x] Phase 5 — Controller Integration → `aciq/intelligence/integration.py` (ControllerGateway) + `--intelligence` opt-in hook + `docs/intelligence/phase5-integration.md`; 7 integration tests
-- [ ] Phase 6 — Outcome Verification & Recovery (classification, bounded recovery, fallback, experience update)
-- [ ] Phase 7 — Dashboard & Reporting (6 new panel groups; Observed/Estimated/Predicted/Verified labels)
-- [ ] Phase 8 — End-to-End Integration (full lifecycle wired, no dead modules)
-- [ ] Phase 9 — Testing (existing 1605 + new unit/integration/failure + scenarios A–R; live via `run_live_closeout.sh` pattern)
-- [ ] Phase 10 — Final Audit (dead code, bypass paths, unbounded loops, misleading labels — fix before completion)
+- [x] Phase 6 — Outcome Verification & Recovery → `aciq/intelligence/outcome.py` (OutcomeVerifier + RecoveryEngine) + `docs/intelligence/phase6-outcome.md`; 10 outcome tests
+- [x] Phase 7 — Dashboard & Reporting → `aciq/intelligence/dashboard.py` (additive section, base 6 panels untouched) + `docs/intelligence/phase7-dashboard.md`; 7 panel tests
+- [x] Phase 8 — End-to-End Integration → historical/outcome/recovery/experience wired in `_intelligence_step` + `docs/intelligence/phase8-e2e.md`; 3 e2e dry tests (no dead modules)
+- [x] Phase 9 — Testing → 108 intelligence tests (scenarios A–R + perf probe ~1 ms/cycle) + `docs/intelligence/phase9-testing.md` + verifier 140 PASS
+- [x] Phase 10 — Final Audit → `docs/intelligence/phase10-audit.md` (2 dead-code + 1 persistence defect fixed; repo lint clean; **1713 tests OK**) — intelligence lifecycle complete
 
 ## Test scenarios (intelligence-specific, A–R)
 - [ ] A Healthy policy retained · B ISO during video conf · C WAN 100→20 · D 3 TVs + gaming
