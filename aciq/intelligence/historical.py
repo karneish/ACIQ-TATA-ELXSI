@@ -24,12 +24,26 @@ class HistoricalComparer:
         self.config = config or IntelligenceConfig()
         self._rows_cache: list[dict[str, Any]] | None = None
 
+    @staticmethod
+    def _capacity_of(r: dict[str, Any]) -> float | None:
+        # Semantics (verified against live result.json): link_end_mbps is the
+        # run's final applied link rate = the scenario truth (100 for s1, 20
+        # for a 100→20 drop, 100 after recovery). estimator_mbps is the
+        # estimator's internal reading, which *lags* truth (75.4 vs 100) and
+        # is therefore only a fallback, never the comparability axis.
+        for key in ("link_end_mbps", "estimator_mbps"):
+            v = r.get(key)
+            if isinstance(v, (int, float)) and v > 0:
+                return float(v)
+        return None
+
     def compare(self, candidate: Candidate, baseline_policy_id: str,
                 state: NetworkState,
                 correlation_id: str = "") -> HistoricalResult:
-        rows = self._load_measured()
+        rows = [r for r in self._load_measured()
+                if self._capacity_of(r) is not None]
         near = [r for r in rows
-                if abs(r.get("capacity_mbps", 0) - state.capacity.mbps) <= 20.0]
+                if abs(self._capacity_of(r) - state.capacity.mbps) <= 20.0]
         if not near:
             return HistoricalResult(
                 candidate_id=candidate.record_id,
@@ -39,17 +53,40 @@ class HistoricalComparer:
                 complete=False, correlation_id=correlation_id,
                 recorded_at=state.recorded_at)
 
-        def _mean(rows, key, default=0.0):
-            vals = [r[key] for r in rows if key in r and r[key] is not None]
-            return sum(vals) / len(vals) if vals else default
+        def _mean(vals: list[float]) -> float:
+            return sum(vals) / len(vals)
 
-        metrics = {
-            "latency_p95_ms": _mean(near, "call_p95_ms"),
-            "jitter_ms": _mean(near, "jitter_ms"),
-            "loss_ratio": _mean(near, "loss_ratio"),
-            "bulk_mbps": _mean(near, "bulk_mbps"),
-            "fairness": _mean(near, "fairness"),
-        }
+        # Metrics come from the workload reports beside result.json
+        # (call.json / bulk.json) — result.json carries no outcome metrics.
+        metrics: dict[str, float] = {}
+        lat, jit, loss, bulk = [], [], [], []
+        for r in rows:
+            if r not in near:
+                continue
+            run_dir = r.get("_dir")
+            if not run_dir:
+                continue
+            call = self._read_json(Path(run_dir) / "call.json")
+            bulk_rep = self._read_json(Path(run_dir) / "bulk.json")
+            if call:
+                if call.get("p95") is not None:
+                    lat.append(float(call["p95"]))
+                if call.get("jitter_ms") is not None:
+                    jit.append(float(call["jitter_ms"]))
+                if call.get("loss_ratio") is not None:
+                    loss.append(float(call["loss_ratio"]))
+            if bulk_rep and bulk_rep.get("sender_mbps") is not None:
+                bulk.append(float(bulk_rep["sender_mbps"]))
+        if lat:
+            metrics["latency_p95_ms"] = _mean(lat)
+        if jit:
+            metrics["jitter_ms"] = _mean(jit)
+        if loss:
+            metrics["loss_ratio"] = _mean(loss)
+        if bulk:
+            metrics["bulk_mbps"] = _mean(bulk)
+        # NOTE: per-run fairness is not recorded per run (fairness.py computes
+        # it cross-mode); it is intentionally absent here — never fabricated.
         return HistoricalResult(
             candidate_id=candidate.record_id,
             baseline_policy_id=baseline_policy_id,
@@ -70,6 +107,15 @@ class HistoricalComparer:
                 r = json.loads(Path(path).read_text())
             except (OSError, json.JSONDecodeError):
                 continue
+            r["_dir"] = str(Path(path).parent)  # internal: locate workload reports
             out.append(r)
         self._rows_cache = out
         return out
+
+    @staticmethod
+    def _read_json(path: Path) -> dict[str, Any] | None:
+        try:
+            d = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            return None
+        return d if isinstance(d, dict) else None

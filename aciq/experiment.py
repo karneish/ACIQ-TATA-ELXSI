@@ -1733,7 +1733,7 @@ class ExperimentRunner:
                         _cand, parent_id, state, correlation_id)]
             decision = DecisionEngine(cfg).decide(
                 state, evaluation, prediction, candidates, validations,
-                historical, [r.experience for r in retrieved],
+                historical, retrieved,
                 correlation_id, now=time.time())
 
             try:
