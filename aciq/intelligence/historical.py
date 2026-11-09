@@ -22,6 +22,7 @@ class HistoricalComparer:
                  config: IntelligenceConfig | None = None):
         self.root = Path(runs_root)
         self.config = config or IntelligenceConfig()
+        self._rows_cache: list[dict[str, Any]] | None = None
 
     def compare(self, candidate: Candidate, baseline_policy_id: str,
                 state: NetworkState,
@@ -60,6 +61,9 @@ class HistoricalComparer:
             recorded_at=state.recorded_at)
 
     def _load_measured(self) -> list[dict[str, Any]]:
+        # cached: the runs tree does not change during a run
+        if self._rows_cache is not None:
+            return self._rows_cache
         out: list[dict[str, Any]] = []
         for path in sorted(glob.glob(str(self.root / "*" / "result.json"))):
             try:
@@ -67,4 +71,5 @@ class HistoricalComparer:
             except (OSError, json.JSONDecodeError):
                 continue
             out.append(r)
+        self._rows_cache = out
         return out

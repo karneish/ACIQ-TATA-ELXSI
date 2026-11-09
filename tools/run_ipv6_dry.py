@@ -3,7 +3,6 @@ run via ExperimentRunner dry path, assert the v6 tuple flows through config
 and the classifier emits a v6 verdict without crashing.
 """
 import sys; sys.path.insert(0,'.')
-from pathlib import Path
 from aciq.harness import Scenario, Workload, SCENARIOS
 from aciq.ipv6 import ipv6_flow
 # Register a v6 scenario (additive, does not disturb frozen band)

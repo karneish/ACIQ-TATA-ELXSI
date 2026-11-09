@@ -16,7 +16,6 @@ Safety rules (spec §§13, 25):
 from __future__ import annotations
 
 import json
-import math
 import os
 import time
 from dataclasses import dataclass

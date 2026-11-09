@@ -2,7 +2,6 @@
 import unittest
 
 from aciq.intelligence import (
-    SCHEMA_VERSION,
     ApplicationResult,
     Candidate,
     DecisionAction,

@@ -834,7 +834,7 @@ class ExperimentRunner:
         try:
             recon = self.harness.reconcile_after_restart(last_plan=None)
             if recon.get('kernel_tree_present'):
-                print(f"note: restart reconciled, kernel tree present", file=sys.stderr)
+                print("note: restart reconciled, kernel tree present", file=sys.stderr)
         except Exception:
             pass
         for i in range(ticks):
@@ -1164,6 +1164,28 @@ class ExperimentRunner:
 
         paths.write_jsonl("samples.jsonl", samples)
         paths.write_json("workloads.json", workloads)
+        # Intelligence observability (Phase 10 wiring: the layer's dashboard
+        # module was imported only by tests). When intelligence ran, the run
+        # carries an intelligence snapshot beside samples/result — Predicted
+        # never rendered as Verified.
+        if self._intelligence_on:
+            try:
+                from .dashboard import build_from_samples
+                from .intelligence.dashboard import render_intelligence_section
+                from .intelligence.experience import DecisionLogger
+                from .intelligence.config import IntelligenceConfig
+                _decisions = DecisionLogger(
+                    IntelligenceConfig().decisions_path).load_all()
+                _decisions = [d for d in _decisions
+                              if d.correlation_id.startswith(f"{scenario_name}:{seed}:")]
+                _section = render_intelligence_section(
+                    samples, [d.to_dict() for d in _decisions], [])
+                if _section:
+                    (paths.root / "dashboard_intel.html").write_text(
+                        build_from_samples(samples, intelligence=_section),
+                        encoding="utf-8")
+            except Exception as e:  # noqa: BLE001 - never fail a run over a page
+                print(f"note: intelligence dashboard failed: {e!r}", file=sys.stderr)
         # The transaction manager's audit was in memory and never written, so a
         # run that applied, vetoed or rolled back a policy left no trace of it.
         # "policy_changes=0" says the count, not the reason.
@@ -1588,8 +1610,7 @@ class ExperimentRunner:
             from .intelligence.integration import ControllerGateway
             from .intelligence.experience import DecisionLogger, ExperienceStore
             from .intelligence.config import IntelligenceConfig
-            from .contracts import DecisionAction  # noqa
-            from .model import TrafficClass
+            from .intelligence.contracts import DecisionAction  # noqa
 
             cfg = IntelligenceConfig()
             correlation_id = f"{scenario_name}:{seed}:{elapsed:.1f}"
@@ -1600,7 +1621,11 @@ class ExperimentRunner:
                                    "loss_ratio": getattr(v, "loss_ratio", None),
                                    "backlog_bytes": getattr(v, "backlog_bytes", 0)}
                          for k, v in getattr(frame, "per_class", {}).items()}
-            sample = {"t": elapsed, "per_class": per_class,
+            # Sample timestamps live in the same wall-clock base as the
+            # observer (elapsed is run-relative and would always read stale
+            # against time.time(), which made every live decision DEFER).
+            sample_t = time.time()
+            sample = {"t": sample_t, "per_class": per_class,
                       "throughput_mbps": sum(
                           v.get("goodput_mbps", 0.0) for v in per_class.values())}
             last_m = getattr(self.harness, "last_measurement", None)
@@ -1608,13 +1633,74 @@ class ExperimentRunner:
                 sample["bottleneck_backlog_bytes"] = getattr(
                     last_m, "bottleneck_backlog_bytes", None)
             estimator_cap = self.harness._estimator.current
-            observer = NetworkStateObserver(estimator_cap, now_s=time.time(),
+            observer = NetworkStateObserver(estimator_cap, now_s=sample_t,
                                             freshness_limit_s=cfg.freshness_limit_s)
             state = observer.observe(sample)
             current_plan = getattr(self.harness, "_current_plan", None)
             if current_plan is None:
                 return False
             parent_id = f"plan@{current_plan.capacity_mbps:g}"
+
+            # --- close out the previous lifecycle (Phase 8) ---
+            # The last applied policy now has post-apply measurements: verify
+            # its real outcome, recover if degraded, store the experience.
+            pending = getattr(self, "_pending_lifecycle", None)
+            if pending is not None:
+                self._pending_lifecycle = None
+                try:
+                    from .intelligence.experience import ExperienceStore
+                    from .intelligence.outcome import OutcomeVerifier, RecoveryEngine
+                    from .intelligence.contracts import (
+                        Experience as _Exp, ExperienceStatus as _ES)
+                    meas: dict[str, float] = {}
+                    if state.latency_ms is not None:
+                        meas["latency_ms"] = float(state.latency_ms)
+                    if state.jitter_ms is not None:
+                        meas["jitter_ms"] = float(state.jitter_ms)
+                    if state.loss_ratio is not None:
+                        meas["loss_ratio"] = float(state.loss_ratio)
+                    if state.throughput_mbps is not None:
+                        meas["throughput_mbps"] = float(state.throughput_mbps)
+                    outcome = OutcomeVerifier(cfg).verify(
+                        pending["app"], pending["readback"], meas,
+                        correlation_id=pending["correlation_id"], now=time.time())
+                    outcome_cls = outcome.outcome
+                    status_map = {
+                        "successful": _ES.SUCCESS, "degraded": _ES.FAILED,
+                        "inconclusive": _ES.INCONCLUSIVE,
+                        "application_failed": _ES.FAILED,
+                        "recovered": _ES.RECOVERY}
+                    status = status_map.get(outcome_cls.value, _ES.INCONCLUSIVE)
+                    if outcome_cls.value == "degraded":
+                        eng = RecoveryEngine(
+                            ControllerGateway(self.harness, cfg), cfg)
+                        ev, _rec_app = eng.recover(
+                            state, pending["previous_plan"],
+                            pending["app"].decision_id,
+                            "verified deterioration after intelligence apply",
+                            correlation_id=pending["correlation_id"],
+                            now=time.time())
+                        status = _ES.RECOVERY
+                    ExperienceStore(config=cfg).append(_Exp(
+                        status=status,
+                        network_context={"capacity_mbps": state.capacity.mbps,
+                                         "latency_ms": state.latency_ms,
+                                         "loss_ratio": state.loss_ratio},
+                        policy_context={"decision": getattr(
+                            pending.get("decision"), "record_id", ""),
+                            "note": f"outcome={outcome_cls.value}"},
+                        outcome_context={"measured": meas,
+                                         "outcome": outcome_cls.value,
+                                         "limitations": list(outcome.limitations)},
+                        correlation_id=pending["correlation_id"],
+                        recorded_at=time.time()))
+                    self._last_intel_summary = {
+                        "t": round(elapsed, 2),
+                        "action": f"outcome:{outcome_cls.value}",
+                        "reason": "closed previous lifecycle",
+                        "correlation_id": pending["correlation_id"]}
+                except Exception as e:  # noqa: BLE001
+                    print(f"note: lifecycle closeout failed: {e!r}", file=sys.stderr)
 
             evaluation = PolicyEvaluator().evaluate(
                 state, current_plan, correlation_id, now=time.time())
@@ -1631,7 +1717,20 @@ class ExperimentRunner:
                 state, current_plan, parent_id, correlation_id=correlation_id)
             gate = AcceptanceGate(cfg)
             validations = [gate.validate(c, state, current_plan) for c in candidates]
-            historical = []  # historical module fills this in Phase 8 wiring
+            # Historical what-if (measured runs only): compare the first
+            # accepted candidate against the current policy. Cached per runner
+            # so the 840-run tree is scanned once, not per decision.
+            historical = []
+            _accepted = next((v for v in validations if v.accepted), None)
+            if _accepted is not None:
+                if not hasattr(self, "_historical_comparer"):
+                    from .intelligence.historical import HistoricalComparer
+                    self._historical_comparer = HistoricalComparer(config=cfg)
+                _cand = next((c for c in candidates
+                              if c.record_id == _accepted.candidate_id), None)
+                if _cand is not None:
+                    historical = [self._historical_comparer.compare(
+                        _cand, parent_id, state, correlation_id)]
             decision = DecisionEngine(cfg).decide(
                 state, evaluation, prediction, candidates, validations,
                 historical, [r.experience for r in retrieved],
@@ -1662,6 +1761,14 @@ class ExperimentRunner:
             app, _readback = gateway.submit(decision, cand, val, state, now=time.time())
             self._last_intel_summary["applied"] = bool(app.applied)
             self._last_intel_summary["submission_failure"] = app.failure
+            if app.applied:
+                # park the lifecycle: next intelligence tick verifies its
+                # real outcome (verify -> recover -> record).
+                self._pending_lifecycle = {
+                    "app": app, "readback": _readback, "decision": decision,
+                    "candidate": cand, "previous_plan": current_plan,
+                    "correlation_id": correlation_id,
+                }
             return bool(app.applied)
         except Exception as e:  # noqa: BLE001 - never crash the measured loop
             print(f"note: intelligence step failed: {e!r}", file=sys.stderr)

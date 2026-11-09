@@ -49,7 +49,7 @@ class DegradationPredictor:
             mx = sum(xs) / n
             my = sum(vals) / n
             den = sum((x - mx) ** 2 for x in xs)
-            return sum((x - mx) * (v - my) for x, v in zip(xs, vals)) / den if den else 0.0
+            return sum((x - mx) * (v - my) for x, v in zip(xs, vals, strict=True)) / den if den else 0.0
 
         missing: list[str] = []
         evidence: list[str] = []

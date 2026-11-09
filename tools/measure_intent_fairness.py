@@ -5,7 +5,7 @@ Reads the s6_intent_expire dry/final runs' lease windows and per-flow sink
 series: during an intent lease for one device, the leased flow's delivered
 goodput must rise and no other flow may starve (starved_ticks empty).
 """
-import sys, json, statistics
+import sys
 from pathlib import Path
 from aciq.fairness import starved_ticks
 

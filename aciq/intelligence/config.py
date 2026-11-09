@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -85,7 +85,7 @@ class IntelligenceConfig:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "IntelligenceConfig":
+    def from_dict(cls, d: dict[str, Any]) -> IntelligenceConfig:
         known = {f for f in cls.__dataclass_fields__}
         unknown = set(d) - known
         if unknown:
@@ -98,7 +98,7 @@ class IntelligenceConfig:
         raise NotImplementedError("use IntelligenceConfig.from_file()")
 
     @classmethod
-    def from_file(cls, path: Path | str) -> "IntelligenceConfig":
+    def from_file(cls, path: Path | str) -> IntelligenceConfig:
         text = Path(path).read_text(encoding="utf-8")
         try:
             data = json.loads(text)

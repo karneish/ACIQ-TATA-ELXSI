@@ -79,8 +79,11 @@ class NetworkStateObserver:
         if active == 0:
             missing.append("active_flows")
 
-        # reliability triage
-        if not cap_ok or class_conf is None:
+        # reliability triage: missing classification confidence degrades
+        # (conservative) but must not masquerade as "no evidence at all" —
+        # capacity is the decision-critical signal, and it is fresh here.
+        cap_conf = float(getattr(self._capacity, "confidence", 0.0) or 0.0)
+        if not cap_ok or cap_conf <= 0.0:
             reliability = Reliability.UNKNOWN
         elif len(missing) <= 2 and freshness.get("capacity", 99) <= self._limit:
             reliability = Reliability.RELIABLE
@@ -91,7 +94,7 @@ class NetworkStateObserver:
             backlog is not None and float(backlog) > 0)
 
         return NetworkState(
-            capacity=self._capacity if isinstance(self._capacity, Capacity) else _capacity_of(self._capacity),
+            capacity=_capacity_of(self._capacity),
             per_class_demand=dict(per_class_demand or {}),
             active_flows=active,
             latency_ms=latency, jitter_ms=jitter, loss_ratio=loss,
@@ -112,8 +115,13 @@ class NetworkStateObserver:
 
 
 def _capacity_of(cap) -> Capacity:
-    if isinstance(cap, Capacity):
-        return cap
+    # The estimator (aciq.capacity) and model (aciq.model) define *different*
+    # Capacity classes; accept anything with the four fields duck-typed.
+    if hasattr(cap, "mbps") and hasattr(cap, "confidence"):
+        return Capacity(mbps=float(cap.mbps or 0.0),
+                        confidence=float(cap.confidence or 0.0),
+                        saturated=bool(getattr(cap, "saturated", False)),
+                        changed=bool(getattr(cap, "changed", False)))
     return Capacity(mbps=float(cap.get("mbps", 0.0) or 0.0),
                     confidence=float(cap.get("confidence", 0.0) or 0.0),
                     saturated=bool(cap.get("saturated", False)),

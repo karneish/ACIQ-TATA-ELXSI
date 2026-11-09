@@ -43,7 +43,6 @@ class AcceptanceGate:
 
         checks.append("fairness")
         rates = plan.rates
-        available = {c for c, r in rates.items() if r > 0}
         if TrafficClass.BULK_DOWNLOAD in rates and rates.get(TrafficClass.BULK_DOWNLOAD, 0) <= 0:
             failed.append("fairness: bulk starved (zero allocation)")
         if TrafficClass.UNKNOWN in rates and rates.get(TrafficClass.UNKNOWN, 0) < 0:

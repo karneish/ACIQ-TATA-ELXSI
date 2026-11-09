@@ -24,11 +24,10 @@ naketypes, or the controller.
 """
 from __future__ import annotations
 
-import json
 import math
 import uuid
 from dataclasses import asdict, dataclass, field
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Any, ClassVar
 
 from ..model import Capacity, Lease, RatePlan, TrafficClass
@@ -40,13 +39,13 @@ SCHEMA_VERSION: int = 1
 # enums
 # --------------------------------------------------------------------------
 
-class Reliability(str, Enum):
+class Reliability(StrEnum):
     RELIABLE = "reliable"
     DEGRADED = "degraded"
     UNKNOWN = "unknown"
 
 
-class PolicyHealth(str, Enum):
+class PolicyHealth(StrEnum):
     HEALTHY = "healthy"
     MONITOR = "monitor"
     DEGRADING = "degrading"
@@ -55,14 +54,14 @@ class PolicyHealth(str, Enum):
     UNKNOWN = "unknown"
 
 
-class PredictionStatus(str, Enum):
+class PredictionStatus(StrEnum):
     NONE = "none"
     POTENTIAL = "potential"
     HIGH = "high"
     UNCERTAIN = "uncertain"
 
 
-class ExperienceStatus(str, Enum):
+class ExperienceStatus(StrEnum):
     SUCCESS = "success"
     FAILED = "failed"
     INCONCLUSIVE = "inconclusive"
@@ -73,7 +72,7 @@ class ExperienceStatus(str, Enum):
     INCOMPLETE = "incomplete"
 
 
-class DecisionAction(str, Enum):
+class DecisionAction(StrEnum):
     RETAIN = "retain"
     SELECT = "select"
     REJECT_ALL = "reject_all"
@@ -82,7 +81,7 @@ class DecisionAction(str, Enum):
     SAFE_FALLBACK = "safe_fallback"
 
 
-class OutcomeClass(str, Enum):
+class OutcomeClass(StrEnum):
     SUCCESSFUL = "successful"
     DEGRADED = "degraded"
     INCONCLUSIVE = "inconclusive"
@@ -90,7 +89,7 @@ class OutcomeClass(str, Enum):
     RECOVERED = "recovered"
 
 
-class ValidationStatus(str, Enum):
+class ValidationStatus(StrEnum):
     ACCEPT = "accept"
     REJECT = "reject"
     DEFER = "defer"
@@ -168,7 +167,7 @@ class Record:
         return d
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "Record":
+    def from_dict(cls, d: dict[str, Any]) -> Record:
         raise NotImplementedError
 
 
@@ -230,7 +229,7 @@ class NetworkState(Record):
         return errs
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "NetworkState":
+    def from_dict(cls, d: dict[str, Any]) -> NetworkState:
         cap = d["capacity"]
         return cls(
             capacity=Capacity(mbps=float(cap["mbps"]), confidence=float(cap.get("confidence", 0.0)),
@@ -277,7 +276,7 @@ class PolicyEvaluation(Record):
         return errs
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "PolicyEvaluation":
+    def from_dict(cls, d: dict[str, Any]) -> PolicyEvaluation:
         return cls(current_policy_id=d["current_policy_id"], health=PolicyHealth(d["health"]),
                    evidence={k: float(v) for k, v in d.get("evidence", {}).items()},
                    missing=tuple(d.get("missing", ())), explanation=d.get("explanation", ""),
@@ -318,7 +317,7 @@ class Prediction(Record):
         return errs
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "Prediction":
+    def from_dict(cls, d: dict[str, Any]) -> Prediction:
         return cls(horizon_s=float(d["horizon_s"]), status=PredictionStatus(d["status"]),
                    confidence=d.get("confidence"), severity=float(d.get("severity", 0.0)),
                    evidence=tuple(d.get("evidence", ())), missing_inputs=tuple(d.get("missing_inputs", ())),
@@ -363,7 +362,7 @@ class Experience(Record):
         return errs
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "Experience":
+    def from_dict(cls, d: dict[str, Any]) -> Experience:
         return cls(status=ExperienceStatus(d["status"]),
                    network_context=dict(d.get("network_context", {})),
                    policy_context=dict(d.get("policy_context", {})),
@@ -419,7 +418,7 @@ class Candidate(Record):
         return d
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "Candidate":
+    def from_dict(cls, d: dict[str, Any]) -> Candidate:
         return cls(plan=_plan_from_dict(d["plan"]), parent_policy_id=d["parent_policy_id"],
                    reason=d.get("reason", ""), experience_refs=tuple(d.get("experience_refs", ())),
                    expected_benefits=tuple(d.get("expected_benefits", ())),
@@ -462,7 +461,7 @@ class ValidationResult(Record):
         return errs
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "ValidationResult":
+    def from_dict(cls, d: dict[str, Any]) -> ValidationResult:
         return cls(candidate_id=d["candidate_id"], accepted=bool(d.get("accepted", False)),
                    checks=tuple(d.get("checks", ())), failed_constraints=tuple(d.get("failed_constraints", ())),
                    warnings=tuple(d.get("warnings", ())), missing_evidence=tuple(d.get("missing_evidence", ())),
@@ -502,7 +501,7 @@ class HistoricalResult(Record):
         return errs
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "HistoricalResult":
+    def from_dict(cls, d: dict[str, Any]) -> HistoricalResult:
         return cls(candidate_id=d["candidate_id"], baseline_policy_id=d["baseline_policy_id"],
                    metrics={k: float(v) for k, v in d.get("metrics", {}).items()},
                    ranking=tuple(d.get("ranking", ())), limitations=tuple(d.get("limitations", ())),
@@ -549,7 +548,7 @@ class DecisionResult(Record):
         return errs
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "DecisionResult":
+    def from_dict(cls, d: dict[str, Any]) -> DecisionResult:
         return cls(action=DecisionAction(d["action"]), current_policy_id=d["current_policy_id"],
                    confidence={k: (float(v) if v is not None else None) for k, v in d.get("confidence", {}).items()},
                    selected_candidate_id=d.get("selected_candidate_id"),
@@ -595,7 +594,7 @@ class ApplicationResult(Record):
         return errs
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "ApplicationResult":
+    def from_dict(cls, d: dict[str, Any]) -> ApplicationResult:
         return cls(decision_id=d["decision_id"], candidate_id=d.get("candidate_id"),
                    submitted=bool(d.get("submitted", False)), controller_accepted=bool(d.get("controller_accepted", False)),
                    applied=bool(d.get("applied", False)), readback_verified=bool(d.get("readback_verified", False)),
@@ -630,7 +629,7 @@ class ReadbackResult(Record):
         return errs
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "ReadbackResult":
+    def from_dict(cls, d: dict[str, Any]) -> ReadbackResult:
         return cls(verified=bool(d.get("verified", False)),
                    expected_cfg=dict(d.get("expected_cfg", {})), actual_cfg=dict(d.get("actual_cfg", {})),
                    mismatches=tuple(d.get("mismatches", ())), correlation_id=d.get("correlation_id", ""),
@@ -669,7 +668,7 @@ class Outcome(Record):
         return errs
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "Outcome":
+    def from_dict(cls, d: dict[str, Any]) -> Outcome:
         return cls(decision_id=d["decision_id"], applied_policy_id=d["applied_policy_id"],
                    outcome=OutcomeClass(d["outcome"]),
                    measurements={k: float(v) for k, v in d.get("measurements", {}).items()},
@@ -712,7 +711,7 @@ class RecoveryEvent(Record):
         return errs
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "RecoveryEvent":
+    def from_dict(cls, d: dict[str, Any]) -> RecoveryEvent:
         return cls(trigger=d["trigger"], previous_policy_id=d["previous_policy_id"],
                    action=d["action"], outcome=d["outcome"],
                    failure_evidence=dict(d.get("failure_evidence", {})),

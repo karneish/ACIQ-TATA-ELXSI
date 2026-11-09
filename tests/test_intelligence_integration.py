@@ -3,7 +3,6 @@ import unittest
 
 from aciq.harness import CapacityMode, Harness, SystemSpec
 from aciq.intelligence.candidates import CandidateGenerator
-from aciq.intelligence.config import IntelligenceConfig
 from aciq.intelligence.contracts import (
     DecisionAction,
     DecisionResult,

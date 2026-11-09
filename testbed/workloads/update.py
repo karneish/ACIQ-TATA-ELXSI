@@ -2,7 +2,7 @@
 Emulates a package download with steady ~8 Mbps, ~968B packets, no chunk
 laddering. Pairs with classifier update-vs-streaming packet-size rule.
 """
-import argparse, socket, threading, time
+import argparse, socket, time
 
 def main():
     ap=argparse.ArgumentParser()

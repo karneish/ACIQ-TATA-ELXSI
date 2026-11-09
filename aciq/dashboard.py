@@ -589,8 +589,13 @@ h1{font-size:21px;font-weight:650;margin:0;letter-spacing:-.01em}
 
 def render_page(panels: dict, subtitle: str = "", refresh_s: int = 0,
                 summary: Sequence[tuple[str, str, str]] = (),
-                events: Sequence[dict] = ()) -> str:
-    """The whole page. `panels` is the dict from `panels_from_samples`."""
+                events: Sequence[dict] = (),
+                intelligence: str = "") -> str:
+    """The whole page. `panels` is the dict from `panels_from_samples`.
+
+    `intelligence` is a pre-rendered intelligence-layer section (Phase 7)
+    appended after the six base panels. Default empty: existing pages are
+    byte-identical to before."""
     tiles = "".join(
         f'<div class="tile"><div class="k">{esc(k)}</div>'
         f'<div class="v">{esc(v)}</div>'
@@ -627,10 +632,11 @@ def render_page(panels: dict, subtitle: str = "", refresh_s: int = 0,
 <title>ACIQ dashboard</title><style>{CSS}</style></head>
 <body><div class="wrap">
 <header><h1>ACIQ dashboard</h1>{live}</header>
-<p class="sub">{esc(subtitle)}</p>
-<div class="tiles">{tiles}</div>
-<div class="grid">{"".join(body)}</div>
-<div class="legend">{legend}</div>
+ <p class="sub">{esc(subtitle)}</p>
+ <div class="tiles">{tiles}</div>
+ <div class="grid">{"".join(body)}</div>
+ {intelligence}
+ <div class="legend">{legend}</div>
 <p class="foot">Read-only (M8). Inline SVG, no JavaScript, no external requests.
 {" Marked events: " + ev if ev else ""}</p>
 </div></body></html>"""
@@ -662,12 +668,14 @@ def _pretty(label: str) -> str:
 
 def build_from_samples(rows: Iterable[dict], subtitle: str = "",
                        refresh_s: int = 0,
-                       events: Sequence[dict] = ()) -> str:
+                       events: Sequence[dict] = (),
+                       intelligence: str = "") -> str:
     rows = list(rows)
     classes = sorted({k for r in rows for k in (r.get("per_class") or {})})
     ev = detect_events(rows, events)
     return render_page(panels_from_samples(rows, classes), subtitle, refresh_s,
-                       summary=summary_tiles(rows), events=ev)
+                       summary=summary_tiles(rows), events=ev,
+                       intelligence=intelligence)
 
 
 def write_snapshot(rows: Iterable[dict], path: Path | str,

@@ -6,12 +6,11 @@ Candidates are proposals for the gate; generation never applies anything.
 """
 from __future__ import annotations
 
-import copy
 
 from ..model import Lease, RatePlan, TrafficClass
 from ..policy import BASE_WEIGHTS, build_plan
 from .config import IntelligenceConfig
-from .contracts import Candidate, NetworkState, Prediction
+from .contracts import Candidate, NetworkState
 
 
 class CandidateGenerator:

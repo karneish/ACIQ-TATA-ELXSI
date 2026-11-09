@@ -10,7 +10,6 @@ from aciq.intelligence.contracts import (
     DecisionResult,
     Experience,
     ExperienceStatus,
-    SCHEMA_VERSION,
 )
 from aciq.intelligence.experience import DecisionLogger, ExperienceStore
 

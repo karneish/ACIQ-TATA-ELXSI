@@ -12,7 +12,6 @@ from aciq.experiment import ExperimentRunner, DryLauncher
 from aciq.harness import Harness, SystemSpec, CapacityMode
 from aciq.txn import FakeRunner
 from aciq.metrics import StaticSource, CounterSnapshot
-from aciq.model import TrafficClass
 
 def main():
     ap = argparse.ArgumentParser()
@@ -22,7 +21,6 @@ def main():
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
     log_lines = [f"demo(dry) scenario={a.scenario} rev=HEAD engine=post-7c6c7235"]
     # DryLauncher + FakeRunner: no kernel, no sudo
-    import aciq.experiment as exp
     runner = ExperimentRunner(
         harness=Harness(runner=FakeRunner(auto_readback=True)),
         launcher=DryLauncher(),

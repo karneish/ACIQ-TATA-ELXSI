@@ -832,11 +832,14 @@ class Harness:
         """
         from .uplink import uplink_rates
         rates = uplink_rates(uplink_mbps, {}, 0.0)
+        # The clamp computation decides the effective uplink ceiling: the
+        # tree is shaped at min(uplink, per-class clamps) — never above.
+        effective = rates.get("default", uplink_mbps)
         # Downlink and uplink share the bottleneck ns in dry tests; in the live
         # testbed the uplink netem sits on the client veth. The call shape is
         # identical so a single code path serves both.
-        if uplink_mbps > 0:
-            return self.set_capacity(float(uplink_mbps))
+        if effective > 0:
+            return self.set_capacity(float(effective))
         return ()
 
     def reconcile_after_restart(self, last_plan=None) -> dict:
