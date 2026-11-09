@@ -62,9 +62,9 @@ ACIQ today reacts to *current* congestion. The new layer adds a **brain on top**
 
 - [x] Phase 1 — Repository Audit → `docs/intelligence/phase1-audit.md` (architecture summary, capability + gap inventory, integration map, risks, file plan)
 - [x] Phase 2 — Architecture + Data Contracts → `aciq/intelligence/contracts.py` (12 records, tested) + `docs/intelligence/phase2-contracts.md` (sequence diagram, module ownership, error rules)
-- [ ] Phase 3 — Foundation & Persistence (JSONL store, schema v1, atomic writes, validation, backups, retention, corruption handling)
-- [ ] Phase 4 — Intelligence Modules (state, evaluator, predictor, retrieval, candidates, gate, historical, decision — each unit-tested)
-- [ ] Phase 5 — Controller Integration (submit → accept/reject → apply → readback; version + freshness checks)
+- [x] Phase 3 — Foundation & Persistence → `aciq/intelligence/config.py` + `experience.py` (ExperienceStore + DecisionLogger) + `docs/intelligence/phase3-foundation.md`; 15 foundation tests; `data/intelligence/decisions.jsonl`
+- [x] Phase 4 — Intelligence Modules → `aciq/intelligence/{state,evaluator,predictor,candidates,validate,historical,decide}.py` + `docs/intelligence/phase4-modules.md`; 21 module tests
+- [x] Phase 5 — Controller Integration → `aciq/intelligence/integration.py` (ControllerGateway) + `--intelligence` opt-in hook + `docs/intelligence/phase5-integration.md`; 7 integration tests
 - [ ] Phase 6 — Outcome Verification & Recovery (classification, bounded recovery, fallback, experience update)
 - [ ] Phase 7 — Dashboard & Reporting (6 new panel groups; Observed/Estimated/Predicted/Verified labels)
 - [ ] Phase 8 — End-to-End Integration (full lifecycle wired, no dead modules)

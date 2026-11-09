@@ -83,7 +83,7 @@ secret scan **clean**. No existing tests were weakened.
 | `state.NetworkStateObserver` | `collector.poll()` snapshot dict + `Current = estimator.current` | Wrap existing sample row; add freshness/missing flags |
 | `evaluator.PolicyEvaluator` | `fairness` + `policy.build_plan` + objectives config | Read-only triage; hysteresis in config |
 | `predictor.DegradationPredictor` | `samples.jsonl` series (queue/latency/capacity) | EWMA slopes; no new dependencies |
-| `experience.ExperienceStore` | JSONL, `corrections.py` clone pattern | `data/experiences.jsonl`, schema v1, atomic append |
+| `experience.ExperienceStore` | JSONL, `corrections.py` clone pattern | `data/experiences.jsonl` (planned Phase 4 store), schema v1, atomic append |
 | `candidates.CandidateGenerator` | `policy.build_plan(capacity, lease)` | Bounded variants of its `RatePlan` output only |
 | `validate.AcceptanceGate` | `shield.veto_plan/veto_rate` + `policy` invariants | One entry point; returns structured result |
 | `historical.HistoricalComparer` | `data/runs/*/samples.jsonl` + `fairness` | MEASURED only; SIM labeled; similarity explained |
@@ -109,22 +109,22 @@ Flow: Observe → State → Classify(conf) → Capacity → Eval policy → Pred
 
 ## 7. Proposed file-level implementation plan
 ```
-aciq/intelligence/__init__.py      # package, exports
-aciq/intelligence/config.py        # Config (horizons, bounds, retention) + validation
-aciq/intelligence/state.py         # Module 1 NetworkState + freshness
-aciq/intelligence/evaluator.py     # Module 2 PolicyHealth triage + hysteresis
-aciq/intelligence/predictor.py     # Module 3 deterministic trends
-aciq/intelligence/experience.py    # Module 4 JSONL store + retrieval + quarantine
-aciq/intelligence/candidates.py    # Module 5 bounded candidate set
-aciq/intelligence/validate.py      # Module 6 unified gate (A-H)
-aciq/intelligence/historical.py    # Module 7 historical what-if (measured only)
-aciq/intelligence/decide.py        # Module 8 decision + DecisionRecord
-aciq/intelligence/outcome.py       # Module 9/10 verify + bounded recovery
-aciq/intelligence/dashboard.py     # Module 15 panels (additive)
+intelligence/__init__.py      # package, exports
+intelligence/config.py        # Config (horizons, bounds, retention) + validation
+intelligence/state.py         # Module 1 NetworkState + freshness
+intelligence/evaluator.py     # Module 2 PolicyHealth triage + hysteresis
+intelligence/predictor.py     # Module 3 deterministic trends
+intelligence/experience.py    # Module 4 JSONL store + retrieval + quarantine
+intelligence/candidates.py    # Module 5 bounded candidate set
+intelligence/validate.py      # Module 6 unified gate (A-H)
+intelligence/historical.py    # Module 7 historical what-if (measured only)
+intelligence/decide.py        # Module 8 decision + DecisionRecord
+intelligence/outcome.py       # Module 9/10 verify + bounded recovery
+intelligence/dashboard.py     # Module 15 panels (additive)
 data/intelligence/decisions.jsonl  # Decision audit log (new file)
-docs/intelligence.md               # contracts, sequence, config, testing
+docs/intelligence/ (directory; this file lives in it)               # contracts, sequence, config, testing
 tests/test_intelligence_*.py       # unit + integration + failure (Phase 9)
-tools/measure_intelligence.py      # latency/overhead probe
+a latency probe tool (Phase 9)      # latency/overhead probe
 ```
 No existing file is rewritten except additive hooks: `Harness.submit_decision()` (one method),
 `run_experiments.py --intelligence` flag, `dashboard.py` panel registration.

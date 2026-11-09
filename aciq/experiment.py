@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import random
 import shutil
 import signal
@@ -391,7 +392,11 @@ class ExperimentRunner:
         intent_weight: float = 0.5,
         intent_label: str = "game",
         book: LeaseBook | None = None,
+        intelligence: bool = False,
     ) -> RunResult:
+        self._intelligence_on = bool(intelligence)
+        self._last_intel_t: float = -1e9
+        self._last_intel_summary: dict | None = None
         self._inject_fail_apply = bool(inject_fail_apply)
         self._inject_fail_applied = False
         self._inject_note = None
@@ -904,11 +909,27 @@ class ExperimentRunner:
 
             frame = collector.poll()
 
+            # Intelligence layer (Phase 5, opt-in --intelligence). On an
+            # intelligence tick (every IntelligenceConfig.min_hold_s) the
+            # decision engine runs instead of the adaptive loop for that
+            # tick: observe->eval->predict->retrieve->generate->gate->decide,
+            # then submits a SELECT decision through ControllerGateway (which
+            # applies via harness.txn, the same path as adapt_step). Any other
+            # action leaves the adaptive loop to run normally, so a run with
+            # --intelligence differs from a plain run only on decision ticks.
+            intelligence_decided = False
+            if (self._intelligence_on and system is SystemSpec.ACIQ
+                    and mode is CapacityMode.ADAPTIVE
+                    and elapsed - self._last_intel_t >= 30.0):
+                intelligence_decided = self._intelligence_step(
+                    frame, elapsed, scenario_name, seed)
+                self._last_intel_t = elapsed
+
             # Close the loop on every tick. M2 needs consecutive saturated
             # samples before it trusts a reading, so a loop that only ran at a
             # capacity drop and once at the end could never reach its streak and
             # the estimate stayed 0.0 for the whole run.
-            if mode is CapacityMode.ADAPTIVE:
+            if mode is CapacityMode.ADAPTIVE and not intelligence_decided:
                 self._closed_loop_step(collector, self.tick_s, t0 + elapsed)
             if (self._lease_book and self._lease_book.active()
                     and getattr(self.harness, "_lease_in_effect", False)):
@@ -1033,6 +1054,8 @@ class ExperimentRunner:
                 # lying, and a future run should be able to see that from its own
                 # artefacts instead of re-deriving it.
                 "filters_json": n_json, "filters_text": n_text,
+                # Intelligence decision (advisory unless a SELECT applied).
+                "intelligence": getattr(self, "_last_intel_summary", None),
             })
 
             # The recovery: the link comes BACK. Without this the controller was
@@ -1222,6 +1245,8 @@ class ExperimentRunner:
                           and system is not SystemSpec.ACIQ
                           else (["S6 API intent NOT fired (enforcement off)"]
                                 if self._api_intent else [])))
+                   + ([f"intelligence: {self._last_intel_summary}"]
+                      if getattr(self, "_last_intel_summary", None) else [])
                    + ([f"workload start offsets (seeded): "
                        f"{self._start_offsets}" ] if self._start_offsets else [])),
         )
@@ -1548,6 +1573,101 @@ class ExperimentRunner:
         return self.harness.adapt_step(
             _counters_from_last_frame(collector), dt=dt, now=now,
             link=collector.last_link_counters())
+
+    def _intelligence_step(self, frame, elapsed: float, scenario_name: str,
+                           seed: int) -> bool:
+        """One intelligence decision tick. Returns True when a policy was
+        submitted this tick (the adaptive loop then stands down for it)."""
+        try:
+            from .intelligence.state import NetworkStateObserver
+            from .intelligence.evaluator import PolicyEvaluator
+            from .intelligence.predictor import DegradationPredictor
+            from .intelligence.candidates import CandidateGenerator
+            from .intelligence.validate import AcceptanceGate
+            from .intelligence.decide import DecisionEngine
+            from .intelligence.integration import ControllerGateway
+            from .intelligence.experience import DecisionLogger, ExperienceStore
+            from .intelligence.config import IntelligenceConfig
+            from .contracts import DecisionAction  # noqa
+            from .model import TrafficClass
+
+            cfg = IntelligenceConfig()
+            correlation_id = f"{scenario_name}:{seed}:{elapsed:.1f}"
+
+            per_class = {k.value: {"goodput_mbps": float(getattr(v, "goodput_mbps", 0.0)),
+                                   "rtt_p95": getattr(v, "rtt_p95", None),
+                                   "jitter_ms": getattr(v, "jitter_ms", None),
+                                   "loss_ratio": getattr(v, "loss_ratio", None),
+                                   "backlog_bytes": getattr(v, "backlog_bytes", 0)}
+                         for k, v in getattr(frame, "per_class", {}).items()}
+            sample = {"t": elapsed, "per_class": per_class,
+                      "throughput_mbps": sum(
+                          v.get("goodput_mbps", 0.0) for v in per_class.values())}
+            last_m = getattr(self.harness, "last_measurement", None)
+            if last_m is not None:
+                sample["bottleneck_backlog_bytes"] = getattr(
+                    last_m, "bottleneck_backlog_bytes", None)
+            estimator_cap = self.harness._estimator.current
+            observer = NetworkStateObserver(estimator_cap, now_s=time.time(),
+                                            freshness_limit_s=cfg.freshness_limit_s)
+            state = observer.observe(sample)
+            current_plan = getattr(self.harness, "_current_plan", None)
+            if current_plan is None:
+                return False
+            parent_id = f"plan@{current_plan.capacity_mbps:g}"
+
+            evaluation = PolicyEvaluator().evaluate(
+                state, current_plan, correlation_id, now=time.time())
+            history = [s for s in self._intel_history[-20:]] if hasattr(self, "_intel_history") else []
+            prediction = DegradationPredictor(cfg).predict(history, state, correlation_id)
+            store = ExperienceStore(config=cfg)
+            retrieved = store.retrieve(
+                {"capacity_mbps": state.capacity.mbps,
+                 "latency_ms": state.latency_ms or 0.0,
+                 "jitter_ms": state.jitter_ms or 0.0,
+                 "loss_ratio": state.loss_ratio or 0.0,
+                 "demand": {c.value: v for c, v in state.per_class_demand.items()}})
+            candidates = CandidateGenerator(cfg).generate(
+                state, current_plan, parent_id, correlation_id=correlation_id)
+            gate = AcceptanceGate(cfg)
+            validations = [gate.validate(c, state, current_plan) for c in candidates]
+            historical = []  # historical module fills this in Phase 8 wiring
+            decision = DecisionEngine(cfg).decide(
+                state, evaluation, prediction, candidates, validations,
+                historical, [r.experience for r in retrieved],
+                correlation_id, now=time.time())
+
+            try:
+                DecisionLogger(cfg.decisions_path).append(decision)
+            except Exception as e:
+                print(f"note: decision log failed: {e}", file=sys.stderr)
+
+            # keep history for the predictor (sample rows + this tick)
+            if not hasattr(self, "_intel_history"):
+                self._intel_history = []
+            self._intel_history.append(sample)
+
+            self._last_intel_summary = {
+                "t": round(elapsed, 2), "action": decision.action.value,
+                "reason": decision.reason,
+                "correlation_id": correlation_id,
+            }
+            if decision.action.value != "select":
+                return False
+            cand = next((c for c in candidates
+                         if c.record_id == decision.selected_candidate_id), None)
+            val = next((v for v in validations
+                        if v.candidate_id == (cand.record_id if cand else "")), None)
+            gateway = ControllerGateway(self.harness, cfg)
+            app, _readback = gateway.submit(decision, cand, val, state, now=time.time())
+            self._last_intel_summary["applied"] = bool(app.applied)
+            self._last_intel_summary["submission_failure"] = app.failure
+            return bool(app.applied)
+        except Exception as e:  # noqa: BLE001 - never crash the measured loop
+            print(f"note: intelligence step failed: {e!r}", file=sys.stderr)
+            self._last_intel_summary = {"t": round(elapsed, 2),
+                                        "action": "error", "reason": repr(e)}
+            return False
 
 
 def _counters_from_last_frame(collector: MetricsCollector):

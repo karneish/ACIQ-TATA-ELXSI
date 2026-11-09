@@ -155,6 +155,9 @@ def main() -> int:
                     help="build everything but do not wait for the run to finish")
     ap.add_argument("--no-setup", action="store_true",
                     help="assume namespaces already exist")
+    ap.add_argument("--intelligence", action="store_true",
+                    help="enable the Phase 5 intelligence decision layer "
+                         "(ACIQ adaptive only; off by default)")
     ap.add_argument("--inject-fail-apply", action="store_true",
                     help="S5 failure injection: ACIQ runs get one tc apply "
                          "forced to fail at mid-run; rollback must restore")
@@ -407,7 +410,8 @@ def main() -> int:
                         intent_at_s=args.intent_at,
                         intent_ttl_s=args.intent_ttl,
                         intent_weight=args.intent_weight,
-                        intent_label=args.intent_label)
+                        intent_label=args.intent_label,
+                        intelligence=args.intelligence)
                     for n in res.notes:
                         # only real problems get a warning marker; a note like
                         # "no capacity drop" is informational and alarming it
